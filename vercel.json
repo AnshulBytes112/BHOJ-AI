@@ -1,8 +1,0 @@
-{
-  "buildCommand": "npx nx build web --prod",
-  "framework": "nextjs",
-  "installCommand": "npm install",
-  "env": {
-    "NEXT_PUBLIC_API_URL": "https://resto-maneger.onrender.com/api"
-  }
-}
