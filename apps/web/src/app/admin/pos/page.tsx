@@ -59,7 +59,10 @@ export default function POSTerminal() {
   const [gstRates, setGstRates] = useState<{ [key: string]: number }>({});
   const [gstin, setGstin] = useState('29ABCDE1234F1Z5');
   const [orderType, setOrderType] = useState('Dine In');
-  const [selectedTable, setSelectedTable] = useState('Table 3');
+  // selectedTable now stores the real UUID table_id from the DB
+  const [selectedTable, setSelectedTable] = useState('');
+  const [selectedTableLabel, setSelectedTableLabel] = useState('Select Table');
+  const [dbTables, setDbTables] = useState<{ table_id: string; table_number: string; status: string }[]>([]);
   const [selectedWaiter, setSelectedWaiter] = useState('John Paul');
   const [guests, setGuests] = useState(4);
   const [activeWorkflow, setActiveWorkflow] = useState('categories');
@@ -67,6 +70,8 @@ export default function POSTerminal() {
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -88,79 +93,61 @@ export default function POSTerminal() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log('Loading POS data...');
-        const [catsResp, itemsResp] = await Promise.all([
+        const [catsResp, itemsResp, tablesResp] = await Promise.all([
           apiClient.get<Array<{ id: number; name: string }>>('/categories'),
-          apiClient.get<
-            Array<{
-              id: number;
-              category: string;
-              name: string;
-              selling_price: string;
-              stock_type: 'limited' | 'unlimited';
-              stock_quantity: number;
-              is_active: boolean;
-              image_url: string | null;
-            }>
-          >('/items', { params: { is_active: 'true' } }),
+          apiClient.get<Array<{
+            id: number; category: string; name: string; selling_price: string;
+            stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
+          }>>('/items', { params: { is_active: 'true' } }),
+          apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables'),
         ]);
 
         const cats: MenuCategory[] = (catsResp.data ?? []).map((c) => ({
-          id: String(c.id),
-          name: c.name,
-          defaultGst: 0,
+          id: String(c.id), name: c.name, defaultGst: 0,
         }));
-
         const categoryIdByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
 
         const allItems: MenuItem[] = (itemsResp.data ?? []).map((item) => ({
           id: String(item.id),
           categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
-          name: item.name,
-          price: Number(item.selling_price),
-          description: '',
-          isVegetarian: true,
-          isAvailable: item.is_active,
-          gstRate: 0,
-          stockType: item.stock_type,
-          stockQuantity: item.stock_quantity ?? 0,
-          image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:') ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
+          name: item.name, price: Number(item.selling_price), description: '',
+          isVegetarian: true, isAvailable: item.is_active, gstRate: 0,
+          stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
+          image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
+            ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
         }));
-        
-        console.log('Categories loaded:', cats);
-        console.log('Items loaded:', allItems);
-        
+
+        const tables = tablesResp.data ?? [];
+        setDbTables(tables);
+        // Auto-select first free table
+        const firstFree = tables.find(t => t.status === 'free');
+        if (firstFree) {
+          setSelectedTable(firstFree.table_id);
+          setSelectedTableLabel(`Table ${firstFree.table_number}`);
+        }
+
         setCategories(cats);
         setItems(allItems);
         setFilteredItems(allItems);
-        
-        // Initialize GST rates from configuration if possible
+
         try {
-          const gstConfigResp = await apiClient.get<Array<{ category: string, gst_percentage: string, is_active: boolean }>>('/gst-config');
+          const gstConfigResp = await apiClient.get<Array<{ category: string; gst_percentage: string; is_active: boolean }>>('/gst-config');
           const nextGstMap: { [key: string]: number } = {};
           (gstConfigResp.data ?? []).forEach(row => {
             if (row.is_active) {
               const catId = categoryIdByName.get(row.category.toLowerCase());
-              if (catId) {
-                nextGstMap[catId] = Number(row.gst_percentage);
-              }
+              if (catId) nextGstMap[catId] = Number(row.gst_percentage);
             }
           });
           setGstRates(nextGstMap);
-        } catch (e) {
-          console.error('Failed to load GST config', e);
-        }
+        } catch (e) { console.error('Failed to load GST config', e); }
 
-        // Load receipt layout
         try {
           const layoutResp = await apiClient.get('/receipt-layout');
           setReceiptLayout(layoutResp.data);
-        } catch (e) {
-          console.error('Failed to load receipt layout', e);
-        }
+        } catch (e) { console.error('Failed to load receipt layout', e); }
+
         setIsLoading(false);
-        
-        console.log('POS data loaded successfully');
       } catch (error) {
         console.error('Error loading POS data:', error);
         setIsLoading(false);
@@ -267,10 +254,30 @@ export default function POSTerminal() {
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
-    const generatedOrderId = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
-    setOrderId(generatedOrderId);
-    setIsOrderPlaced(true);
-    alert(`Order ${generatedOrderId} placed successfully! This will navigate to the order module.`);
+    if (!selectedTable) {
+      setOrderError('Please select a table before placing an order.');
+      return;
+    }
+    setIsPlacingOrder(true);
+    setOrderError(null);
+    try {
+      // POST to real DB via API
+      const result = await apiClient.post(`/tables/${selectedTable}/orders`, {
+        items: cart.map(item => ({ id: Number(item.id), quantity: item.quantity })),
+      });
+      const newOrderId = result.data.order_id;
+      setOrderId(newOrderId);
+      setIsOrderPlaced(true);
+      // Send to kitchen
+      try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) {}
+      setCart([]);
+      alert(`Order placed successfully! Order ID: ${newOrderId.slice(0, 8).toUpperCase()}`);
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || 'Failed to place order. Check your connection.';
+      setOrderError(msg);
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
 
   const generateBillAndPrint = async () => {
@@ -701,15 +708,21 @@ export default function POSTerminal() {
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-700">Table</label>
-                <select 
+                <select
                   className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
                   value={selectedTable}
-                  onChange={(e) => setSelectedTable(e.target.value)}
+                  onChange={(e) => {
+                    const tbl = dbTables.find(t => t.table_id === e.target.value);
+                    setSelectedTable(e.target.value);
+                    setSelectedTableLabel(tbl ? `Table ${tbl.table_number}` : 'Select Table');
+                  }}
                 >
-                  <option>Table 1</option>
-                  <option>Table 2</option>
-                  <option>Table 3</option>
-                  <option>Table 4</option>
+                  <option value="">-- Select Table --</option>
+                  {dbTables.map(t => (
+                    <option key={t.table_id} value={t.table_id}>
+                      Table {t.table_number} ({t.status})
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -830,12 +843,15 @@ export default function POSTerminal() {
 
           {/* Place Order Section */}
           <div className="flex-1 bg-white p-6 flex flex-col justify-end space-y-3">
+            {orderError && (
+              <p className="text-xs text-red-500 text-center">{orderError}</p>
+            )}
             <Button 
               onClick={handlePlaceOrder}
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || isPlacingOrder || !selectedTable}
               className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white font-semibold"
             >
-              Place Order
+              {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
             </Button>
             <Button 
               onClick={generateBillAndPrint}
