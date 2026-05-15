@@ -43,8 +43,9 @@ export default function OrdersPage() {
   const [filterDate, setFilterDate] = useState(today);
   const [filterTable, setFilterTable] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterPayment, setFilterPayment] = useState('all');
   const [filterSearch, setFilterSearch] = useState('');
-  const [applied, setApplied] = useState({ date: today, table: 'all', status: 'all', search: '' });
+  const [applied, setApplied] = useState({ date: today, table: 'all', status: 'all', payment: 'all', search: '' });
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -110,6 +111,10 @@ export default function OrdersPage() {
       else if (applied.status === 'completed') list = list.filter(o => o.status === 'completed' || o.status === 'billed');
       else if (applied.status === 'cancelled') list = list.filter(o => o.status === 'cancelled');
     }
+    if (applied.payment !== 'all') {
+      if (applied.payment === 'unpaid') list = list.filter(o => o.status !== 'billed' && o.status !== 'completed');
+      else if (applied.payment === 'paid') list = list.filter(o => o.status === 'billed' || o.status === 'completed');
+    }
     if (applied.date) list = list.filter(o => !o.created_at || new Date(o.created_at).toISOString().split('T')[0] === applied.date);
     if (applied.search) {
       const q = applied.search.toLowerCase();
@@ -144,7 +149,7 @@ export default function OrdersPage() {
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin', 'manager', 'staff']}>
       <DashboardLayout>
-        <div className="space-y-6">
+        <div className="space-y-6 px-2 md:px-6">
           {/* Header */}
           <div className="flex items-start justify-between">
             <div>
@@ -202,21 +207,32 @@ export default function OrdersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground uppercase">Payment</label>
+                <Select value={filterPayment} onValueChange={setFilterPayment}>
+                  <SelectTrigger className="w-[140px] bg-white"><SelectValue placeholder="All Payments" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Payments</SelectItem>
+                    <SelectItem value="unpaid">⏳ Unpaid</SelectItem>
+                    <SelectItem value="paid">✅ Paid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex-1 min-w-[200px] relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input placeholder="Search Order ID / Table" className="pl-9 bg-white" value={filterSearch}
                   onChange={e => setFilterSearch(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && setApplied({ date: filterDate, table: filterTable, status: filterStatus, search: filterSearch })} />
+                  onKeyDown={e => e.key === 'Enter' && setApplied({ date: filterDate, table: filterTable, status: filterStatus, payment: filterPayment, search: filterSearch })} />
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" className="gap-2 text-primary border-primary/20" onClick={() => {
-                  setFilterDate(today); setFilterTable('all'); setFilterStatus('all'); setFilterSearch('');
-                  setApplied({ date: today, table: 'all', status: 'all', search: '' }); setPage(1);
+                  setFilterDate(today); setFilterTable('all'); setFilterStatus('all'); setFilterPayment('all'); setFilterSearch('');
+                  setApplied({ date: today, table: 'all', status: 'all', payment: 'all', search: '' }); setPage(1);
                 }}>
                   <RotateCcw className="w-4 h-4" /> Reset
                 </Button>
                 <Button className="bg-primary hover:bg-primary/90 text-white gap-2"
-                  onClick={() => { setApplied({ date: filterDate, table: filterTable, status: filterStatus, search: filterSearch }); setPage(1); }}>
+                  onClick={() => { setApplied({ date: filterDate, table: filterTable, status: filterStatus, payment: filterPayment, search: filterSearch }); setPage(1); }}>
                   <Filter className="w-4 h-4" /> Apply Filter
                 </Button>
               </div>
@@ -234,15 +250,15 @@ export default function OrdersPage() {
                   <Table>
                     <TableHeader className="bg-slate-50/50">
                       <TableRow className="hover:bg-transparent">
-                        {['Order ID', 'Table No.', 'Status', 'Order Time', 'Items', 'Amount (₹)', 'Actions'].map(h =>
+                        {['Order ID', 'Table No.', 'Status', 'Order Time', 'Items', 'Amount (₹)', 'Payment', 'Actions'].map(h =>
                           <TableHead key={h} className="font-semibold text-slate-600">{h}</TableHead>)}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {isLoading
-                        ? <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Loading orders...</TableCell></TableRow>
+                        ? <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading orders...</TableCell></TableRow>
                         : paged.length === 0
-                          ? <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No orders found.</TableCell></TableRow>
+                          ? <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No orders found.</TableCell></TableRow>
                           : paged.map(order => (
                             <TableRow key={order.order_id}
                               className={cn("cursor-pointer transition-colors", selected?.order_id === order.order_id ? "bg-primary/5" : "hover:bg-slate-50")}
@@ -253,6 +269,11 @@ export default function OrdersPage() {
                               <TableCell className="text-sm">{fmtDate(order.created_at)}</TableCell>
                               <TableCell>{safeItems(order.items).length} Items</TableCell>
                               <TableCell className="font-semibold">₹ {calcTotal(order.items).toFixed(2)}</TableCell>
+                              <TableCell>
+                                {order.status === 'billed' || order.status === 'completed'
+                                  ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">✓ Paid</Badge>
+                                  : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">⏳ Unpaid</Badge>}
+                              </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1">
                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/10"
