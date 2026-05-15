@@ -35,7 +35,7 @@ export function ReceiptPrint({ data }: { data: ReceiptData }) {
   }, {} as Record<string, { base: number; gst: number }>);
 
   return (
-    <div className="receipt-print-content bg-white p-4 font-mono text-[12px] leading-relaxed text-black max-w-[400px] mx-auto print:p-0 print:m-0 print:max-w-none print:block print:w-full print:static">
+    <div className="receipt-print-content bg-white font-mono text-black max-w-[400px] mx-auto print:p-0 print:m-0 print:max-w-none print:block print:w-full print:static" style={{ padding: '16px 12px', fontSize: '12px', lineHeight: '1.6' }}>
       <style jsx global>{`
         @media print {
           /* Hide everything by default */
@@ -54,7 +54,7 @@ export function ReceiptPrint({ data }: { data: ReceiptData }) {
             top: 0 !important;
             width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 8px !important;
             border: none !important;
           }
           /* Hide the dashboard and other containers specifically to be sure */
@@ -64,83 +64,113 @@ export function ReceiptPrint({ data }: { data: ReceiptData }) {
           }
         }
       `}</style>
+
+      {/* Logo */}
       {data.logo_url && (
-        <div className="flex justify-center mb-4">
-          <img src={data.logo_url} alt="Logo" className="max-h-20 object-contain grayscale" />
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <img src={data.logo_url} alt="Logo" style={{ maxHeight: '60px', objectFit: 'contain', filter: 'grayscale(1)', margin: '0 auto' }} />
         </div>
       )}
 
-      <div className="text-center whitespace-pre-line mb-4 border-b border-dashed border-black pb-4">
+      {/* Header Text in dashed border box */}
+      <div style={{
+        textAlign: 'center',
+        border: '1px dashed #000',
+        padding: '6px 12px',
+        marginBottom: '8px',
+        whiteSpace: 'pre-line',
+        fontSize: '13px',
+      }}>
         {data.header_text}
       </div>
 
-      <div className="flex flex-col gap-1 font-bold mb-4 border-b border-dashed border-black pb-2 text-[14px]">
-        <div className="flex justify-between">
-          <span>BILL NO:</span>
-          <span>#{data.bill_serial_number}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>DATE & TIME:</span>
-          <span>{formatDate(data.created_at)}</span>
-        </div>
+      {/* Bill No & Date/Time - left aligned inline */}
+      <div style={{ marginBottom: '12px', fontSize: '13px', fontWeight: 'bold' }}>
+        <div>BILL NO: #{data.bill_serial_number}</div>
+        <div>DATE & TIME:{formatDate(data.created_at)}</div>
       </div>
 
-      <table className="w-full mb-4">
+      {/* Dashed separator */}
+      <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+      {/* Items Table Header */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
         <thead>
-          <tr className="border-b border-dashed border-black">
-            <th className="text-left py-2 font-bold">ITEM</th>
-            <th className="text-center py-2 font-bold">QTY</th>
-            <th className="text-right py-2 font-bold">PRICE</th>
-            <th className="text-right py-2 font-bold">TOTAL</th>
+          <tr>
+            <th style={{ textAlign: 'left', paddingBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>ITEM</th>
+            <th style={{ textAlign: 'center', paddingBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>QTY</th>
+            <th style={{ textAlign: 'right', paddingBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>PRICE</th>
+            <th style={{ textAlign: 'right', paddingBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>TOTAL</th>
           </tr>
         </thead>
+      </table>
+
+      {/* Dashed separator under header */}
+      <div style={{ borderBottom: '1px dashed #000', marginBottom: '6px' }} />
+
+      {/* Items Table Body */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '8px' }}>
         <tbody>
           {data.items.map((item, idx) => (
-            <tr key={idx} className="border-b border-dotted border-black/30">
-              <td className="py-2">
-                <div className="font-medium">{item.item_name}</div>
-                <div className="text-[10px] text-black/70 italic">GST: {Number(item.gst_rate).toFixed(2)}%</div>
+            <tr key={idx}>
+              <td style={{ paddingBottom: '6px', verticalAlign: 'top' }}>
+                <div style={{ fontWeight: 500 }}>{item.item_name}</div>
+                <div style={{ fontSize: '10px', color: '#555', fontStyle: 'italic' }}>GST: {Number(item.gst_rate).toFixed(2)}%</div>
               </td>
-              <td className="text-center py-2">{item.quantity}</td>
-              <td className="text-right py-2">{Number(item.unit_price).toFixed(2)}</td>
-              <td className="text-right py-2 font-bold">{Number(item.line_total).toFixed(2)}</td>
+              <td style={{ textAlign: 'center', paddingBottom: '6px', verticalAlign: 'top' }}>{item.quantity}</td>
+              <td style={{ textAlign: 'right', paddingBottom: '6px', verticalAlign: 'top' }}>{Number(item.unit_price).toFixed(2)}</td>
+              <td style={{ textAlign: 'right', paddingBottom: '6px', verticalAlign: 'top', fontWeight: 'bold' }}>{Number(item.line_total).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="space-y-1 mb-4 text-[14px]">
-        <div className="flex justify-between">
+      {/* Dashed separator */}
+      <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+      {/* Subtotal, GST, Grand Total */}
+      <div style={{ marginBottom: '12px', fontSize: '13px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <span>Subtotal</span>
           <span>Rs {Number(data.subtotal).toFixed(2)}</span>
         </div>
-        <div className="flex justify-between">
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
           <span>GST Total</span>
           <span>Rs {Number(data.gst_total).toFixed(2)}</span>
         </div>
-        <div className="flex justify-between font-bold border-t border-dashed border-black pt-2 text-[16px]">
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontWeight: 'bold',
+          fontSize: '15px',
+          borderTop: '1px dashed #000',
+          paddingTop: '8px',
+        }}>
           <span>GRAND TOTAL</span>
           <span>Rs {Number(data.grand_total).toFixed(2)}</span>
         </div>
       </div>
 
+      {/* GST Breakdown Summary */}
       {data.show_gst_breakdown && (
-        <div className="text-[10px] border-t border-dashed border-black pt-4 mb-4">
-          <p className="font-bold mb-2 underline uppercase">GST Breakdown Summary</p>
-          <table className="w-full">
+        <div style={{ borderTop: '1px dashed #000', paddingTop: '8px', marginBottom: '12px', fontSize: '10px' }}>
+          <div style={{ fontWeight: 'bold', textDecoration: 'underline', textTransform: 'uppercase', marginBottom: '6px' }}>
+            GST Breakdown Summary
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr className="border-b border-dotted border-black">
-                <th className="text-left">GST RATE</th>
-                <th className="text-right">TAXABLE AMT</th>
-                <th className="text-right">GST AMT</th>
+              <tr style={{ borderBottom: '1px dotted #000' }}>
+                <th style={{ textAlign: 'left', paddingBottom: '2px', fontWeight: 'bold' }}>GST RATE</th>
+                <th style={{ textAlign: 'right', paddingBottom: '2px', fontWeight: 'bold' }}>TAXABLE AMT</th>
+                <th style={{ textAlign: 'right', paddingBottom: '2px', fontWeight: 'bold' }}>GST AMT</th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(gstSlabs).map(([rate, vals]) => (
                 <tr key={rate}>
-                  <td>{rate}%</td>
-                  <td className="text-right">{vals.base.toFixed(2)}</td>
-                  <td className="text-right">{vals.gst.toFixed(2)}</td>
+                  <td style={{ paddingTop: '2px' }}>{rate}%</td>
+                  <td style={{ textAlign: 'right', paddingTop: '2px' }}>{vals.base.toFixed(2)}</td>
+                  <td style={{ textAlign: 'right', paddingTop: '2px' }}>{vals.gst.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -148,11 +178,28 @@ export function ReceiptPrint({ data }: { data: ReceiptData }) {
         </div>
       )}
 
-      <div className="text-center whitespace-pre-line border-t border-dashed border-black pt-4 mb-8 text-[11px]">
+      {/* Footer text */}
+      <div style={{
+        textAlign: 'center',
+        borderTop: '1px dashed #000',
+        paddingTop: '12px',
+        marginBottom: '16px',
+        whiteSpace: 'pre-line',
+        fontSize: '12px',
+        fontStyle: 'italic',
+      }}>
         {data.footer_text}
       </div>
 
-      <div className="text-center text-[9px] text-black/60 italic border-t border-black/10 pt-2">
+      {/* Software branding */}
+      <div style={{
+        textAlign: 'center',
+        fontSize: '9px',
+        color: 'rgba(0,0,0,0.5)',
+        fontStyle: 'italic',
+        borderTop: '1px solid rgba(0,0,0,0.1)',
+        paddingTop: '6px',
+      }}>
         Software by RestroManager
       </div>
     </div>
