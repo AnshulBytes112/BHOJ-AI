@@ -353,34 +353,90 @@ export default function OrdersPage() {
         {/* KOT Dialog */}
         <Dialog open={kotOpen} onOpenChange={setKotOpen}>
           <DialogContent className="max-w-sm">
-            <DialogHeader><DialogTitle className="text-center">Kitchen Order Ticket</DialogTitle></DialogHeader>
-            {kotOrder && (
-              <div className="space-y-4 font-mono text-sm">
-                <div className="text-center border-b pb-2">
-                  <p className="font-bold text-lg">KOT</p>
-                  <p>Order: <strong>{shortId(kotOrder.order_id)}</strong></p>
-                  <p>Table: {kotOrder.table_number || kotOrder.table_id}</p>
-                  <p>{fmtDate(kotOrder.created_at)}</p>
+            <DialogHeader>
+              <DialogTitle className="text-center text-sm font-normal p-0 m-0">
+                <div style={{
+                  fontFamily: 'monospace',
+                  border: '1px dashed #000',
+                  padding: '6px 12px',
+                  textAlign: 'center',
+                  fontSize: '14px',
+                  fontWeight: 'normal',
+                }}>
+                  RestroManager Hotel
                 </div>
-                <div className="space-y-2">
+              </DialogTitle>
+              <DialogDescription className="sr-only">Kitchen Order Ticket</DialogDescription>
+            </DialogHeader>
+            {kotOrder && (
+              <div className="flex flex-col gap-0 font-mono text-sm" style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                {/* KOT label */}
+                <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13px', marginBottom: '6px', letterSpacing: '2px' }}>
+                  KITCHEN ORDER TICKET
+                </div>
+
+                {/* Order info - left aligned */}
+                <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '8px' }}>
+                  <div>ORDER NO: #{shortId(kotOrder.order_id)}</div>
+                  <div>TABLE: {kotOrder.table_number || kotOrder.table_id}</div>
+                  <div style={{ fontWeight: 'normal', fontSize: '12px' }}>DATE & TIME:{fmtDate(kotOrder.created_at)}</div>
+                </div>
+
+                {/* Dashed separator */}
+                <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+                {/* Items header */}
+                <div className="flex" style={{ marginBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>
+                  <span style={{ flex: 3, textAlign: 'left' }}>ITEM</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>QTY</span>
+                </div>
+
+                {/* Dashed separator */}
+                <div style={{ borderBottom: '1px dashed #000', marginBottom: '6px' }} />
+
+                {/* Items */}
+                <div style={{ marginBottom: '8px' }}>
                   {safeItems(kotOrder.items).map((item, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span className="font-semibold">{item.item_name || `Item #${item.item_id}`}</span>
-                      <span className="font-bold">× {item.quantity}</span>
+                    <div key={i} className="flex" style={{ marginBottom: '4px' }}>
+                      <span style={{ flex: 3, textAlign: 'left' }}>{item.item_name || `Item #${item.item_id}`}</span>
+                      <span style={{ flex: 1, textAlign: 'right', fontWeight: 'bold' }}>{item.quantity}</span>
                     </div>
                   ))}
                 </div>
-                <div className="border-t pt-2 text-center text-xs text-muted-foreground">
-                  Status: {(kotOrder.status || '').replace('_', ' ').toUpperCase()}
+
+                {/* Dashed separator */}
+                <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+                {/* Status */}
+                <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>
+                  Status: <strong>{(kotOrder.status || '').replace('_', ' ').toUpperCase()}</strong>
+                </div>
+
+                {/* Footer */}
+                <div style={{
+                  textAlign: 'center',
+                  borderTop: '1px dashed #000',
+                  paddingTop: '12px',
+                  marginTop: '4px',
+                  fontSize: '11px',
+                  fontStyle: 'italic',
+                }}>
+                  Thank you for visiting! Come again.
+                </div>
+
+                <div style={{
+                  textAlign: 'center',
+                  fontSize: '9px',
+                  color: 'rgba(0,0,0,0.5)',
+                  fontStyle: 'italic',
+                  marginTop: '8px',
+                  borderTop: '1px solid rgba(0,0,0,0.1)',
+                  paddingTop: '6px',
+                }}>
+                  Software by RestroManager
                 </div>
               </div>
             )}
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setKotOpen(false)}>Close</Button>
-              <Button className="bg-primary text-white hover:bg-primary/90 gap-2" onClick={() => window.print()}>
-                <Printer className="w-4 h-4" /> Print
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
 
