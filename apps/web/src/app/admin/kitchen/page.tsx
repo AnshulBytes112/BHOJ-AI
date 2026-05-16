@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import apiClient from '@/services/apiClient';
+import { useFilter } from '@/lib/filter-context';
 import { cn } from '@/lib/utils';
 import { RoleGuard } from '@/components/auth/role-guard';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
@@ -164,11 +164,9 @@ function KOTPageInner() {
   const [loading, setLoading] = useState(true);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [printKotOpen, setPrintKotOpen] = useState(false);
-  
-  // URL params for date/time filtering
-  const searchParams = useSearchParams();
-  const filterDate = searchParams.get('date');
-  const filterTime = searchParams.get('time');
+
+  // Context-based date/time filter (no URL changes)
+  const { filterDate, filterTime } = useFilter();
 
   const fetchSections = useCallback(async () => {
     try {
