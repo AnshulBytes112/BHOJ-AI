@@ -145,8 +145,21 @@ kotsRouter.get('/sections/list', async (req, res) => {
        WHERE c.is_active = true
        GROUP BY c.name ORDER BY c.name`
     );
+
+    // Fallback: if no categories exist, pull distinct section names from section_kots
+    if (result.rows.length === 0) {
+      const fallback = await pool.query(
+        `SELECT DISTINCT section_name as section_id, section_name,
+                COUNT(*) FILTER (WHERE status = 'pending') as pending_count
+         FROM section_kots
+         GROUP BY section_name ORDER BY section_name`
+      );
+      return res.json(fallback.rows);
+    }
+
     res.json(result.rows);
   } catch (err: any) {
     console.error('GET /kots/sections/list error:', err);
     res.status(500).json({ message: 'Failed to fetch sections' });
   }
+});
