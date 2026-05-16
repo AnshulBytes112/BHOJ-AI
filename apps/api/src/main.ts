@@ -35,6 +35,7 @@ app.get('/api/health', (req, res) => {
   res.send({
     message: 'API is healthy',
     status: 'ok',
+    version: 'v2',
     timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
   });
 });
