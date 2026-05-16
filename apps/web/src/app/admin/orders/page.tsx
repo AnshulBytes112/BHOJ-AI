@@ -73,8 +73,33 @@ export default function OrdersPage() {
   async function load(silent = false) {
     if (!silent) { setIsLoading(true); setErrorMsg(null); }
     try {
-      const r = await apiClient.get<Order[]>('/orders');
-      const data = (r.data ?? []).map(o => ({ ...o, items: safeItems(o.items) }));
+      // Fetch both orders and KOTs to manually sync status on the frontend
+      // as a fallback while the backend is deploying.
+      const [r, kotsRes] = await Promise.all([
+        apiClient.get<Order[]>('/orders'),
+        apiClient.get<any[]>('/kots').catch(() => ({ data: [] }))
+      ]);
+      
+      const allKots = kotsRes.data || [];
+      
+      const data = (r.data ?? []).map(o => {
+        let currentStatus = o.status;
+        
+        // Find all KOTs for this order
+        const orderKots = allKots.filter((k: any) => k.order_id === o.order_id);
+        
+        // If the order has KOTs and ALL of them are completed, force the order status to completed
+        if (orderKots.length > 0 && orderKots.every((k: any) => k.status === 'completed')) {
+          currentStatus = 'completed';
+        }
+        
+        return { 
+          ...o, 
+          status: currentStatus,
+          items: safeItems(o.items) 
+        };
+      });
+      
       setOrders(data);
       // Update selected order if it exists, otherwise set to first
       if (data.length > 0) {
