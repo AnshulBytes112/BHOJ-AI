@@ -18,32 +18,59 @@ kotsRouter.get('/', async (req, res) => {
   }
 });
 
-// GET /kots/:kotId/sections - get all section KOTs for a parent KOT
-kotsRouter.get('/:kotId/sections', async (req, res) => {
-  const { kotId } = req.params;
+// ⚠️  IMPORTANT: These specific-path routes MUST come before /:kotId/sections
+// to prevent Express from matching "sections" as a kotId parameter.
+
+// GET /kots/sections/list - list all kitchen sections with their active KOTs count
+kotsRouter.get('/sections/list', async (req, res) => {
   try {
-    const skotsResult = await pool.query(
-      `SELECT sk.section_kot_id, sk.parent_kot_id, sk.section_id, sk.section_name,
-              sk.section_kot_number, sk.status, sk.generated_at
-       FROM section_kots sk WHERE sk.parent_kot_id = $1`,
-      [kotId]
-    );
+    // First try: get categories and count pending KOTs per category
+    try {
+      const result = await pool.query(
+        `SELECT c.name as section_id, c.name as section_name,
+                COALESCE(COUNT(sk.section_kot_id) FILTER (WHERE sk.status = 'pending'), 0) as pending_count
+         FROM categories c
+         LEFT JOIN section_kots sk ON sk.section_name = c.name
+         WHERE c.is_active = true
+         GROUP BY c.name ORDER BY c.name`
+      );
+      if (result.rows.length > 0) {
+        return res.json(result.rows);
+      }
+    } catch (sqlErr: any) {
+      console.error('sections/list primary query failed:', sqlErr.message);
+    }
 
-    const sectionKots = await Promise.all(
-      skotsResult.rows.map(async (skot) => {
-        const itemsResult = await pool.query(
-          `SELECT ski.section_kot_item_id, ski.item_id, ski.item_name, ski.quantity, ski.serial_number
-           FROM section_kot_items ski WHERE ski.section_kot_id = $1`,
-          [skot.section_kot_id]
-        );
-        return { ...skot, items: itemsResult.rows };
-      })
-    );
+    // Second try: just get categories without KOT counts
+    try {
+      const catResult = await pool.query(
+        `SELECT name as section_id, name as section_name, '0' as pending_count
+         FROM categories WHERE is_active = true ORDER BY name`
+      );
+      if (catResult.rows.length > 0) {
+        return res.json(catResult.rows);
+      }
+    } catch (catErr: any) {
+      console.error('sections/list categories fallback failed:', catErr.message);
+    }
 
-    res.json(sectionKots);
+    // Third try: pull from existing section_kots
+    try {
+      const fallback = await pool.query(
+        `SELECT DISTINCT section_name as section_id, section_name,
+                COUNT(*) FILTER (WHERE status = 'pending') as pending_count
+         FROM section_kots
+         GROUP BY section_name ORDER BY section_name`
+      );
+      return res.json(fallback.rows);
+    } catch (fbErr: any) {
+      console.error('sections/list section_kots fallback failed:', fbErr.message);
+    }
+
+    res.json([]);
   } catch (err: any) {
-    console.error('GET /kots/:kotId/sections error:', err);
-    res.status(500).json({ message: 'Failed to fetch section KOTs' });
+    console.error('GET /kots/sections/list error:', err);
+    res.status(500).json({ message: 'Failed to fetch sections' });
   }
 });
 
@@ -158,55 +185,32 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   }
 });
 
-// GET /kots/sections - list all kitchen sections (based on POS categories) with their active KOTs count
-kotsRouter.get('/sections/list', async (req, res) => {
+// GET /kots/:kotId/sections - get all section KOTs for a parent KOT
+// NOTE: This wildcard route must remain AFTER all specific-path routes above.
+kotsRouter.get('/:kotId/sections', async (req, res) => {
+  const { kotId } = req.params;
   try {
-    // First try: get categories and count pending KOTs per category
-    try {
-      const result = await pool.query(
-        `SELECT c.name as section_id, c.name as section_name,
-                COALESCE(COUNT(sk.section_kot_id) FILTER (WHERE sk.status = 'pending'), 0) as pending_count
-         FROM categories c
-         LEFT JOIN section_kots sk ON sk.section_name = c.name
-         WHERE c.is_active = true
-         GROUP BY c.name ORDER BY c.name`
-      );
-      if (result.rows.length > 0) {
-        return res.json(result.rows);
-      }
-    } catch (sqlErr: any) {
-      console.error('sections/list primary query failed:', sqlErr.message);
-    }
+    const skotsResult = await pool.query(
+      `SELECT sk.section_kot_id, sk.parent_kot_id, sk.section_id, sk.section_name,
+              sk.section_kot_number, sk.status, sk.generated_at
+       FROM section_kots sk WHERE sk.parent_kot_id = $1`,
+      [kotId]
+    );
 
-    // Second try: just get categories without KOT counts
-    try {
-      const catResult = await pool.query(
-        `SELECT name as section_id, name as section_name, '0' as pending_count
-         FROM categories WHERE is_active = true ORDER BY name`
-      );
-      if (catResult.rows.length > 0) {
-        return res.json(catResult.rows);
-      }
-    } catch (catErr: any) {
-      console.error('sections/list categories fallback failed:', catErr.message);
-    }
+    const sectionKots = await Promise.all(
+      skotsResult.rows.map(async (skot) => {
+        const itemsResult = await pool.query(
+          `SELECT ski.section_kot_item_id, ski.item_id, ski.item_name, ski.quantity, ski.serial_number
+           FROM section_kot_items ski WHERE ski.section_kot_id = $1`,
+          [skot.section_kot_id]
+        );
+        return { ...skot, items: itemsResult.rows };
+      })
+    );
 
-    // Third try: pull from existing section_kots
-    try {
-      const fallback = await pool.query(
-        `SELECT DISTINCT section_name as section_id, section_name,
-                COUNT(*) FILTER (WHERE status = 'pending') as pending_count
-         FROM section_kots
-         GROUP BY section_name ORDER BY section_name`
-      );
-      return res.json(fallback.rows);
-    } catch (fbErr: any) {
-      console.error('sections/list section_kots fallback failed:', fbErr.message);
-    }
-
-    res.json([]);
+    res.json(sectionKots);
   } catch (err: any) {
-    console.error('GET /kots/sections/list error:', err);
-    res.status(500).json({ message: 'Failed to fetch sections' });
+    console.error('GET /kots/:kotId/sections error:', err);
+    res.status(500).json({ message: 'Failed to fetch section KOTs' });
   }
 });

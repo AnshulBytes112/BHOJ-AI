@@ -177,6 +177,8 @@ function KOTPageInner() {
       }
       
       setSections(res.data);
+      // ✅ Clear loading on success path too
+      if (!silent) setLoading(false);
     } catch (e) { 
       console.error('sections/list failed, falling back to /categories:', e); 
       // If the backend sections table is empty or throwing an error, fallback to fetching categories 
