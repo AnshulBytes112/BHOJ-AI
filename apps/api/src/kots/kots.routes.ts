@@ -119,8 +119,10 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
 
   const client = await pool.connect();
   try {
+    let currentStep = 'begin';
     await client.query('BEGIN');
 
+    currentStep = 'update_section_kot';
     const skotResult = await client.query(
       `UPDATE section_kots SET status = $1::kot_status WHERE section_kot_id = $2 RETURNING *`,
       [status, sectionKotId]
@@ -135,6 +137,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
 
     let orderIdToComplete: string | null = null;
 
+    currentStep = 'fetch_siblings';
     // Update parent KOT status based on all children
     const siblings = await client.query(
       `SELECT status FROM section_kots WHERE parent_kot_id = $1`,
@@ -151,6 +154,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     }
 
     if (parentStatus) {
+      currentStep = 'update_parent_kot';
       await client.query(
         `UPDATE kots SET status = $1::kot_status WHERE kot_id = $2`,
         [parentStatus, skot.parent_kot_id]
@@ -160,12 +164,14 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
       // When all section KOTs are completed, we want to update the order status
       // We will do this AFTER committing the transaction to prevent enum cast errors from poisoning it
       if (parentStatus === 'completed') {
+        currentStep = 'fetch_kot_order_id';
         const kotRow = await client.query(
           `SELECT order_id FROM kots WHERE kot_id = $1`,
           [skot.parent_kot_id]
         );
         if (kotRow.rows.length > 0) {
           const orderId = kotRow.rows[0].order_id;
+          currentStep = 'fetch_order_kots';
           const allKotsForOrder = await client.query(
             `SELECT status FROM kots WHERE order_id = $1`,
             [orderId]
@@ -177,6 +183,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
       }
     }
 
+    currentStep = 'commit';
     await client.query('COMMIT');
     res.json({ ...skot, parentStatus });
     
@@ -204,7 +211,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   } catch (err: any) {
     await client.query('ROLLBACK');
     console.error('POST /kots/section-kots/:sectionKotId/status error:', err.message, err.stack);
-    res.status(500).json({ message: err.message || 'Failed to update section KOT status' });
+    res.status(500).json({ message: err.message || 'Failed to update section KOT status', step: currentStep });
   } finally {
     client.release();
   }

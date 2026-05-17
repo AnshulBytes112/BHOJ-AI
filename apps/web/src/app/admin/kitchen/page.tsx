@@ -285,8 +285,14 @@ function KOTPageInner() {
 
       // Re-fetch sections counts silently (don't trigger full reload cascade)
       fetchSections(true);
-    } catch (e) { console.error(e); }
-    finally { setUpdatingStatus(false); }
+      setUpdatingStatus(false);
+    } catch (e: any) {
+      console.error(e);
+      setUpdatingStatus(false);
+      const errMsg = e.response?.data?.message || e.message;
+      const errStep = e.response?.data?.step || 'unknown';
+      alert(`Error updating KOT: ${errMsg}\nStep: ${errStep}`);
+    }
   };
 
   // Always show ALL sections as columns — activeTab only highlights/filters cards within each column
