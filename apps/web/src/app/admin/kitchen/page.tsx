@@ -245,18 +245,30 @@ function KOTPageInner() {
       await apiClient.post(`/kots/section-kots/${selectedKot.section_kot_id}/status`, { status: nextStatus });
       
       const updated = { ...selectedKot, status: nextStatus as any };
-      setSelectedKot(updated);
-      
-      setKotsBySection(prev => {
-        const copy = { ...prev };
-        const sid = selectedKot.section_id;
-        if (copy[sid]) copy[sid] = copy[sid].map(k => k.section_kot_id === selectedKot.section_kot_id ? updated : k);
-        return copy;
-      });
-      
-      setAllKots(prev => prev.map(k => k.section_kot_id === selectedKot.section_kot_id ? updated : k));
-      
-      fetchSections();
+
+      // If completed, close the detail panel and remove from lists immediately
+      if (nextStatus === 'completed') {
+        setSelectedKot(null);
+        setKotsBySection(prev => {
+          const copy = { ...prev };
+          const sid = selectedKot.section_id;
+          if (copy[sid]) copy[sid] = copy[sid].filter(k => k.section_kot_id !== selectedKot.section_kot_id);
+          return copy;
+        });
+        setAllKots(prev => prev.filter(k => k.section_kot_id !== selectedKot.section_kot_id));
+      } else {
+        setSelectedKot(updated);
+        setKotsBySection(prev => {
+          const copy = { ...prev };
+          const sid = selectedKot.section_id;
+          if (copy[sid]) copy[sid] = copy[sid].map(k => k.section_kot_id === selectedKot.section_kot_id ? updated : k);
+          return copy;
+        });
+        setAllKots(prev => prev.map(k => k.section_kot_id === selectedKot.section_kot_id ? updated : k));
+      }
+
+      // Re-fetch sections counts silently (don't trigger full reload cascade)
+      fetchSections(true);
     } catch (e) { console.error(e); }
     finally { setUpdatingStatus(false); }
   };
@@ -264,28 +276,20 @@ function KOTPageInner() {
   // Always show ALL sections as columns — activeTab only highlights/filters cards within each column
   const displayedSections = sections;
 
-  // Apply date and time filters
+  // Apply date/time filters AND hide completed KOTs (they auto-remove when marked Ready)
   const filteredAllKots = allKots.filter(kot => {
+    if (kot.status === 'completed') return false; // auto-remove completed
     if (!filterDate && !filterTime) return true;
     const kotDateObj = new Date(kot.generated_at);
-    
-    if (filterDate) {
-      const kDate = kotDateObj.toISOString().split('T')[0];
-      if (kDate !== filterDate) return false;
-    }
-    
-    if (filterTime) {
-      const kTime = kotDateObj.toTimeString().slice(0, 5); // HH:mm
-      // Optional: you could check if the time is strictly exactly equal, or perhaps within the same hour
-      // For now, exact matching on HH:mm if provided
-      if (kTime !== filterTime) return false;
-    }
+    if (filterDate && kotDateObj.toISOString().split('T')[0] !== filterDate) return false;
+    if (filterTime && kotDateObj.toTimeString().slice(0, 5) !== filterTime) return false;
     return true;
   });
 
   const filteredKotsBySection: Record<string, SectionKOT[]> = {};
   for (const [key, kots] of Object.entries(kotsBySection)) {
     filteredKotsBySection[key] = kots.filter(kot => {
+      if (kot.status === 'completed') return false; // auto-remove completed
       if (!filterDate && !filterTime) return true;
       const kotDateObj = new Date(kot.generated_at);
       if (filterDate && kotDateObj.toISOString().split('T')[0] !== filterDate) return false;
@@ -294,11 +298,12 @@ function KOTPageInner() {
     });
   }
 
+  // Counts include completed KOTs so the "Ready" stat card still shows correctly
   const counts = {
-    total: filteredAllKots.length,
-    pending: filteredAllKots.filter(k => k.status === 'pending').length,
-    acknowledged: filteredAllKots.filter(k => k.status === 'acknowledged').length,
-    completed: filteredAllKots.filter(k => k.status === 'completed').length,
+    total: allKots.length,
+    pending: allKots.filter(k => k.status === 'pending').length,
+    acknowledged: allKots.filter(k => k.status === 'acknowledged').length,
+    completed: allKots.filter(k => k.status === 'completed').length,
   };
 
   return (
