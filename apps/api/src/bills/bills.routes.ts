@@ -61,12 +61,12 @@ function parsePositiveInt(value: unknown, fieldName: string): number {
   return num;
 }
 
-function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Array<{ itemId: number; quantity: number }> } {
+function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Array<{ itemId: number; quantity: number }>; tableId?: string; orderIds?: string[] } {
   if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
     throw new Error('Request body must be a valid object.');
   }
 
-  const body = rawBody as { cashier_id?: unknown; items?: unknown };
+  const body = rawBody as { cashier_id?: unknown; items?: unknown; table_id?: unknown; order_ids?: unknown };
   const cashierId = body.cashier_id === undefined ? 1 : parsePositiveInt(body.cashier_id, 'cashier_id');
 
   if (!Array.isArray(body.items) || body.items.length === 0) {
@@ -87,7 +87,12 @@ function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Arra
     };
   });
 
-  return { cashierId, lines };
+  return { 
+    cashierId, 
+    lines, 
+    tableId: typeof body.table_id === 'string' ? body.table_id : undefined,
+    orderIds: Array.isArray(body.order_ids) ? body.order_ids : undefined
+  };
 }
 
 async function getGstRateForCategory(client: PoolClient, category: string): Promise<number> {
@@ -112,13 +117,11 @@ billsRouter.post('/', async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const { cashierId, lines } = parseCreateBillBody(req.body);
+    const { cashierId, lines, tableId, orderIds } = parseCreateBillBody(req.body);
 
     await client.query('BEGIN');
 
-    // cashier_id is informational — skip hard validation so bill can be created
-    // even if the user record doesn't exist in the users table
-
+    // ... existing logic to calculate subtotal, gstTotal, etc.
     const mergedLineMap = new Map<number, number>();
     for (const line of lines) {
       mergedLineMap.set(line.itemId, (mergedLineMap.get(line.itemId) ?? 0) + line.quantity);
@@ -208,6 +211,21 @@ billsRouter.post('/', async (req, res) => {
           line.gst_amount,
           line.line_total,
         ]
+      );
+    }
+
+    // Update status for relevant orders and table
+    if (orderIds && orderIds.length > 0) {
+      await client.query(
+        'UPDATE orders SET status = \'completed\' WHERE order_id = ANY($1::uuid[])',
+        [orderIds]
+      );
+    }
+
+    if (tableId) {
+      await client.query(
+        'UPDATE tables SET status = \'free\' WHERE table_id = $1',
+        [tableId]
       );
     }
 

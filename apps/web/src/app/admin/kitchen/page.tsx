@@ -129,23 +129,32 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
     <div
       onClick={onClick}
       className={cn(
-        'rounded-xl border bg-white cursor-pointer transition-all hover:shadow-md',
-        selected ? 'ring-2 ring-blue-400 shadow-md' : 'border-gray-200 hover:border-gray-300',
+        'rounded-xl border bg-white cursor-pointer transition-all hover:shadow-md h-full flex flex-col',
+        selected ? 'ring-2 ring-blue-400 shadow-md scale-[1.02]' : 'border-gray-200 hover:border-gray-300',
       )}
     >
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <span className={cn('text-xs font-bold', pal.text)}>{kot.section_kot_number}</span>
-        <span className="text-xs text-gray-400">{fmtTime(kot.generated_at)}</span>
+      <div className="flex items-center justify-between px-3 pt-2 pb-1 border-b border-gray-50 bg-gray-50/30 rounded-t-xl">
+        <span className={cn('text-[10px] font-bold tracking-tight', pal.text)}>{kot.section_kot_number}</span>
+        <span className="text-[10px] text-gray-400 font-mono">{fmtTime(kot.generated_at)}</span>
       </div>
-      <div className="px-3 pb-3">
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-sm font-semibold text-gray-800">Table {kot.table_number}</span>
-        </div>
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-xs text-gray-400">{kot.items.length} Item{kot.items.length !== 1 ? 's' : ''}</span>
-          <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full border', statusPill(kot.status))}>
+      <div className="px-3 py-2 flex-1 flex flex-col justify-between">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">T-{kot.table_number}</span>
+          <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-current bg-white', statusPill(kot.status))}>
             {statusLabel(kot.status)}
           </span>
+        </div>
+        
+        <div className="mt-1.5 space-y-0.5 max-h-[80px] overflow-hidden">
+          {kot.items.slice(0, 3).map((item, i) => (
+            <div key={i} className="flex justify-between text-[10px] text-gray-600">
+              <span className="truncate max-w-[80px]">{item.item_name}</span>
+              <span className="font-bold">x{item.quantity}</span>
+            </div>
+          ))}
+          {kot.items.length > 3 && (
+            <div className="text-[9px] text-gray-400 italic">+{kot.items.length - 3} more...</div>
+          )}
         </div>
       </div>
     </div>
@@ -298,9 +307,25 @@ function KOTPageInner() {
   // Always show ALL sections as columns — activeTab only highlights/filters cards within each column
   const displayedSections = sections;
 
+  const [localSearch, setLocalSearch] = useState('');
+  const [showStatusFilter, setShowStatusFilter] = useState<'all' | 'pending' | 'acknowledged'>('all');
+
   // Apply date/time filters AND hide completed KOTs (they auto-remove when marked Ready)
   const filteredAllKots = allKots.filter(kot => {
     if (kot.status === 'completed') return false; // auto-remove completed
+    
+    // Status Filter
+    if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
+
+    // Search Filter (Table or KOT #)
+    if (localSearch) {
+      const search = localSearch.toLowerCase();
+      const matches = 
+        kot.table_number.toLowerCase().includes(search) || 
+        kot.section_kot_number.toLowerCase().includes(search);
+      if (!matches) return false;
+    }
+
     if (!filterDate && !filterTime) return true;
     const kotDateObj = new Date(kot.generated_at);
     if (filterDate && kotDateObj.toISOString().split('T')[0] !== filterDate) return false;
@@ -312,6 +337,19 @@ function KOTPageInner() {
   for (const [key, kots] of Object.entries(kotsBySection)) {
     filteredKotsBySection[key] = kots.filter(kot => {
       if (kot.status === 'completed') return false; // auto-remove completed
+      
+      // Status Filter
+      if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
+
+      // Search Filter
+      if (localSearch) {
+        const search = localSearch.toLowerCase();
+        const matches = 
+          kot.table_number.toLowerCase().includes(search) || 
+          kot.section_kot_number.toLowerCase().includes(search);
+        if (!matches) return false;
+      }
+
       if (!filterDate && !filterTime) return true;
       const kotDateObj = new Date(kot.generated_at);
       if (filterDate && kotDateObj.toISOString().split('T')[0] !== filterDate) return false;
@@ -340,12 +378,55 @@ function KOTPageInner() {
             <p className="text-sm text-gray-400 mt-0.5">View and manage kitchen orders by sections</p>
           </div>
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => alert("Filter functionality coming soon!")}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm"
-            >
-              <Filter size={14} /> Filter
-            </button>
+            <div className="relative group">
+              <button 
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm"
+              >
+                <Filter size={14} /> 
+                {showStatusFilter === 'all' ? 'All Status' : statusLabel(showStatusFilter)}
+              </button>
+              
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-1">
+                <button 
+                  onClick={() => setShowStatusFilter('all')}
+                  className={cn("w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50", showStatusFilter === 'all' && "bg-orange-50 text-orange-600 font-bold")}
+                >
+                  All Status
+                </button>
+                <button 
+                  onClick={() => setShowStatusFilter('pending')}
+                  className={cn("w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50", showStatusFilter === 'pending' && "bg-orange-50 text-orange-600 font-bold")}
+                >
+                  New (Pending)
+                </button>
+                <button 
+                  onClick={() => setShowStatusFilter('acknowledged')}
+                  className={cn("w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50", showStatusFilter === 'acknowledged' && "bg-orange-50 text-orange-600 font-bold")}
+                >
+                  In Progress
+                </button>
+              </div>
+            </div>
+
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="Search table or KOT..."
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 w-64 shadow-sm"
+              />
+              <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+              {localSearch && (
+                <button 
+                  onClick={() => setLocalSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
             <button
               onClick={() => {
                 setLoading(true);
@@ -407,9 +488,9 @@ function KOTPageInner() {
         </div>
 
         {/* ── Main Content ── */}
-        <div className="flex gap-4" style={{ minHeight: '400px' }}>
-          {/* Section Columns */}
-          <div className="flex-1 flex gap-4 overflow-x-auto pb-2">
+        <div className="flex flex-col gap-6" style={{ minHeight: '400px' }}>
+          {/* Section Rows */}
+          <div className="flex-1 flex flex-col gap-8">
             {loading ? (
               <div className="flex-1 flex items-center justify-center text-gray-400">
                 <RefreshCw className="animate-spin mr-2" size={18} /> Loading KOTs…
@@ -423,278 +504,222 @@ function KOTPageInner() {
               displayedSections.map(section => {
                 const pal = getSectionPalette(section.section_id);
                 const sectionKots = filteredKotsBySection[section.section_id] || [];
-                // When a specific tab is active, only show cards for that section; otherwise show up to PREVIEW
-                const isHighlighted = activeTab === 'all' || activeTab === section.section_id;
-                const PREVIEW = 5;
-                const shown = (activeTab === 'all' || activeTab === section.section_id)
-                  ? sectionKots
-                  : [];
-                const hasMore = false;
+                const isActive = activeTab === 'all' || activeTab === section.section_id;
+
+                if (!isActive) return null;
 
                 return (
                   <div
                     key={section.section_id}
-                    className={cn(
-                      'flex flex-col min-w-[210px] w-[210px] shrink-0 transition-opacity',
-                      activeTab !== 'all' && activeTab !== section.section_id ? 'opacity-30' : ''
-                    )}
+                    className="flex flex-col gap-4 animate-in fade-in slide-in-from-left-2 duration-300"
                   >
-                    {/* Column header */}
-                    <div className={cn('flex items-center justify-between mb-3 pb-2 border-b-2', pal.border)}>
-                      <div className="flex items-center gap-1.5">
-                        <SectionIcon name={section.section_name} size={15} className={pal.text} />
-                        <span className={cn('font-bold text-sm', pal.text)}>
-                          {section.section_name} ({sectionKots.length})
-                        </span>
+                    {/* Row header */}
+                    <div className={cn('flex items-center justify-between pb-2 border-b-2', pal.border)}>
+                      <div className="flex items-center gap-2">
+                        <div className={cn('p-1.5 rounded-lg bg-white border', pal.border)}>
+                          <SectionIcon name={section.section_name} size={18} className={pal.text} />
+                        </div>
+                        <div>
+                          <span className={cn('font-bold text-lg', pal.text)}>
+                            {section.section_name}
+                          </span>
+                          <span className="ml-3 text-xs font-mono text-gray-400 uppercase tracking-widest">
+                            {sectionKots.length} ACTIVE KOTS
+                          </span>
+                        </div>
                       </div>
-                      <button className="text-gray-300 hover:text-gray-500 transition-colors">
-                        <MoreVertical size={15} />
-                      </button>
                     </div>
 
-                    {/* Cards */}
-                    <div className="flex flex-col gap-2.5 flex-1">
-                      {shown.length === 0 ? (
-                        <div className="text-center text-xs text-gray-400 py-10">No KOTs</div>
-                      ) : shown.map(kot => (
-                        <KotCard
-                          key={kot.section_kot_id}
-                          kot={kot}
-                          selected={selectedKot?.section_kot_id === kot.section_kot_id}
-                          onClick={() => setSelectedKot(kot)}
-                        />
+                    {/* Cards Horizontal Grid */}
+                    <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2">
+                      {sectionKots.length === 0 ? (
+                        <div className="w-full flex items-center justify-center py-8 border-2 border-dashed border-gray-100 rounded-2xl text-gray-400 text-sm">
+                          No active orders for this section
+                        </div>
+                      ) : sectionKots.map(kot => (
+                        <div key={kot.section_kot_id} className="min-w-[180px] w-[180px]">
+                          <KotCard
+                            kot={kot}
+                            selected={selectedKot?.section_kot_id === kot.section_kot_id}
+                            onClick={() => setSelectedKot(kot)}
+                          />
+                        </div>
                       ))}
                     </div>
-
-                    {/* View All */}
-                    {hasMore && (
-                      <button
-                        onClick={() => setActiveTab(section.section_id)}
-                        className={cn('mt-3 text-xs font-semibold text-center py-1.5', pal.text, 'hover:underline')}
-                      >
-                        View All ({sectionKots.length})
-                      </button>
-                    )}
                   </div>
                 );
               })
             )}
           </div>
 
-          {/* ── KOT Detail Panel ── */}
+          {/* ── KOT Detail Panel Overlay ── */}
           {selectedKot && (
-            <div className="w-[310px] shrink-0 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <span className="font-bold text-gray-800 text-sm">KOT Details</span>
-                <button onClick={() => setSelectedKot(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* KOT number + status */}
-              <div className="px-5 pt-4 pb-2">
-                <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider', statusPill(selectedKot.status))}>
-                  {statusLabel(selectedKot.status)}
-                </span>
-                <p className={cn('text-2xl font-black mt-2', getSectionPalette(selectedKot.section_id).text)}>
-                  {selectedKot.section_kot_number}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">{selectedKot.section_name}</p>
-              </div>
-
-              {/* Detail rows */}
-              <div className="px-5 py-3 flex flex-col gap-2.5">
-                <DetailRow icon={<TableIcon size={13} />} label="Table No." value={selectedKot.table_number} />
-                <DetailRow icon={<User size={13} />} label="Waiter" value="—" />
-                <DetailRow icon={<CalendarDays size={13} />} label="Order Time" value={fmtFull(selectedKot.generated_at)} />
-                <DetailRow icon={<Clock size={13} />} label="KOT Time" value={fmtFull(selectedKot.generated_at)} />
-                <DetailRow icon={<Hash size={13} />} label="Items" value={String(selectedKot.items.length)} />
-                <DetailRow icon={<CheckCircle size={13} />} label="Status" value={
-                  <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full border', statusPill(selectedKot.status))}>
-                    {statusLabel(selectedKot.status)}
-                  </span>
-                } />
-              </div>
-
-              {/* Items */}
-              <div className="px-5 flex-1 overflow-y-auto">
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">Order Items</p>
-                <div className="flex text-[11px] font-semibold text-gray-400 border-b border-gray-100 pb-1.5 mb-2">
-                  <span className="flex-1">Item Name</span>
-                  <span className="w-8 text-right">Qty</span>
-                </div>
-                {selectedKot.items.map((item, i) => (
-                  <div key={i} className="flex items-center text-sm py-1.5 border-b border-gray-50 last:border-0">
-                    <span className="flex-1 text-gray-700 font-medium text-[13px]">{item.item_name}</span>
-                    <span className="w-8 text-right font-bold text-gray-600 text-[13px]">{item.quantity}</span>
+            <>
+              <div className="fixed inset-y-0 right-0 w-[400px] bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                  <div>
+                    <h2 className="font-bold text-gray-900">Order Detail</h2>
+                    <p className="text-[10px] text-gray-400 font-mono uppercase tracking-tighter">
+                      KOT-#{selectedKot.section_kot_number}
+                    </p>
                   </div>
-                ))}
-                <div className="mt-4 pt-3 border-t border-gray-100">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-1">Remarks / Note</p>
-                  <p className="text-xs text-gray-400 italic">—</p>
+                  <button onClick={() => setSelectedKot(null)} className="p-2 hover:bg-white rounded-full border border-transparent hover:border-gray-200 transition-all text-gray-400 hover:text-gray-600">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest', statusPill(selectedKot.status))}>
+                        {statusLabel(selectedKot.status)}
+                      </span>
+                      <p className={cn('text-3xl font-black', getSectionPalette(selectedKot.section_id).text)}>
+                        T-{selectedKot.table_number}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400 uppercase font-bold tracking-tighter">Order Time</p>
+                      <p className="font-mono text-sm text-gray-700">{fmtTime(selectedKot.generated_at)}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-3">
+                    <div className="flex items-center justify-between text-[10px] text-gray-400 uppercase tracking-widest font-black border-b pb-2">
+                      <span>Item Name</span>
+                      <span>Quantity</span>
+                    </div>
+                    <div className="space-y-2">
+                      {selectedKot.items.map((it, idx) => (
+                        <div key={idx} className="flex justify-between items-center py-2.5 border-b border-gray-200/50 last:border-0 hover:bg-white -mx-2 px-2 rounded-lg transition-colors group">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-800 text-sm group-hover:text-blue-600 transition-colors">{it.item_name}</span>
+                            <span className="text-[9px] text-gray-300 font-mono">ID: {it.item_id}</span>
+                          </div>
+                          <span className="bg-white border shadow-sm px-3 py-1 rounded-lg font-black text-blue-600 text-sm">
+                            x{it.quantity}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Metadata Section */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Section</p>
+                      <p className="text-xs font-bold text-gray-600">{selectedKot.section_name}</p>
+                    </div>
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Phase</p>
+                      <p className="text-xs font-bold text-gray-600">Phase {selectedKot.order_phase || 1}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Footer */}
+                <div className="p-6 bg-white border-t border-gray-100 space-y-3">
+                  {selectedKot.status === 'pending' && (
+                    <Button
+                      onClick={() => advanceStatus('acknowledged')}
+                      disabled={updatingStatus}
+                      className="w-full h-14 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base gap-2 shadow-lg shadow-blue-200"
+                    >
+                      {updatingStatus ? <RefreshCw className="animate-spin" /> : <PlayCircle size={22} />}
+                      START PREPARING
+                    </Button>
+                  )}
+                  {selectedKot.status === 'acknowledged' && (
+                    <Button
+                      onClick={() => advanceStatus('completed')}
+                      disabled={updatingStatus}
+                      className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base gap-2 shadow-lg shadow-emerald-200"
+                    >
+                      {updatingStatus ? <RefreshCw className="animate-spin" /> : <CheckCircle size={22} />}
+                      MARK READY
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full h-12 rounded-xl border-gray-200 text-gray-600 font-bold gap-2 hover:bg-gray-50"
+                    onClick={() => setPrintKotOpen(true)}
+                  >
+                    <Printer size={18} /> PRINT KOT
+                  </Button>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="p-4 border-t border-gray-100 space-y-2 mt-2">
-                {selectedKot.status === 'pending' && (
-                  <button
-                    onClick={() => advanceStatus('acknowledged')}
-                    disabled={updatingStatus}
-                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50"
-                  >
-                    <PlayCircle size={16} /> Mark In Progress
-                  </button>
-                )}
-                {selectedKot.status === 'acknowledged' && (
-                  <button
-                    onClick={() => advanceStatus('completed')}
-                    disabled={updatingStatus}
-                    className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50"
-                  >
-                    <CheckCircle size={16} /> Mark Completed
-                  </button>
-                )}
-                {selectedKot.status === 'completed' && (
-                  <div className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-500 font-bold text-sm py-2.5 rounded-xl">
-                    <CheckCheck size={16} /> Completed
+              {/* Print Dialog */}
+              <Dialog open={printKotOpen} onOpenChange={setPrintKotOpen}>
+                <DialogContent className="max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle className="text-center font-black tracking-widest uppercase py-2">KOT PRINT PREVIEW</DialogTitle>
+                  </DialogHeader>
+                  <div className="font-mono text-xs border p-4 bg-gray-50 rounded-lg space-y-4">
+                    <div className="text-center border-b pb-2">
+                            <p className="font-bold text-sm uppercase">Restro-Manager</p>
+                            <p className="text-[10px] text-gray-500">Kitchen Copy</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-y-1">
+                            <span>KOT NO:</span><span className="text-right font-bold">#{selectedKot.section_kot_number}</span>
+                            <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
+                            <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>
+                    </div>
+                    <div className="border-t border-gray-300 pt-2">
+                        {selectedKot.items.map((it, i) => (
+                            <div key={i} className="flex justify-between py-1">
+                                <span>{it.item_name}</span>
+                                <span className="font-bold">x{it.quantity}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="border-t pt-2 text-center text-[10px] text-gray-400 italic">
+                        Software by RestroManager
+                    </div>
                   </div>
-                )}
-                <button 
-                  onClick={() => setPrintKotOpen(true)}
-                  className="w-full flex items-center justify-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 font-semibold text-sm py-2.5 rounded-xl transition-colors"
-                >
-                  <Printer size={16} /> Print KOT
-                </button>
-              </div>
-            </div>
+                  <DialogFooter className="pt-4">
+                    <Button variant="outline" onClick={() => setPrintKotOpen(false)}>Close</Button>
+                    <Button className="bg-blue-600 hover:bg-blue-700 font-bold text-white" onClick={() => window.print()}>
+                        <Printer className="mr-2" size={16} /> Print Now
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
           )}
         </div>
-
-        {/* KOT Dialog */}
-        <Dialog open={printKotOpen} onOpenChange={setPrintKotOpen}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="text-center text-sm font-normal p-0 m-0">
-                <div style={{
-                  fontFamily: 'monospace',
-                  border: '1px dashed #000',
-                  padding: '6px 12px',
-                  textAlign: 'center',
-                  fontSize: '14px',
-                  fontWeight: 'normal',
-                }}>
-                  RestroManager Hotel
-                </div>
-              </DialogTitle>
-              <DialogDescription className="sr-only">Kitchen Order Ticket</DialogDescription>
-            </DialogHeader>
-            {selectedKot && (
-              <div className="flex flex-col gap-0 font-mono text-sm" style={{ fontSize: '12px', lineHeight: '1.6' }}>
-                {/* KOT label */}
-                <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '13px', marginBottom: '6px', letterSpacing: '2px' }}>
-                  KITCHEN ORDER TICKET
-                </div>
-
-                {/* Order info - left aligned */}
-                <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '8px' }}>
-                  <div>ORDER NO: #{selectedKot.parent_kot_id ? selectedKot.parent_kot_id.slice(0, 8).toUpperCase() : selectedKot.kot_number}</div>
-                  <div>TABLE: {selectedKot.table_number}</div>
-                  <div style={{ fontWeight: 'normal', fontSize: '12px' }}>DATE & TIME:{fmtFull(selectedKot.generated_at)}</div>
-                </div>
-
-                {/* Dashed separator */}
-                <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
-
-                {/* Items header */}
-                <div className="flex" style={{ marginBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>
-                  <span style={{ flex: 3, textAlign: 'left' }}>ITEM</span>
-                  <span style={{ flex: 1, textAlign: 'right' }}>QTY</span>
-                </div>
-
-                {/* Dashed separator */}
-                <div style={{ borderBottom: '1px dashed #000', marginBottom: '6px' }} />
-
-                {/* Items */}
-                <div style={{ marginBottom: '8px' }}>
-                  {selectedKot.items.map((item, i) => (
-                    <div key={i} className="flex" style={{ marginBottom: '4px' }}>
-                      <span style={{ flex: 3, textAlign: 'left' }}>{item.item_name || `Item #${item.item_id}`}</span>
-                      <span style={{ flex: 1, textAlign: 'right', fontWeight: 'bold' }}>{item.quantity}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Dashed separator */}
-                <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
-
-                {/* Status */}
-                <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>
-                  Status: <strong>{(selectedKot.status || '').replace('_', ' ').toUpperCase()}</strong>
-                </div>
-
-                {/* Footer */}
-                <div style={{
-                  textAlign: 'center',
-                  borderTop: '1px dashed #000',
-                  paddingTop: '12px',
-                  marginTop: '4px',
-                  fontSize: '11px',
-                  fontStyle: 'italic',
-                }}>
-                  Thank you for visiting! Come again.
-                </div>
-
-                <div style={{
-                  textAlign: 'center',
-                  fontSize: '9px',
-                  color: 'rgba(0,0,0,0.5)',
-                  fontStyle: 'italic',
-                  marginTop: '8px',
-                  borderTop: '1px solid rgba(0,0,0,0.1)',
-                  paddingTop: '6px',
-                }}>
-                  Software by RestroManager
-                </div>
-              </div>
-            )}
-            <DialogFooter className="gap-2 print:hidden">
-              <Button variant="outline" onClick={() => setPrintKotOpen(false)}>Close</Button>
-              <Button className="bg-primary text-white hover:bg-primary/90 gap-2" onClick={() => window.print()}>
-                <Printer className="w-4 h-4" /> Print KOT
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </DashboardLayout>
     </RoleGuard>
   );
 }
 
-// ── Helpers ──────────────────────────────────
-function StatCard({ label, value, sub, valueClass, icon, iconBg, subClass = 'text-gray-400' }: {
-  label: string; value: number; sub: string;
-  valueClass: string; icon: React.ReactNode; iconBg: string; subClass?: string;
-}) {
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between shadow-sm">
-      <div>
-        <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wide">{label}</p>
-        <p className={cn('text-3xl font-black mt-1', valueClass)}>{value}</p>
-        <p className={cn('text-xs mt-1 font-medium', subClass)}>{sub}</p>
+    <div className="flex items-center justify-between text-xs">
+      <div className="flex items-center gap-2 text-gray-500">
+        {icon}
+        <span>{label}</span>
       </div>
-      <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', iconBg)}>{icon}</div>
+      <span className="font-semibold text-gray-700">{value}</span>
     </div>
   );
 }
 
-function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+function StatCard({ label, value, sub, icon, iconBg, valueClass = '', subClass = '' }: any) {
   return (
-    <div className="flex items-start gap-2">
-      <span className="text-gray-300 mt-0.5 shrink-0">{icon}</span>
-      <span className="text-[11px] text-gray-400 w-20 shrink-0 pt-0.5">{label}</span>
-      <span className="text-[12px] font-semibold text-gray-700 flex-1">{value}</span>
+    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+      <div className={cn("p-3 rounded-xl", iconBg)}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{label}</p>
+        <div className="flex items-baseline gap-2">
+          <h3 className={cn("text-2xl font-black mt-0.5", valueClass)}>{value}</h3>
+          <p className={cn("text-[10px] font-bold", subClass)}>{sub}</p>
+        </div>
+      </div>
     </div>
   );
 }

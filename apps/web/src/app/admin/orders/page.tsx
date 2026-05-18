@@ -375,8 +375,8 @@ export default function OrdersPage() {
                       <div className="text-slate-500">Order Time</div><div className="font-medium text-right">{fmtDate(selected.created_at)}</div>
                       <div className="text-slate-500">Payment</div>
                       <div className="text-right">
-                        <Badge variant="outline" className={selected.status === 'billed' ? "bg-blue-50 text-blue-600" : "bg-emerald-50 text-emerald-600 border-emerald-200"}>
-                          {selected.status === 'billed' ? 'Paid' : 'Unpaid'}
+                        <Badge variant="outline" className={selected.status === 'billed' || selected.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}>
+                          {selected.status === 'billed' || selected.status === 'completed' ? 'Paid' : 'Unpaid'}
                         </Badge>
                       </div>
                     </div>

@@ -31,7 +31,6 @@ const MENU_ITEMS: MenuItem[] = [
   { icon: TableIcon, label: 'Table', href: '/admin/tables' },
   { icon: CalendarDays, label: 'Reservations', href: '/admin/reservations' },
   { icon: Store, label: 'Offering', href: '/admin/offering' },
-  { icon: Receipt, label: 'Billing', href: '/admin/billing' },
   { icon: FileText, label: 'Bills', href: '/admin/bills' },
   { icon: Package, label: 'Inventory', href: '/admin/inventory' },
   { icon: CreditCard, label: 'Payments', href: '/admin/payments' },

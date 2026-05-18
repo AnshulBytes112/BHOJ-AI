@@ -158,9 +158,11 @@ export default function POSTerminal() {
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showWipDialog, setShowWipDialog] = useState(false);
+  const [autoRedirectTimer, setAutoRedirectTimer] = useState<number | null>(null);
 
   // Catalog CRUD states
   const [isSaving, setIsSaving] = useState(false);
@@ -495,7 +497,46 @@ export default function POSTerminal() {
   };
 
   const totals = useMemo(() => {
-    const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    // Combine items from existing orders and current cart for billing calculation
+    const allItemsToBill: Array<{ id: string; price: number; quantity: number; name: string; categoryId: string; gstRate?: number }> = [];
+    
+    // Add items from existing orders
+    existingOrders.forEach((o: any) => {
+      (o.items || []).forEach((oi: any) => {
+        const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
+        if (existing) {
+          existing.quantity += oi.quantity;
+        } else {
+          allItemsToBill.push({
+            id: String(oi.item_id),
+            name: oi.item_name || `Item #${oi.item_id}`,
+            price: Number(oi.price_at_billing),
+            quantity: oi.quantity,
+            categoryId: '', // We use explicit gstRate from order item
+            gstRate: Number(oi.gst_percent_at_billing)
+          });
+        }
+      });
+    });
+
+    // Add items from current cart
+    cart.forEach(item => {
+      const existing = allItemsToBill.find(i => i.id === item.id);
+      if (existing) {
+        existing.quantity += item.quantity;
+      } else {
+        allItemsToBill.push({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          categoryId: item.categoryId,
+          gstRate: item.gstRate
+        });
+      }
+    });
+
+    const subtotal = allItemsToBill.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     
     let discountAmount = 0;
     if (discountType === 'Percentage (%)') {
@@ -510,7 +551,7 @@ export default function POSTerminal() {
     const gstBreakdown: { [rate: number]: number } = {};
     let totalGst = 0;
     
-    cart.forEach(item => {
+    allItemsToBill.forEach(item => {
       const itemSubtotal = item.price * item.quantity;
       const itemDiscount = (discountType === 'Percentage (%)') ? (itemSubtotal * discountValue) / 100 : (discountValue * itemSubtotal / subtotal);
       const itemSubtotalAfterDiscount = itemSubtotal - itemDiscount;
@@ -527,15 +568,15 @@ export default function POSTerminal() {
     const total = subtotalAfterDiscount + totalGst;
 
     return { 
-      subtotal, 
+      subtotal,
+      allItemsToBill,
       discountAmount, 
       totalGst, 
       cgstSGST,
       total,
       gstBreakdown
     };
-  }, [cart, discountType, discountValue, gstRates]);
-
+  }, [cart, existingOrders, discountType, discountValue, gstRates]);
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!selectedTable) {
@@ -555,6 +596,7 @@ export default function POSTerminal() {
       // Send to kitchen
       try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) {}
       setCart([]);
+      fetchTableOrders(selectedTable); // Refresh existing orders for the table
       alert(`Order placed successfully! Order ID: ${newOrderId.slice(0, 8).toUpperCase()}`);
     } catch (error: any) {
       const msg = error?.response?.data?.message || 'Failed to place order. Check your connection.';
@@ -565,14 +607,20 @@ export default function POSTerminal() {
   };
 
   const generateBillAndPrint = async () => {
-    if (cart.length === 0) return;
+    // Check if there is anything to bill (either in cart or already ordered)
+    if (cart.length === 0 && existingOrders.length === 0) return;
     
     setIsGeneratingBill(true);
     try {
+      // Get all order IDs for this table
+      const orderIds = existingOrders.map(o => o.order_id);
+
       // 1. Generate real bill on server
       const response = await apiClient.post('/bills', {
-        cashier_id: 1, // Fallback or use auth user id if available
-        items: cart.map(item => ({
+        cashier_id: 1, 
+        table_id: selectedTable,
+        order_ids: orderIds,
+        items: totals.allItemsToBill.map(item => ({
           item_id: Number(item.id),
           quantity: item.quantity
         }))
@@ -611,6 +659,24 @@ export default function POSTerminal() {
       setOrderId(`BILL-${billData.bill.bill_serial_number}`);
       setIsReceiptOpen(true);
       setActiveWorkflow('receipt');
+      
+      // Auto-redirect to POS after 15 seconds
+      setAutoRedirectTimer(15);
+      const timer = setInterval(() => {
+        setAutoRedirectTimer((prev) => {
+          if (prev === null || prev <= 1) {
+            clearInterval(timer);
+            if (prev === 1) {
+              setIsReceiptOpen(false);
+              handleNewBill();
+              loadData(); // Refresh tables
+            }
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
     } catch (error: any) {
       console.error('Failed to generate bill:', error);
       alert(error?.response?.data?.message ?? 'Failed to generate bill. Please check your connection.');
@@ -1316,14 +1382,14 @@ export default function POSTerminal() {
                 <Button 
                   variant="outline" 
                   className="w-full justify-center gap-2 h-8 text-[10px]"
-                  onClick={() => setActiveWorkflow('summary')}
+                  onClick={() => setShowWipDialog(true)}
                 >
                   <CheckCircle2 size={12} /> View Details
                 </Button>
                 <Button 
                   variant="outline" 
                   className="w-full justify-center gap-2 h-8 text-[10px]"
-                  onClick={() => setActiveWorkflow('gst')}
+                  onClick={() => setShowWipDialog(true)}
                 >
                   <Percent size={12} /> GST Rates
                 </Button>
@@ -1341,8 +1407,8 @@ export default function POSTerminal() {
               {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
             </Button>
             <Button 
-              onClick={generateBillAndPrint}
-              disabled={cart.length === 0 || isGeneratingBill}
+              onClick={() => setIsPreviewOpen(true)}
+              disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable}
               className="w-full h-12 bg-green-500 hover:bg-green-600 text-white font-semibold"
             >
               {isGeneratingBill ? 'Generating...' : 'Bill'}
@@ -1444,7 +1510,7 @@ export default function POSTerminal() {
               {workflowTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveWorkflow(tab.id)}
+                  onClick={() => tab.id === 'categories' ? setActiveWorkflow(tab.id) : setShowWipDialog(true)}
                   className={cn(
                     "px-6 py-3 text-sm font-medium border-b-2 transition-all",
                     activeWorkflow === tab.id 
@@ -1623,6 +1689,28 @@ export default function POSTerminal() {
             </DialogContent>
           </Dialog>
 
+          <Dialog open={showWipDialog} onOpenChange={setShowWipDialog}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-2">
+                  <UtensilsCrossed className="text-blue-600 animate-pulse" size={24} />
+                </div>
+                <DialogTitle className="text-center text-xl">Work in Progress!</DialogTitle>
+                <DialogDescription className="text-center text-gray-500 pt-2">
+                  This feature is currently under active development. We're refining the experience to make your hotel management faster and smoother.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="sm:justify-center border-t pt-4">
+                <Button 
+                  onClick={() => setShowWipDialog(false)} 
+                  className="bg-blue-600 text-white hover:bg-blue-700 font-semibold px-8"
+                >
+                  Understood
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Content Section */}
           <div className="flex-1 flex">
             {activeWorkflow !== 'receipt' ? (
@@ -1648,11 +1736,97 @@ export default function POSTerminal() {
 
       </DashboardLayout>
 
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bill Preview & Confirmation</DialogTitle>
+            <DialogDescription>
+              Review the items from all orders for this table before generating the final bill.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
+            <div className="space-y-2 border-b pb-4">
+              <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
+              <div className="text-xs text-gray-500">Consolidating {existingOrders.length} previous orders + current cart</div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold border-b pb-1">
+                <span className="flex-[2]">Item</span>
+                <span className="flex-[0.5] text-center">Qty</span>
+                <span className="flex-1 text-right">Price</span>
+                <span className="flex-1 text-right">Total</span>
+              </div>
+              {totals.allItemsToBill.map((item, idx) => (
+                <div key={idx} className="flex justify-between text-sm py-1">
+                  <span className="flex-[2] truncate">{item.name}</span>
+                  <span className="flex-[0.5] text-center">{item.quantity}</span>
+                  <span className="flex-1 text-right">₹{item.price.toFixed(2)}</span>
+                  <span className="flex-1 text-right font-medium">₹{(item.price * item.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-4 border-t space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Subtotal</span>
+                <span>₹{totals.subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Total GST</span>
+                <span>₹{totals.totalGst.toFixed(2)}</span>
+              </div>
+              {totals.discountAmount > 0 && (
+                <div className="flex justify-between text-sm text-green-600 font-medium">
+                  <span>Discount</span>
+                  <span>-₹{totals.discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold border-t pt-2 text-blue-600">
+                <span>Grand Total</span>
+                <span>₹{totals.total.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsPreviewOpen(false)} disabled={isGeneratingBill}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-green-600 hover:bg-green-700 text-white" 
+              onClick={async () => {
+                await generateBillAndPrint();
+                setIsPreviewOpen(false);
+              }}
+              disabled={isGeneratingBill}
+            >
+              {isGeneratingBill ? 'Processing...' : 'Confirm & Generate Bill'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {isReceiptOpen && receiptData && (
         <div className="fixed inset-0 z-[100] bg-white flex items-start justify-center overflow-auto p-4 md:p-10 no-print-background">
-          <div className="no-print absolute top-4 right-4 flex gap-2">
+          <div className="no-print absolute top-4 right-4 flex gap-2 items-center">
+            {autoRedirectTimer !== null && (
+              <span className="text-xs text-gray-500 mr-2">
+                Auto-closing in {autoRedirectTimer}s...
+              </span>
+            )}
             <Button onClick={() => window.print()}>Print Again</Button>
-            <Button variant="outline" onClick={() => setIsReceiptOpen(false)}>Close Preview</Button>
+            <Button 
+              variant="default" 
+              className="bg-blue-600 hover:bg-blue-700"
+              onClick={() => {
+                setAutoRedirectTimer(null);
+                setIsReceiptOpen(false);
+                handleNewBill(); 
+                loadData();
+              }}
+            >
+              Done & New Order
+            </Button>
           </div>
           <div className="print:block">
             <ReceiptPrint data={receiptData} />
