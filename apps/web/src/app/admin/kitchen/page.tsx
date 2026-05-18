@@ -597,7 +597,7 @@ function KOTPageInner() {
                   <div>
                     <h2 className="font-bold text-gray-900">Order Detail</h2>
                     <p className="text-[10px] text-gray-400 font-mono uppercase tracking-tighter">
-                      KOT: {kot.section_kot_number} | ORD: {selectedKot.order_id?.slice(0, 8)}
+                      KOT: {selectedKot.section_kot_number} | ORD: {selectedKot.order_id?.slice(0, 8)}
                     </p>
                   </div>
                   <button onClick={() => setSelectedKot(null)} className="p-2 hover:bg-white rounded-full border border-transparent hover:border-gray-200 transition-all text-gray-400 hover:text-gray-600">
