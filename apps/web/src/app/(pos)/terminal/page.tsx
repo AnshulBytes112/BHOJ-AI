@@ -6,7 +6,7 @@ import { UI_CONTENT } from '@/lib/content';
 import { MenuGrid } from '@/components/pos/menu-grid';
 import { CategoryList } from '@/components/pos/category-list';
 import { CartSummary, CartItem } from '@/components/pos/cart-summary';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Search, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -30,6 +30,9 @@ export default function PosTerminalPage() {
   const [isTableDialogOpen, setIsTableDialogOpen] = useState(false);
   const [isReceiptDialogOpen, setIsReceiptDialogOpen] = useState(false);
   const [lastOrderDetails, setLastOrderDetails] = useState<any>(null);
+
+  // Table status warning (RULE 2: bill paid ≠ table free)
+  const [tableStatusWarning, setTableStatusWarning] = useState<string | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -145,16 +148,14 @@ export default function PosTerminalPage() {
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     setIsPlacingOrder(true);
+    setTableStatusWarning(null);
 
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    // Calculate tax dynamically based on item's gstRate or category default
     const tax = cart.reduce((sum, item) => {
       const category = categories.find(c => c.id === item.categoryId);
       const rate = item.gstRate ?? category?.defaultGst ?? 5;
       return sum + (item.price * item.quantity * (rate / 100));
     }, 0);
-
     const total = subtotal + tax;
 
     try {
@@ -166,19 +167,46 @@ export default function PosTerminalPage() {
         total
       };
 
-      // Create an order via API
+      // Step 1: Create order
       const result = await apiClient.post(`/tables/${selectedTable}/orders`, { items: cart });
 
       if (result.status === 201 || result.status === 200) {
         setLastOrderDetails({ orderId: result.data.order_id, ...orderData });
-        
-        // Also send it to kitchen
+
+        // Step 2: Send to kitchen
         await apiClient.post(`/orders/${result.data.order_id}/send-to-kitchen`);
-        
+
+        // Step 3: Generate bill (pay_now=true marks it as paid immediately)
+        // RULE 2: The API will NOT auto-free the table; it runs canFreeTable() validation.
+        try {
+          const billRes = await apiClient.post('/bills', {
+            items: cart.map(i => ({ item_id: parseInt(i.id), quantity: i.quantity })),
+            table_id: selectedTable,
+            order_ids: [result.data.order_id],
+            pay_now: true,
+          });
+
+          // Show warning if table can't be freed yet (active items remain)
+          if (billRes.data.warning) {
+            setTableStatusWarning(billRes.data.warning);
+          }
+        } catch (billErr) {
+          // Bill creation is best-effort at POS
+          console.warn('Bill auto-creation failed (non-fatal):', billErr);
+        }
+
         setIsReceiptDialogOpen(true);
-        // Reset POS state
         setCart([]);
         setSelectedTable(null);
+
+        // Refresh tables after order
+        const tblsRes = await apiClient.get('/tables');
+        setTables(tblsRes.data.map((t: any) => ({
+          id: t.table_id.toString(),
+          number: t.table_number.toString(),
+          capacity: t.capacity || 4,
+          status: t.status === 'free' ? 'available' : 'occupied',
+        })));
       }
     } catch (error: any) {
       console.error('Failed to create order:', error);
@@ -198,6 +226,21 @@ export default function PosTerminalPage() {
 
   return (
     <>
+      {/* Table Status Warning Banner — shown after a paid order if kitchen still active */}
+      {tableStatusWarning && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-800 shadow-sm">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+          <div>
+            <div className="font-bold">■ Bill Paid — Table CANNOT be freed yet</div>
+            <div className="text-xs mt-0.5 text-amber-700">{tableStatusWarning}</div>
+          </div>
+          <button
+            className="ml-auto text-amber-500 hover:text-amber-700 shrink-0"
+            onClick={() => setTableStatusWarning(null)}
+          >✕</button>
+        </div>
+      )}
+
       <div className="flex flex-col lg:flex-row h-full gap-6 max-h-[calc(100vh-theme(spacing.24))]">
 
         {/* Left Area - Menu & Categories */}

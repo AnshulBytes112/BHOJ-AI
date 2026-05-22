@@ -26,6 +26,7 @@ import {
   Printer,
   PlayCircle,
   CheckCircle,
+  CreditCard,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,7 @@ interface SectionKOT {
   kot_number: string;
   order_id: string;
   order_phase: number;
+  is_bill_paid: boolean;
   items: KOTItem[];
 }
 
@@ -150,6 +152,13 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
             {statusLabel(kot.status)}
           </span>
         </div>
+
+        {/* Customer Has Paid banner */}
+        {kot.is_bill_paid && (
+          <div className="mt-1.5 flex items-center gap-1 text-[9px] font-bold text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+            <CreditCard size={8} /> Customer Has Paid
+          </div>
+        )}
         
         <div className="mt-1.5 space-y-0.5 max-h-[80px] overflow-hidden">
           {kot.items.slice(0, 3).map((item, i) => (

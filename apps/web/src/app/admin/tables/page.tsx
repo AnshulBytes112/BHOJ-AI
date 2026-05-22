@@ -106,6 +106,12 @@ export default function TablesPage() {
               <p className="text-sm text-muted-foreground">Manage restaurant tables</p>
             </div>
             <div className="flex gap-2">
+              <a
+                href="/admin/tables/status"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-100 text-orange-700 hover:bg-orange-200 text-sm font-semibold transition-colors border border-orange-200"
+              >
+                📊 Live Table Status View
+              </a>
               <Button variant="outline" onClick={loadTables} className="gap-2">
                 <RefreshCw className="w-4 h-4" /> Refresh
               </Button>

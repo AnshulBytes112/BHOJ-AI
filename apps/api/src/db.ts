@@ -418,4 +418,83 @@ export async function initializeDatabase(): Promise<void> {
       SELECT 1 FROM item_section_mapping m WHERE m.item_id = i.id
     );
   `);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TABLE MANAGEMENT WORKFLOW — Schema Migrations
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // 1. Expand table_status_enum with new lifecycle states.
+  //    ALTER TYPE ADD VALUE must run OUTSIDE a DO $$ block.
+  const newTableStatuses = [
+    'billing_done',
+    'waiting_for_service_completion',
+    'ready_to_free',
+  ];
+  for (const val of newTableStatuses) {
+    try {
+      await pool.query(`ALTER TYPE table_status_enum ADD VALUE IF NOT EXISTS '${val}'`);
+      console.log(`table_status_enum: '${val}' ensured`);
+    } catch (e: any) {
+      console.warn(`table_status_enum '${val}' ALTER skipped:`, e.message);
+    }
+  }
+
+  // 2. Add extra tracking columns to the tables table.
+  await pool.query(`
+    ALTER TABLE tables
+      ADD COLUMN IF NOT EXISTS occupied_since     TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS active_item_count  INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS is_bill_paid       BOOLEAN NOT NULL DEFAULT false;
+  `);
+
+  // 3. Add a payment_status column to the bills table so we can track PAID/UNPAID
+  //    independently from the print status (draft/completed/printed).
+  await pool.query(`
+    ALTER TABLE bills
+      ADD COLUMN IF NOT EXISTS payment_status VARCHAR NOT NULL DEFAULT 'unpaid'
+        CHECK (payment_status IN ('unpaid', 'paid')),
+      ADD COLUMN IF NOT EXISTS table_id UUID REFERENCES tables(table_id) ON DELETE SET NULL;
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_table_id ON bills(table_id);`);
+
+  // 4. Add per-item status tracking to kot_items (main KOT items table).
+  //    Using VARCHAR so we never hit enum-migration headaches.
+  await pool.query(`
+    ALTER TABLE kot_items
+      ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+  `);
+
+  // 5. Add per-item status tracking to section_kot_items (section-level items).
+  await pool.query(`
+    ALTER TABLE section_kot_items
+      ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+  `);
+
+  // 6. Audit log table — tracks all critical lifecycle events.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      audit_id   UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+      action     VARCHAR NOT NULL,
+      entity_type VARCHAR,
+      entity_id  VARCHAR,
+      user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      table_id   UUID    REFERENCES tables(table_id) ON DELETE SET NULL,
+      reason     TEXT,
+      metadata   JSONB,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_table_id   ON audit_log(table_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_action      ON audit_log(action);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at  ON audit_log(created_at DESC);`);
+
+  // 7. Index to speed up canFreeTable checks.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_section_kot_items_status ON section_kot_items(status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_kot_items_status         ON kot_items(status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_kots_table_id            ON kots(table_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_payment_status     ON bills(payment_status);`);
+
+  console.log('Table management schema migrations complete.');
 }

@@ -1,15 +1,19 @@
 import { Router } from 'express';
 import { pool } from '../db';
+import { tryAutoFreeTable, auditLog, ACTIVE_ITEM_STATUSES } from '../tables/table-management';
 
 export const kotsRouter = Router();
 
-// GET /kots - list all KOTs
+// GET /kots — list all KOTs with is_bill_paid flag (for "Customer Already Paid" banner)
 kotsRouter.get('/', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT k.kot_id, k.order_id, k.table_id, k.table_number, k.order_phase,
-              k.kot_number, k.status, k.generated_at
-       FROM kots k ORDER BY k.generated_at DESC`
+              k.kot_number, k.status, k.generated_at,
+              t.is_bill_paid
+       FROM kots k
+       LEFT JOIN tables t ON t.table_id = k.table_id
+       ORDER BY k.generated_at DESC`
     );
     res.json(result.rows);
   } catch (err: any) {
@@ -74,17 +78,20 @@ kotsRouter.get('/sections/list', async (req, res) => {
   }
 });
 
-// GET /kots/section/:sectionId - get all section KOTs for a given kitchen section
+// GET /kots/section/:sectionId — section KOTs with is_bill_paid flag
 kotsRouter.get('/section/:sectionId', async (req, res) => {
   const { sectionId } = req.params;
   try {
     const skotsResult = await pool.query(
       `SELECT sk.section_kot_id, sk.parent_kot_id, sk.section_id, sk.section_name,
               sk.section_kot_number, sk.status, sk.generated_at,
-              k.table_number, k.kot_number, k.order_phase, k.order_id
+              k.table_number, k.kot_number, k.order_phase, k.order_id,
+              t.is_bill_paid
        FROM section_kots sk
-       LEFT JOIN kots k ON k.kot_id = sk.parent_kot_id
+       LEFT JOIN kots k    ON k.kot_id    = sk.parent_kot_id
+       LEFT JOIN tables t  ON t.table_id  = k.table_id
        WHERE sk.section_name = $1
+         AND sk.status NOT IN ('served', 'completed')
        ORDER BY sk.generated_at DESC`,
       [sectionId]
     );
@@ -92,7 +99,8 @@ kotsRouter.get('/section/:sectionId', async (req, res) => {
     const sectionKots = await Promise.all(
       skotsResult.rows.map(async (skot) => {
         const itemsResult = await pool.query(
-          `SELECT ski.section_kot_item_id, ski.item_id, ski.item_name, ski.quantity, ski.serial_number
+          `SELECT ski.section_kot_item_id, ski.item_id, ski.item_name,
+                  ski.quantity, ski.serial_number, ski.status
            FROM section_kot_items ski WHERE ski.section_kot_id = $1`,
           [skot.section_kot_id]
         );
@@ -107,12 +115,12 @@ kotsRouter.get('/section/:sectionId', async (req, res) => {
   }
 });
 
-// POST /kots/section-kots/:sectionKotId/status - update section KOT status
+// POST /kots/section-kots/:sectionKotId/status — update section KOT status
 kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   const { sectionKotId } = req.params;
   const { status } = req.body;
 
-  const validStatuses = ['pending', 'acknowledged', 'completed', 'served'];
+  const validStatuses = ['pending', 'acknowledged', 'ready', 'completed', 'served'];
   if (!status || !validStatuses.includes(status)) {
     return res.status(400).json({ message: `status must be one of: ${validStatuses.join(', ')}` });
   }
@@ -135,10 +143,21 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     const skot = skotResult.rows[0];
     console.log(`Section KOT ${sectionKotId} status updated to ${status}`);
 
+    // When a section KOT is served/completed, propagate status to all its items
+    if (status === 'served' || status === 'completed') {
+      const itemStatus = status === 'served' ? 'served' : 'ready';
+      await client.query(
+        `UPDATE section_kot_items
+         SET status = $1
+         WHERE section_kot_id = $2
+           AND status = ANY($3::text[])`,
+        [itemStatus, sectionKotId, ACTIVE_ITEM_STATUSES]
+      );
+    }
+
     let orderIdToComplete: string | null = null;
 
     currentStep = 'fetch_siblings';
-    // Update parent KOT status based on all children
     const siblings = await client.query(
       `SELECT status FROM section_kots WHERE parent_kot_id = $1`,
       [skot.parent_kot_id]
@@ -148,9 +167,9 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
 
     let parentStatus: string | null = null;
     if (siblingStatuses.every((s: string) => s === 'served')) {
-      parentStatus = 'completed'; // Parent KOT is completely done when all sections are served
+      parentStatus = 'completed';
     } else if (siblingStatuses.every((s: string) => s === 'completed' || s === 'served')) {
-      parentStatus = 'ready'; // Parent KOT is ready when all sections are completed
+      parentStatus = 'ready';
     } else if (siblingStatuses.every((s: string) => s === 'acknowledged' || s === 'completed' || s === 'served')) {
       parentStatus = 'acknowledged';
     }
@@ -163,8 +182,6 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
       );
       console.log(`Parent KOT ${skot.parent_kot_id} status updated to ${parentStatus}`);
 
-      // When all section KOTs are completed, we want to update the order status
-      // We will do this AFTER committing the transaction to prevent enum cast errors from poisoning it
       if (parentStatus === 'completed') {
         currentStep = 'fetch_kot_order_id';
         const kotRow = await client.query(
@@ -185,11 +202,20 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
       }
     }
 
+    // Audit the section KOT status change
+    await auditLog(client, 'KOT_STATUS_CHANGED', {
+      entityType: 'section_kot',
+      entityId: sectionKotId,
+      tableId: skot.table_id ?? undefined,
+      reason: `Section KOT marked ${status}`,
+      metadata: { sectionKotId, newStatus: status, parentKotId: skot.parent_kot_id },
+    });
+
     currentStep = 'commit';
     await client.query('COMMIT');
     res.json({ ...skot, parentStatus });
-    
-    // Post-commit: try to update the order status. If enum is missing, we catch it safely.
+
+    // Post-commit: update order status
     if (orderIdToComplete) {
       try {
         await pool.query(
@@ -198,8 +224,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
         );
         console.log(`Order ${orderIdToComplete} marked completed`);
       } catch (enumCastErr: any) {
-        console.error('order_status_enum cast failed, trying text update fallback:', enumCastErr.message);
-        // Fallback using text update in case enum failed
+        console.error('order_status_enum cast failed:', enumCastErr.message);
         try {
           await pool.query(
             `UPDATE orders SET status = 'sent_to_kitchen' WHERE order_id = $1`,
@@ -210,10 +235,113 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
         }
       }
     }
+
+    // Post-commit: attempt auto-free (only when serving/completing items)
+    if ((status === 'served' || status === 'completed') && skot.table_id) {
+      try {
+        await tryAutoFreeTable(pool, skot.table_id, `section_kot:${sectionKotId}`);
+      } catch (e: any) {
+        console.warn('tryAutoFreeTable post-section-kot-update error (non-fatal):', e.message);
+      }
+    }
   } catch (err: any) {
     await client.query('ROLLBACK');
     console.error('POST /kots/section-kots/:sectionKotId/status error:', err.message, err.stack);
     res.status(500).json({ message: err.message || 'Failed to update section KOT status', step: currentStep });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /kots/section-kots/:sectionKotId/items/:itemId/status
+// Update the status of a SINGLE KOT item independently (granular item tracking).
+// Triggers auto-free check after each item status change.
+// ─────────────────────────────────────────────────────────────────────────────
+kotsRouter.patch('/section-kots/:sectionKotId/items/:itemId/status', async (req, res) => {
+  const { sectionKotId, itemId } = req.params;
+  const { status, user_id } = req.body;
+
+  const validItemStatuses = [
+    'pending', 'preparing', 'ready', 'served', 'cancelled',
+    'packed', 'delivered', 'recook_requested',
+  ];
+  if (!status || !validItemStatuses.includes(status)) {
+    return res.status(400).json({
+      message: `status must be one of: ${validItemStatuses.join(', ')}`,
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch item + its parent chain to get table_id
+    const itemResult = await client.query(
+      `SELECT ski.section_kot_item_id, ski.status AS old_status, ski.item_name,
+              sk.section_kot_id, sk.parent_kot_id,
+              k.table_id
+       FROM section_kot_items ski
+       JOIN section_kots sk ON sk.section_kot_id = ski.section_kot_id
+       JOIN kots k          ON k.kot_id          = sk.parent_kot_id
+       WHERE ski.section_kot_item_id = $1
+         AND ski.section_kot_id = $2
+       FOR UPDATE`,
+      [itemId, sectionKotId]
+    );
+
+    if (itemResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'KOT item not found' });
+    }
+
+    const item = itemResult.rows[0];
+    const tableId: string = item.table_id;
+
+    // Update item status
+    await client.query(
+      `UPDATE section_kot_items SET status = $1 WHERE section_kot_item_id = $2`,
+      [status, itemId]
+    );
+
+    // Audit item status change
+    await auditLog(client, 'KOT_ITEM_STATUS_CHANGED', {
+      entityType: 'section_kot_item',
+      entityId: itemId,
+      tableId,
+      userId: user_id ?? null,
+      reason: `Item '${item.item_name}' marked ${status}`,
+      metadata: {
+        itemId,
+        sectionKotId,
+        itemName: item.item_name,
+        oldStatus: item.old_status,
+        newStatus: status,
+      },
+    });
+
+    await client.query('COMMIT');
+
+    // Post-commit: try auto-free whenever an item reaches a terminal state
+    const terminalStatuses = ['served', 'delivered', 'cancelled'];
+    if (terminalStatuses.includes(status)) {
+      try {
+        await tryAutoFreeTable(pool, tableId, `item:${itemId}`);
+      } catch (e: any) {
+        console.warn('tryAutoFreeTable post-item-update error (non-fatal):', e.message);
+      }
+    }
+
+    res.json({
+      message: `Item status updated to ${status}.`,
+      itemId,
+      newStatus: status,
+      tableId,
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error('PATCH /kots/section-kots/:sectionKotId/items/:itemId/status error:', err);
+    res.status(500).json({ message: err.message || 'Failed to update item status' });
   } finally {
     client.release();
   }
