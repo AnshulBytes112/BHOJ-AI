@@ -12,6 +12,8 @@ import { receiptRouter } from './receipt/receipt.routes';
 import { tablesRouter } from './tables/tables.routes';
 import { ordersRouter } from './orders/orders.routes';
 import { kotsRouter } from './kots/kots.routes';
+import { sessionsRouter } from './sessions/sessions.routes';
+
 
 dotenv.config();
 
@@ -50,6 +52,8 @@ app.use('/api/receipt-layout', receiptRouter);
 app.use('/api/tables', tablesRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/kots', kotsRouter);
+app.use('/api/sessions', sessionsRouter);
+
 
 // Basic Root Route
 app.get('/api', (req, res) => {

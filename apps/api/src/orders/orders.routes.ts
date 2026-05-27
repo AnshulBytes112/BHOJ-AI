@@ -3,6 +3,18 @@ import { pool } from '../db';
 
 export const ordersRouter = Router();
 
+function kitchenCode(sectionName: string): string {
+  const compact = sectionName
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase();
+
+  return (compact || 'GEN').slice(0, 6);
+}
+
 // GET /orders - list all orders with items
 ordersRouter.get('/', async (req, res) => {
   try {
@@ -114,10 +126,10 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
 
     // Create parent KOT
     const kotResult = await client.query(
-      `INSERT INTO kots (order_id, table_id, table_number, order_phase, kot_number, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')
+      `INSERT INTO kots (order_id, table_id, table_number, order_phase, kot_number, status, session_id)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6)
        RETURNING *`,
-      [orderId, order.table_id, order.table_number, order.order_phase, kotNumber]
+      [orderId, order.table_id, order.table_number, order.order_phase, kotNumber, order.session_id]
     );
     const parentKot = kotResult.rows[0];
 
@@ -147,7 +159,7 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
     let skSeq = 1;
 
     for (const [sectionName, { items }] of Object.entries(itemsBySection)) {
-      const sectionKotNumber = `${kotNumber}-S${String(skSeq).padStart(2, '0')}`;
+      const sectionKotNumber = `${kotNumber}-${kitchenCode(sectionName)}-${String(skSeq).padStart(2, '0')}`;
       skSeq++;
 
       const skotResult = await client.query(
@@ -164,7 +176,14 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
           [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number]
         );
       }
-      sectionKots.push({ ...skot, items });
+      sectionKots.push({
+        ...skot,
+        kitchen_name: sectionName,
+        kitchen_kot_id: skot.section_kot_id,
+        kitchen_kot_number: skot.section_kot_number,
+        parent_kot_number: kotNumber,
+        items,
+      });
     }
 
     // Update order status
@@ -224,13 +243,17 @@ ordersRouter.delete('/:orderId', async (req, res) => {
     const { table_id } = orderCheck.rows[0];
     await client.query(`DELETE FROM orders WHERE order_id = $1`, [orderId]);
 
-    // If no more open orders for this table, free the table
+    // If no more orders for this table, free the table
     const remaining = await client.query(
-      `SELECT COUNT(*) as count FROM orders WHERE table_id = $1 AND status != 'completed'`,
+      `SELECT COUNT(*) as count FROM orders WHERE table_id = $1`,
       [table_id]
     );
     if (parseInt(remaining.rows[0].count) === 0) {
-      await client.query(`UPDATE tables SET status = 'free' WHERE table_id = $1`, [table_id]);
+      await client.query(
+        `UPDATE tables SET status = 'free', occupied_since = NULL, active_item_count = 0, is_bill_paid = false WHERE table_id = $1`,
+        [table_id]
+      );
+      console.log(`[DELETE /orders/:orderId] Table ${table_id}: freed - status set to 'free', occupied_since set to NULL`);
     }
 
     await client.query('COMMIT');

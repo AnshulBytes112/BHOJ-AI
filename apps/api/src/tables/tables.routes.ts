@@ -1,20 +1,24 @@
 import { Router } from 'express';
+import { randomBytes } from 'crypto';
 import { pool } from '../db';
 import {
   canFreeTable,
   tryAutoFreeTable,
   auditLog,
   deriveTableStatus,
+  fetchSessionState,
+  deriveTableVisualState,
+  ACTIVE_SESSION_STATUSES,
 } from './table-management';
 
 export const tablesRouter = Router();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /tables — list all tables with live status summary
+// GET /tables — list all tables with live status summary and visual states
 // ─────────────────────────────────────────────────────────────────────────────
 tablesRouter.get('/', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    const result = await client.query(
       `SELECT
          t.table_id, t.table_number, t.status,
          t.is_bill_paid, t.occupied_since, t.active_item_count,
@@ -24,7 +28,11 @@ tablesRouter.get('/', async (req, res) => {
          COUNT(ski.section_kot_item_id) FILTER (WHERE ski.status = 'preparing') AS preparing_count,
          COUNT(ski.section_kot_item_id) FILTER (WHERE ski.status = 'ready')     AS ready_count,
          COUNT(DISTINCT b.id)           FILTER (WHERE b.payment_status = 'paid')   AS paid_bills,
-         COUNT(DISTINCT b.id)           FILTER (WHERE b.payment_status = 'unpaid') AS unpaid_bills
+         COUNT(DISTINCT b.id)           FILTER (WHERE b.payment_status = 'unpaid') AS unpaid_bills,
+         -- Active session info for this table
+         ts.session_id,
+         ts.status as session_status,
+         ts.payment_status as session_payment_status
        FROM tables t
        LEFT JOIN kots k               ON k.table_id        = t.table_id
                                      AND (t.occupied_since IS NULL OR k.generated_at >= t.occupied_since)
@@ -32,23 +40,44 @@ tablesRouter.get('/', async (req, res) => {
        LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id
        LEFT JOIN bills b              ON b.table_id        = t.table_id
                                      AND (t.occupied_since IS NULL OR b.created_at >= t.occupied_since)
-       GROUP BY t.table_id
+       LEFT JOIN table_sessions ts    ON (ts.table_id = t.table_id OR t.table_id IN (
+         SELECT st.table_id FROM session_tables st WHERE st.session_id = ts.session_id
+       ))
+                                     AND ts.status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close')
+       GROUP BY t.table_id, ts.session_id, ts.status, ts.payment_status
        ORDER BY t.table_number`
     );
-    res.json(result.rows);
+
+    // Derive visual state for each table
+    const tablesWithVisualState = await Promise.all(
+      result.rows.map(async (row) => {
+        const sessionState = await fetchSessionState(client, row.table_id);
+        const visualState = deriveTableVisualState(sessionState);
+        return {
+          ...row,
+          visual_state: visualState,
+          active_session_id: sessionState.session_id,
+        };
+      })
+    );
+
+    res.json(tablesWithVisualState);
   } catch (err: any) {
     console.error('GET /tables error:', err);
     res.status(500).json({ message: 'Failed to fetch tables' });
+  } finally {
+    client.release();
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /tables/:tableId — single table with live counts
+// GET /tables/:tableId — single table with live counts and visual state
 // ─────────────────────────────────────────────────────────────────────────────
 tablesRouter.get('/:tableId', async (req, res) => {
   const { tableId } = req.params;
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    const result = await client.query(
       `SELECT
          t.table_id, t.table_number, t.status,
          t.is_bill_paid, t.occupied_since, t.active_item_count, t.created_at,
@@ -69,10 +98,22 @@ tablesRouter.get('/:tableId', async (req, res) => {
       [tableId]
     );
     if (result.rows.length === 0) return res.status(404).json({ message: 'Table not found' });
-    res.json(result.rows[0]);
+
+    const tableData = result.rows[0];
+    const sessionState = await fetchSessionState(client, tableId);
+    const visualState = deriveTableVisualState(sessionState);
+
+    res.json({
+      ...tableData,
+      visual_state: visualState,
+      active_session_id: sessionState.session_id,
+      session_status: sessionState.session_status,
+    });
   } catch (err: any) {
     console.error('GET /tables/:tableId error:', err);
     res.status(500).json({ message: 'Failed to fetch table' });
+  } finally {
+    client.release();
   }
 });
 
@@ -215,6 +256,40 @@ tablesRouter.post('/:tableId/force-free', async (req, res) => {
     const validation = await canFreeTable(client, tableId);
 
     // Force-free: bypass all checks
+    const sessionsToClose = await client.query(
+      `SELECT ts.session_id
+       FROM table_sessions ts
+       LEFT JOIN session_tables st ON ts.session_id = st.session_id
+       WHERE (ts.table_id = $1 OR st.table_id = $1)
+         AND ts.status = ANY($2::text[])
+       FOR UPDATE OF ts`,
+      [tableId, ACTIVE_SESSION_STATUSES]
+    );
+
+    if (sessionsToClose.rows.length > 0) {
+      const sessionIds = Array.from(new Set(sessionsToClose.rows.map(row => row.session_id)));
+      await client.query(
+        `UPDATE table_sessions
+         SET status = 'force_closed',
+             ended_at = COALESCE(ended_at, NOW()),
+             close_reason = $2,
+             is_force_closed = true,
+             closed_by = $3,
+             last_activity_at = NOW(),
+             version = version + 1
+         WHERE session_id = ANY($1::uuid[])`,
+        [sessionIds, reason.trim(), user_id ?? null]
+      );
+
+      for (const sessionId of sessionIds) {
+        await client.query(
+          `INSERT INTO session_events (session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel)
+           VALUES ($1, 'SESSION_FORCE_CLOSED', NOW(), $2, $3, 'POS_TERMINAL', 'ADMIN')`,
+          [sessionId, JSON.stringify({ table_id: tableId, reason: reason.trim() }), user_id ?? null]
+        );
+      }
+    }
+
     await client.query(
       `UPDATE tables
        SET status = 'free',
@@ -224,6 +299,9 @@ tablesRouter.post('/:tableId/force-free', async (req, res) => {
        WHERE table_id = $1`,
       [tableId]
     );
+    
+    console.log(`[PATCH /tables/:tableId/force-free] Table ${tableId}: status → 'free', occupied_since → NULL (FORCED)`);
+
 
     await auditLog(client, 'FORCE_FREE_TABLE', {
       entityType: 'table',
@@ -278,58 +356,76 @@ tablesRouter.get('/:tableId/audit', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /tables/:tableId/orders — active orders for a table (current session only)
+// GET /tables/:tableId/orders — active orders for current session ONLY
+// 
+// CRITICAL: Returns ONLY orders belonging to the active session.
+// Historical orders from previous sessions are NEVER shown.
 // ─────────────────────────────────────────────────────────────────────────────
 tablesRouter.get('/:tableId/orders', async (req, res) => {
   const { tableId } = req.params;
+  const client = await pool.connect();
   try {
-    // First fetch occupied_since for session scoping
-    const tableResult = await pool.query(
+    // Step 1: Fetch table metadata for legacy fallback
+    const tableMeta = await client.query(
       `SELECT occupied_since FROM tables WHERE table_id = $1`,
       [tableId]
     );
-    const occupiedSince = tableResult.rows[0]?.occupied_since ?? null;
+    const occupiedSince = tableMeta.rows[0]?.occupied_since ?? null;
 
-    // ── Auto-repair: mark stale 'sent_to_kitchen' orders as 'completed' ──────
-    // This fixes orders that got stuck because the KOT-served status update
-    // failed (e.g. due to the old enum cast bug). An order is stale if ALL
-    // of its KOT items are in a terminal state (served or cancelled).
-    await pool.query(
-      `UPDATE orders
-       SET status = 'completed'
-       WHERE table_id = $1
-         AND status IN ('sent_to_kitchen', 'open')
-         AND ($2::timestamp IS NULL OR created_at >= $2::timestamp)
-         AND EXISTS (
-           -- order must have at least one KOT
-           SELECT 1 FROM kots k WHERE k.order_id = orders.order_id
-         )
-         AND NOT EXISTS (
-           -- no KOT item may still be in an active (non-terminal) state
-           SELECT 1
-           FROM kots k
-           JOIN section_kots sk   ON sk.parent_kot_id   = k.kot_id
-           JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id
-           WHERE k.order_id = orders.order_id
-             AND ski.status NOT IN ('served', 'cancelled')
-         )`,
-      [tableId, occupiedSince]
+    // Step 2: Find active session for this table
+    const sessionQuery = await client.query(
+      `SELECT ts.session_id FROM table_sessions ts
+       LEFT JOIN session_tables st ON ts.session_id = st.session_id
+       WHERE (ts.table_id = $1 OR st.table_id = $1)
+         AND ts.status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close')
+       LIMIT 1`,
+      [tableId]
     );
-    // ─────────────────────────────────────────────────────────────────────────
 
-    const ordersResult = await pool.query(
-      `SELECT o.order_id, o.table_id, o.order_phase, o.status, o.created_at
+    // Step 2: If no active session, return empty (table is FREE)
+    if (sessionQuery.rows.length === 0) {
+      console.log(`[GET /tables/${tableId}/orders] ✓ No active session - returning empty orders`);
+      return res.json({ orders: [], active_session_id: null, order_count: 0 });
+    }
+
+    const activeSessionId = sessionQuery.rows[0].session_id;
+    console.log(`[GET /tables/${tableId}/orders] ✓ Found active session: ${activeSessionId}`);
+
+    // Step 3: Fetch ONLY running orders from active session (exclude completed)
+    const ordersResult = await client.query(
+      `SELECT
+         o.order_id,
+         o.table_id,
+         o.order_phase,
+         o.status AS order_status,
+         COALESCE(kot_state.display_status, o.status::text) AS status,
+         o.created_at,
+         o.session_id
        FROM orders o
-       WHERE o.table_id = $1
-         AND o.status != 'completed'
-         AND ($2::timestamp IS NULL OR o.created_at >= $2::timestamp)
+       LEFT JOIN LATERAL (
+         SELECT
+           CASE
+             WHEN COUNT(k.kot_id) = 0 THEN NULL
+             WHEN BOOL_AND(k.status = 'completed') THEN 'completed'
+             WHEN BOOL_OR(k.status = 'ready') THEN 'ready'
+             WHEN BOOL_OR(k.status = 'acknowledged') THEN 'preparing'
+             WHEN BOOL_OR(k.status = 'pending') THEN 'sent_to_kitchen'
+             ELSE MAX(k.status::text)
+           END AS display_status
+         FROM kots k
+         WHERE k.order_id = o.order_id
+       ) kot_state ON TRUE
+       WHERE o.session_id = $1
        ORDER BY o.order_phase`,
-      [tableId, occupiedSince]
+      [activeSessionId]
     );
 
-    const orders = await Promise.all(
+    console.log(`[GET /tables/${tableId}/orders] ✓ Found ${ordersResult.rows.length} running orders in active session`);
+
+    // Step 4: Hydrate orders with their items
+    let orders = await Promise.all(
       ordersResult.rows.map(async (order) => {
-        const itemsResult = await pool.query(
+        const itemsResult = await client.query(
           `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
                   oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
            FROM order_items oi
@@ -341,10 +437,65 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
       })
     );
 
-    res.json(orders);
+    if (orders.length === 0) {
+      console.log(`[GET /tables/${tableId}/orders] ✓ No session orders found - trying legacy table orders`);
+      const legacyOrdersResult = await client.query(
+        `SELECT
+           o.order_id,
+           o.table_id,
+           o.order_phase,
+           o.status AS order_status,
+           COALESCE(kot_state.display_status, o.status::text) AS status,
+           o.created_at,
+           o.session_id
+         FROM orders o
+         LEFT JOIN LATERAL (
+           SELECT
+             CASE
+               WHEN COUNT(k.kot_id) = 0 THEN NULL
+               WHEN BOOL_AND(k.status = 'completed') THEN 'completed'
+               WHEN BOOL_OR(k.status = 'ready') THEN 'ready'
+               WHEN BOOL_OR(k.status = 'acknowledged') THEN 'preparing'
+               WHEN BOOL_OR(k.status = 'pending') THEN 'sent_to_kitchen'
+               ELSE MAX(k.status::text)
+             END AS display_status
+           FROM kots k
+           WHERE k.order_id = o.order_id
+         ) kot_state ON TRUE
+         WHERE o.table_id = $1
+           AND ($2::timestamp IS NULL OR o.created_at >= $2::timestamp)
+         ORDER BY o.order_phase`,
+        [tableId, occupiedSince]
+      );
+
+      if (legacyOrdersResult.rows.length > 0) {
+        orders = await Promise.all(
+          legacyOrdersResult.rows.map(async (order) => {
+            const itemsResult = await client.query(
+              `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
+                      oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
+               FROM order_items oi
+               LEFT JOIN items i ON i.id = oi.item_id
+               WHERE oi.order_id = $1`,
+              [order.order_id]
+            );
+            return { ...order, items: itemsResult.rows };
+          })
+        );
+      }
+    }
+
+    // Step 5: Return orders with session context
+    res.json({
+      orders: orders,
+      active_session_id: activeSessionId,
+      order_count: orders.length,
+    });
   } catch (err: any) {
-    console.error('GET /tables/:tableId/orders error:', err);
+    console.error(`GET /tables/${tableId}/orders error:`, err);
     res.status(500).json({ message: 'Failed to fetch table orders' });
+  } finally {
+    client.release();
   }
 });
 
@@ -353,7 +504,7 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 tablesRouter.post('/:tableId/orders', async (req, res) => {
   const { tableId } = req.params;
-  const { items } = req.body;
+  const { items, assigned_waiter_id, source_type } = req.body;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'items array is required and cannot be empty' });
@@ -364,16 +515,103 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     await client.query('BEGIN');
 
     const tableCheck = await client.query(
-      `SELECT table_id, status FROM tables WHERE table_id = $1`,
+      `SELECT table_id, table_number, status FROM tables WHERE table_id = $1 FOR UPDATE`,
       [tableId]
     );
     if (tableCheck.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Table not found' });
     }
-
-    // EC-10: Allow new orders even after billing (re-open workflow)
     const currentStatus = tableCheck.rows[0].status;
+
+    // ─── SESSION INTEGRATION ─────────────────────────────────────────────────
+    // 1. Look up the active session for this table (including merges)
+    const sessionQuery = await client.query(
+      `SELECT ts.session_id, ts.is_payment_locked, ts.status, ts.version
+       FROM table_sessions ts
+       LEFT JOIN session_tables st ON ts.session_id = st.session_id
+       WHERE (ts.table_id = $1 OR st.table_id = $1)
+         AND ts.status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close')
+       LIMIT 1 FOR UPDATE OF ts`,
+      [tableId]
+    );
+
+    let finalSessionId: string;
+
+    if (sessionQuery.rows.length > 0) {
+      const activeSession = sessionQuery.rows[0];
+
+      // Enforce ADDITION 3: Lock items during payment
+      if (activeSession.is_payment_locked) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({
+          message: 'This session is locked for payment processing. No new orders or items can be added.'
+        });
+      }
+
+      finalSessionId = activeSession.session_id;
+
+      // Enforce State Machine Rule: billed/payment_pending -> active when new order is added
+      if (activeSession.status === 'billed' || activeSession.status === 'payment_pending') {
+        await client.query(
+          `UPDATE table_sessions
+           SET status = 'active',
+               last_activity_at = NOW(),
+               version = version + 1
+           WHERE session_id = $1`,
+          [finalSessionId]
+        );
+
+        // Record State Transition Event
+        await client.query(
+          `INSERT INTO session_events (
+            session_id, event_type, timestamp, metadata, source_device, source_channel
+          ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4)`,
+          [
+            finalSessionId,
+            JSON.stringify({ previous_status: activeSession.status, reason: 'New order added' }),
+            req.header('x-device') ?? 'POS_TERMINAL',
+            source_type ?? 'POS'
+          ]
+        );
+      }
+    } else {
+      // Auto-start session for waiter-friendly backwards compatibility
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const randomHex = randomBytes(3).toString('hex').toUpperCase();
+      const sessionCode = `SESS-T${tableCheck.rows[0].table_number}-${dateStr}-${randomHex}`;
+      const finalSourceType = source_type ?? 'POS';
+
+      const newSessionResult = await client.query(
+        `INSERT INTO table_sessions (
+           table_id, session_code, status, guest_count, started_at,
+           payment_status, is_payment_locked, is_force_closed, source_type,
+           assigned_waiter_id, version
+         ) VALUES ($1, $2, 'active', 1, NOW(), 'unpaid', false, false, $3, $4, 1)
+         RETURNING session_id`,
+        [tableId, sessionCode, finalSourceType, assigned_waiter_id ?? null]
+      );
+      finalSessionId = newSessionResult.rows[0].session_id;
+
+      await client.query(
+        `INSERT INTO session_tables (session_id, table_id) VALUES ($1, $2)`,
+        [finalSessionId, tableId]
+      );
+
+      // Event log
+      await client.query(
+        `INSERT INTO session_events (
+          session_id, event_type, timestamp, metadata, source_device, source_channel
+         ) VALUES ($1, 'SESSION_STARTED', NOW(), $2, $3, $4)`,
+        [
+          finalSessionId,
+          JSON.stringify({ table_number: tableCheck.rows[0].table_number, guest_count: 1, note: 'Auto-started by order placement' }),
+          req.header('x-device') ?? 'POS_TERMINAL',
+          finalSourceType
+        ]
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const phaseResult = await client.query(
       `SELECT COALESCE(MAX(order_phase), 0) + 1 as next_phase FROM orders WHERE table_id = $1`,
@@ -381,10 +619,12 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     );
     const orderPhase = phaseResult.rows[0].next_phase;
 
+    // RULE 2: Order belongs to session_id
     const orderResult = await client.query(
-      `INSERT INTO orders (table_id, order_phase, status)
-       VALUES ($1, $2, 'open') RETURNING order_id, table_id, order_phase, status, created_at`,
-      [tableId, orderPhase]
+      `INSERT INTO orders (table_id, order_phase, status, session_id)
+       VALUES ($1, $2, 'open', $3)
+       RETURNING order_id, table_id, order_phase, status, created_at, session_id`,
+      [tableId, orderPhase, finalSessionId]
     );
     const newOrder = orderResult.rows[0];
 
@@ -407,6 +647,16 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
       })
     );
 
+    // Update active_order_id on table_sessions
+    await client.query(
+      `UPDATE table_sessions
+       SET active_order_id = $1,
+           last_activity_at = NOW(),
+           version = version + 1
+       WHERE session_id = $2`,
+      [newOrder.order_id, finalSessionId]
+    );
+
     // Mark table occupied; if it was ready_to_free (EC-10: late KOT after billing), revert
     const newTableStatus =
       currentStatus === 'waiting_for_service_completion' ||
@@ -415,13 +665,17 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
         ? 'waiting_for_service_completion'
         : 'occupied';
 
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE tables
        SET status = $1,
            occupied_since = COALESCE(occupied_since, NOW())
-       WHERE table_id = $2`,
+       WHERE table_id = $2
+       RETURNING occupied_since`,
       [newTableStatus, tableId]
     );
+    
+    const occupiedSince = updateResult.rows[0]?.occupied_since;
+    console.log(`[POST /tables/:tableId/orders] Table ${tableId}: status '${currentStatus}' → '${newTableStatus}', occupied_since SET to ${new Date(occupiedSince).toISOString()}`);
 
     // Audit if late KOT added after billing
     if (['billing_done', 'waiting_for_service_completion', 'ready_to_free'].includes(currentStatus)) {
@@ -444,3 +698,4 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     client.release();
   }
 });
+

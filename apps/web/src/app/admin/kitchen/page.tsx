@@ -46,6 +46,15 @@ interface KOTItem {
   item_name: string;
   quantity: number;
   serial_number: string;
+  status: 'pending' | 'acknowledged' | 'preparing' | 'ready' | 'served' | 'delivered' | 'cancelled' | 'packed' | 'recook_requested';
+  version: number;
+  acknowledged_at?: string;
+  preparing_at?: string;
+  ready_at?: string;
+  served_at?: string;
+  delivered_at?: string;
+  cancelled_at?: string;
+  recook_requested_at?: string;
 }
 
 interface SectionKOT {
@@ -54,7 +63,7 @@ interface SectionKOT {
   section_id: string;
   section_name: string;
   section_kot_number: string;
-  status: 'pending' | 'acknowledged' | 'completed' | 'served';
+  status: 'pending' | 'acknowledged' | 'ready' | 'completed' | 'served';
   generated_at: string;
   table_number: string;
   kot_number: string;
@@ -106,6 +115,41 @@ function statusLabel(status: string) {
   return status;
 }
 
+// ─────────────────────────────────────────────
+//  Item Status Configuration
+// ─────────────────────────────────────────────
+const ITEM_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: 'Pending', color: 'text-gray-700', bg: 'bg-gray-100' },
+  acknowledged: { label: 'Acknowledged', color: 'text-blue-700', bg: 'bg-blue-100' },
+  preparing: { label: 'Preparing', color: 'text-orange-700', bg: 'bg-orange-100' },
+  ready: { label: 'Ready', color: 'text-amber-700', bg: 'bg-amber-100' },
+  served: { label: 'Served', color: 'text-green-700', bg: 'bg-green-100' },
+  delivered: { label: 'Delivered', color: 'text-teal-700', bg: 'bg-teal-100' },
+  cancelled: { label: 'Cancelled', color: 'text-red-700', bg: 'bg-red-100' },
+  packed: { label: 'Packed', color: 'text-purple-700', bg: 'bg-purple-100' },
+  recook_requested: { label: 'Recook', color: 'text-orange-700', bg: 'bg-orange-100' },
+};
+
+const ITEM_STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ['acknowledged', 'cancelled'],
+  acknowledged: ['preparing', 'cancelled'],
+  preparing: ['ready', 'recook_requested', 'cancelled'],
+  ready: ['served', 'delivered', 'recook_requested'],
+  recook_requested: ['preparing'],
+  served: [],
+  delivered: [],
+  cancelled: [],
+  packed: [],
+};
+
+const TERMINAL_KOT_STATUSES = ['completed', 'served'];
+const ACTIVE_KOT_ITEM_STATUSES = ['recook_requested', 'ready', 'preparing', 'acknowledged', 'pending', 'packed'];
+
+function isTerminalKot(kot: SectionKOT) {
+  return TERMINAL_KOT_STATUSES.includes(kot.status)
+    || kot.items.every(item => !ACTIVE_KOT_ITEM_STATUSES.includes(item.status));
+}
+
 const SECTION_COLORS: Record<string, string> = {};
 const PALETTE = [
   { text: 'text-green-600', border: 'border-green-500', bg: 'bg-green-50' },
@@ -130,12 +174,43 @@ function getSectionPalette(sectionId: string) {
 // ─────────────────────────────────────────────
 function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolean; onClick: () => void }) {
   const pal = getSectionPalette(kot.section_id);
+  
+  // ⭐ KITCHEN UX: Show action counters
+  const statusCounts: Record<string, number> = {};
+  const actionableStatuses = ['recook_requested', 'ready', 'preparing', 'acknowledged', 'pending'];
+  const terminalStatuses = ['served', 'delivered', 'cancelled'];
+  
+  kot.items.forEach(item => {
+    statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
+  });
+  
+  const actionableCount = kot.items.filter(i => actionableStatuses.includes(i.status)).length;
+  const terminalCount = kot.items.filter(i => terminalStatuses.includes(i.status)).length;
+  
+  // Card border based on highest priority actionable item
+  const sortedItems = [...kot.items].sort((a, b) => {
+    const statusPriority = { recook_requested: 0, ready: 1, preparing: 2, acknowledged: 3, pending: 4, served: 5, delivered: 5, cancelled: 5 };
+    return (statusPriority[a.status as keyof typeof statusPriority] ?? 99) - (statusPriority[b.status as keyof typeof statusPriority] ?? 99);
+  });
+  const highestPriorityItem = sortedItems.find(i => actionableStatuses.includes(i.status));
+  
+  const cardBorderColor = highestPriorityItem
+    ? highestPriorityItem.status === 'recook_requested'
+      ? 'border-red-400'
+      : highestPriorityItem.status === 'ready'
+      ? 'border-amber-400'
+      : highestPriorityItem.status === 'preparing'
+      ? 'border-orange-400'
+      : 'border-blue-400'
+    : 'border-gray-200';
+
   return (
     <div
       onClick={onClick}
       className={cn(
-        'rounded-xl border bg-white cursor-pointer transition-all hover:shadow-md h-full flex flex-col',
-        selected ? 'ring-2 ring-blue-400 shadow-md scale-[1.02]' : 'border-gray-200 hover:border-gray-300',
+        'rounded-xl border-2 bg-white cursor-pointer transition-all hover:shadow-md h-full flex flex-col',
+        selected ? 'ring-2 ring-blue-400 shadow-md scale-[1.02]' : 'hover:border-gray-300',
+        cardBorderColor
       )}
     >
       <div className="flex items-center justify-between px-3 pt-2 pb-1 border-b border-gray-50 bg-gray-50/30 rounded-t-xl">
@@ -160,15 +235,59 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
           </div>
         )}
 
-        <div className="mt-1.5 space-y-0.5 max-h-[80px] overflow-hidden">
-          {kot.items.slice(0, 3).map((item, i) => (
-            <div key={i} className="flex justify-between text-[10px] text-gray-600">
-              <span className="truncate max-w-[80px]">{item.item_name}</span>
-              <span className="font-bold">x{item.quantity}</span>
+        {/* ⭐ ACTION COUNTERS - Quick scan for admins */}
+        <div className="mt-2 grid grid-cols-5 gap-0.5 text-center text-[9px] font-bold">
+          {statusCounts.recook_requested ? (
+            <div className="px-0.5 py-0.5 rounded bg-red-100 text-red-700">
+              <div>🔄</div>
+              <div>{statusCounts.recook_requested}</div>
             </div>
-          ))}
-          {kot.items.length > 3 && (
-            <div className="text-[9px] text-gray-400 italic">+{kot.items.length - 3} more...</div>
+          ) : null}
+          {statusCounts.ready ? (
+            <div className="px-0.5 py-0.5 rounded bg-amber-100 text-amber-700">
+              <div>✓</div>
+              <div>{statusCounts.ready}</div>
+            </div>
+          ) : null}
+          {statusCounts.preparing ? (
+            <div className="px-0.5 py-0.5 rounded bg-orange-100 text-orange-700">
+              <div>🔥</div>
+              <div>{statusCounts.preparing}</div>
+            </div>
+          ) : null}
+          {statusCounts.acknowledged || statusCounts.pending ? (
+            <div className="px-0.5 py-0.5 rounded bg-blue-100 text-blue-700">
+              <div>📋</div>
+              <div>{(statusCounts.acknowledged || 0) + (statusCounts.pending || 0)}</div>
+            </div>
+          ) : null}
+          {terminalCount ? (
+            <div className="px-0.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[8px]">
+              <div>✅</div>
+              <div>{terminalCount}</div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Item Preview - Show actionable items first */}
+        <div className="mt-1.5 space-y-0.5 text-[9px]">
+          {sortedItems
+            .filter(i => actionableStatuses.includes(i.status))
+            .slice(0, 3)
+            .map((item, i) => {
+              const cfg = ITEM_STATUS_CONFIG[item.status] || ITEM_STATUS_CONFIG.pending;
+              return (
+                <div key={i} className="flex items-center gap-1 px-1 py-0.5 rounded bg-gray-50">
+                  <span className={`font-bold px-1 rounded text-[8px] ${cfg.bg} ${cfg.color}`}>
+                    {cfg.label.charAt(0)}
+                  </span>
+                  <span className="truncate flex-1">{item.item_name}</span>
+                  <span className="text-gray-500">x{item.quantity}</span>
+                </div>
+              );
+            })}
+          {actionableCount > 3 && (
+            <div className="text-[8px] text-gray-400 italic px-1">+{actionableCount - 3} more items...</div>
           )}
         </div>
       </div>
@@ -186,7 +305,7 @@ function KOTPageInner() {
   const [allKots, setAllKots] = useState<SectionKOT[]>([]);
   const [selectedKot, setSelectedKot] = useState<SectionKOT | null>(null);
   const [loading, setLoading] = useState(true);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [busyItems, setBusyItems] = useState<Set<string>>(new Set());
   const [printKotOpen, setPrintKotOpen] = useState(false);
 
   // Context-based date/time filter (no URL changes)
@@ -278,44 +397,58 @@ function KOTPageInner() {
   }, [allKots]);
 
 
-  const advanceStatus = async (nextStatus: string) => {
+  const advanceStatus = async (itemId: string, nextStatus: string) => {
     if (!selectedKot) return;
-    setUpdatingStatus(true);
+    setBusyItems(prev => new Set(prev).add(itemId));
     try {
-      await apiClient.post(`/kots/section-kots/${selectedKot.section_kot_id}/status`, { status: nextStatus });
+      const response = await apiClient.post(`/kots/items/${itemId}/status`, { status: nextStatus });
 
-      const updated = { ...selectedKot, status: nextStatus as any };
-
-      // If served, close the detail panel and remove from lists immediately
-      if (nextStatus === 'served') {
-        setSelectedKot(null);
-        setKotsBySection(prev => {
-          const copy = { ...prev };
-          const sid = selectedKot.section_id;
-          if (copy[sid]) copy[sid] = copy[sid].filter(k => k.section_kot_id !== selectedKot.section_kot_id);
-          return copy;
-        });
-        setAllKots(prev => prev.filter(k => k.section_kot_id !== selectedKot.section_kot_id));
-      } else {
-        setSelectedKot(updated);
-        setKotsBySection(prev => {
-          const copy = { ...prev };
-          const sid = selectedKot.section_id;
-          if (copy[sid]) copy[sid] = copy[sid].map(k => k.section_kot_id === selectedKot.section_kot_id ? updated : k);
-          return copy;
-        });
-        setAllKots(prev => prev.map(k => k.section_kot_id === selectedKot.section_kot_id ? updated : k));
+      // Update selectedKot with new item status and derived KOT status
+      const updatedKot = { ...selectedKot };
+      const itemIndex = updatedKot.items.findIndex(it => it.section_kot_item_id === itemId);
+      if (itemIndex >= 0) {
+        updatedKot.items[itemIndex].status = nextStatus as any;
+        updatedKot.items[itemIndex].version = (updatedKot.items[itemIndex].version || 0) + 1;
       }
 
-      // Re-fetch sections counts silently (don't trigger full reload cascade)
+      // Update derived KOT status
+      if (response.data?.derivedSectionKotStatus) {
+        updatedKot.status = response.data.derivedSectionKotStatus;
+      }
+
+      if (isTerminalKot(updatedKot)) {
+        setSelectedKot(null);
+      } else {
+        setSelectedKot(updatedKot);
+      }
+
+      // Update KOTs lists
+      setKotsBySection(prev => {
+        const copy = { ...prev };
+        const sid = selectedKot.section_id;
+        if (copy[sid]) {
+          copy[sid] = isTerminalKot(updatedKot)
+            ? copy[sid].filter(k => k.section_kot_id !== selectedKot.section_kot_id)
+            : copy[sid].map(k => k.section_kot_id === selectedKot.section_kot_id ? updatedKot : k);
+        }
+        return copy;
+      });
+      setAllKots(prev => isTerminalKot(updatedKot)
+        ? prev.filter(k => k.section_kot_id !== selectedKot.section_kot_id)
+        : prev.map(k => k.section_kot_id === selectedKot.section_kot_id ? updatedKot : k)
+      );
+
       fetchSections(true);
-      setUpdatingStatus(false);
     } catch (e: any) {
-      console.error(e);
-      setUpdatingStatus(false);
-      const errMsg = e.response?.data?.message || e.message;
-      const errStep = e.response?.data?.step || 'unknown';
-      alert(`Error updating KOT: ${errMsg}\nStep: ${errStep}`);
+      console.error('Item status update error:', e?.response?.data);
+      const errMsg = e?.response?.data?.message || e?.message || 'Item update failed';
+      alert(`Error: ${errMsg}`);
+    } finally {
+      setBusyItems(prev => {
+        const copy = new Set(prev);
+        copy.delete(itemId);
+        return copy;
+      });
     }
   };
 
@@ -325,9 +458,9 @@ function KOTPageInner() {
   const [localSearch, setLocalSearch] = useState('');
   const [showStatusFilter, setShowStatusFilter] = useState<'all' | 'pending' | 'acknowledged'>('all');
 
-  // Apply date/time filters AND hide served KOTs (they auto-remove when marked Served)
+  // Apply date/time filters and hide terminal KOTs.
   const filteredAllKots = allKots.filter(kot => {
-    if (kot.status === 'served') return false; // auto-remove served
+    if (isTerminalKot(kot)) return false;
 
     // Status Filter
     if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
@@ -351,7 +484,7 @@ function KOTPageInner() {
   const filteredKotsBySection: Record<string, SectionKOT[]> = {};
   for (const [key, kots] of Object.entries(kotsBySection)) {
     filteredKotsBySection[key] = kots.filter(kot => {
-      if (kot.status === 'served') return false; // auto-remove served
+      if (isTerminalKot(kot)) return false;
 
       // Status Filter
       if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
@@ -552,10 +685,12 @@ function KOTPageInner() {
                         <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-xl opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
                           <button
                             onClick={async () => {
-                              if (confirm(`Are you sure you want to mark all KOTs in ${section.section_name} as ready?`)) {
+                              if (confirm(`Are you sure you want to mark all items in ${section.section_name} as ready?`)) {
                                 for (const kot of sectionKots) {
-                                  if (kot.status !== 'completed') {
-                                    await apiClient.post(`/kots/section-kots/${kot.section_kot_id}/status`, { status: 'completed' });
+                                  for (const item of kot.items) {
+                                    if (item.status === 'preparing') {
+                                      await apiClient.post(`/kots/items/${item.section_kot_item_id}/status`, { status: 'ready' });
+                                    }
                                   }
                                 }
                                 refresh();
@@ -634,20 +769,69 @@ function KOTPageInner() {
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-3">
                     <div className="flex items-center justify-between text-[10px] text-gray-400 uppercase tracking-widest font-black border-b pb-2">
                       <span>Item Name</span>
-                      <span>Quantity</span>
+                      <span>Qty</span>
+                      <span>Status</span>
                     </div>
-                    <div className="space-y-2">
-                      {selectedKot.items.map((it, idx) => (
-                        <div key={idx} className="flex justify-between items-center py-2.5 border-b border-gray-200/50 last:border-0 hover:bg-white -mx-2 px-2 rounded-lg transition-colors group">
-                          <div className="flex flex-col">
-                            <span className="font-bold text-gray-800 text-sm group-hover:text-blue-600 transition-colors">{it.item_name}</span>
-                            <span className="text-[9px] text-gray-300 font-mono">ID: {it.item_id}</span>
+                    <div className="space-y-4">
+                      {selectedKot.items.map((item, idx) => {
+                        const itemCfg = ITEM_STATUS_CONFIG[item.status] || {};
+                        const validTransitions = ITEM_STATUS_TRANSITIONS[item.status] || [];
+                        const itemBusy = busyItems.has(item.section_kot_item_id);
+
+                        return (
+                          <div key={idx} className="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
+                            <div className="flex justify-between items-start">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-gray-800 text-sm">{item.item_name}</span>
+                                <span className="text-[9px] text-gray-300 font-mono">ID: {item.item_id}</span>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="bg-white border shadow-sm px-2 py-1 rounded font-black text-blue-600 text-xs">
+                                  x{item.quantity}
+                                </span>
+                                <span className={cn('text-[9px] px-2 py-0.5 rounded border font-bold', itemCfg.bg, itemCfg.color)}>
+                                  {itemCfg.label}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Item Status Buttons */}
+                            {validTransitions.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 pt-2 border-t">
+                                {validTransitions.map(nextStatus => {
+                                  const nextCfg = ITEM_STATUS_CONFIG[nextStatus] || {};
+                                  const isServe = nextStatus === 'served' || nextStatus === 'delivered';
+                                  const isReady = nextStatus === 'ready';
+                                  const isRecook = nextStatus === 'recook_requested';
+
+                                  return (
+                                    <button
+                                      key={nextStatus}
+                                      disabled={itemBusy}
+                                      onClick={() => advanceStatus(item.section_kot_item_id, nextStatus)}
+                                      className={cn(
+                                        'flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-all disabled:opacity-50',
+                                        isServe
+                                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                          : isReady
+                                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                          : isRecook
+                                          ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                          : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                      )}
+                                    >
+                                      {itemBusy && <RefreshCw size={10} className="animate-spin" />}
+                                      {nextStatus === 'recook_requested' ? '↻ Recook' : nextCfg.label || nextStatus}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-[9px] text-gray-500 pt-2 italic">✓ {itemCfg.label}</div>
+                            )}
                           </div>
-                          <span className="bg-white border shadow-sm px-3 py-1 rounded-lg font-black text-blue-600 text-sm">
-                            x{it.quantity}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -666,36 +850,6 @@ function KOTPageInner() {
 
                 {/* Action Footer */}
                 <div className="p-6 bg-white border-t border-gray-100 space-y-3">
-                  {selectedKot.status === 'pending' && (
-                    <Button
-                      onClick={() => advanceStatus('acknowledged')}
-                      disabled={updatingStatus}
-                      className="w-full h-14 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base gap-2 shadow-lg shadow-blue-200"
-                    >
-                      {updatingStatus ? <RefreshCw className="animate-spin" /> : <PlayCircle size={22} />}
-                      START PREPARING
-                    </Button>
-                  )}
-                  {selectedKot.status === 'acknowledged' && (
-                    <Button
-                      onClick={() => advanceStatus('completed')}
-                      disabled={updatingStatus}
-                      className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base gap-2 shadow-lg shadow-emerald-200"
-                    >
-                      {updatingStatus ? <RefreshCw className="animate-spin" /> : <CheckCircle size={22} />}
-                      MARK READY
-                    </Button>
-                  )}
-                  {selectedKot.status === 'completed' && (
-                    <Button
-                      onClick={() => advanceStatus('served')}
-                      disabled={updatingStatus}
-                      className="w-full h-14 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base gap-2 shadow-lg shadow-blue-200"
-                    >
-                      {updatingStatus ? <RefreshCw className="animate-spin" /> : <CheckCheck size={22} />}
-                      MARK SERVED
-                    </Button>
-                  )}
                   <Button
                     variant="outline"
                     className="w-full h-12 rounded-xl border-gray-200 text-gray-600 font-bold gap-2 hover:bg-gray-50"

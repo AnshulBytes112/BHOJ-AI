@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PoolClient } from 'pg';
+import { randomBytes } from 'crypto';
 import { pool } from '../db';
 import { tryAutoFreeTable, auditLog } from '../tables/table-management';
 
@@ -13,6 +14,9 @@ type BillRow = {
   gst_total: string;
   grand_total: string;
   status: BillStatus;
+  payment_status: 'unpaid' | 'paid';
+  table_id: string | null;
+  session_id: string | null;
   created_at: Date;
 };
 
@@ -114,6 +118,67 @@ async function getGstRateForCategory(client: PoolClient, category: string): Prom
   return Number(config.rows[0].gst_percentage);
 }
 
+async function ensureActiveTableSession(
+  client: PoolClient,
+  tableId: string,
+  userId: number | null,
+): Promise<string> {
+  const activeSession = await client.query(
+    `SELECT ts.session_id
+     FROM table_sessions ts
+     LEFT JOIN session_tables st ON ts.session_id = st.session_id
+     WHERE (ts.table_id = $1 OR st.table_id = $1)
+       AND ts.status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close')
+     LIMIT 1
+     FOR UPDATE OF ts`,
+    [tableId]
+  );
+
+  if (activeSession.rows.length > 0) {
+    return activeSession.rows[0].session_id;
+  }
+
+  const tableResult = await client.query(
+    `SELECT table_id, table_number FROM tables WHERE table_id = $1 FOR UPDATE`,
+    [tableId]
+  );
+
+  if (tableResult.rows.length === 0) {
+    throw new Error('Table not found.');
+  }
+
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomHex = randomBytes(3).toString('hex').toUpperCase();
+  const sessionCode = `SESS-T${tableResult.rows[0].table_number}-${dateStr}-${randomHex}`;
+
+  const created = await client.query(
+    `INSERT INTO table_sessions (
+       table_id, session_code, status, guest_count, started_at,
+       payment_status, is_payment_locked, is_force_closed, source_type,
+       created_by, version
+     ) VALUES ($1, $2, 'active', 1, NOW(), 'unpaid', false, false, 'POS', $3, 1)
+     RETURNING session_id`,
+    [tableId, sessionCode, userId]
+  );
+
+  const sessionId = created.rows[0].session_id;
+
+  await client.query(
+    `INSERT INTO session_tables (session_id, table_id)
+     VALUES ($1, $2)
+     ON CONFLICT DO NOTHING`,
+    [sessionId, tableId]
+  );
+
+  await client.query(
+    `INSERT INTO session_events (session_id, event_type, timestamp, metadata, source_device, source_channel, performed_by)
+     VALUES ($1, 'SESSION_STARTED', NOW(), $2, 'POS_TERMINAL', 'POS', $3)`,
+    [sessionId, JSON.stringify({ table_id: tableId, note: 'Auto-started by bill generation' }), userId]
+  );
+
+  return sessionId;
+}
+
 export const billsRouter = Router();
 
 billsRouter.post('/', async (req, res) => {
@@ -184,18 +249,76 @@ billsRouter.post('/', async (req, res) => {
     }
 
     const grandTotal = roundMoney(subtotal + gstTotal);
+    const activeSessionId = tableId
+      ? await ensureActiveTableSession(client, tableId, cashierId)
+      : null;
 
-    // ── CORE FIX: bill payment_status is 'paid' only when pay_now=true.
+    if (activeSessionId) {
+      const paidBillCheck = await client.query(
+        `SELECT id FROM bills WHERE session_id = $1 AND payment_status = 'paid' LIMIT 1`,
+        [activeSessionId]
+      );
+      if (paidBillCheck.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ message: 'Bill already generated for this session.' });
+      }
+    }
+
+    // ── CREATE ORDER IF NONE EXISTS ──────────────────────────────────────────
+    // When bill is generated, ensure an order exists for the kitchen to prepare items
+    let actualOrderIds = orderIds || [];
+
+    if (activeSessionId && actualOrderIds.length > 0) {
+      await client.query(
+        `UPDATE orders
+         SET session_id = COALESCE(session_id, $1)
+         WHERE order_id = ANY($2::uuid[])`,
+        [activeSessionId, actualOrderIds]
+      );
+    }
+    
+    if (tableId && actualOrderIds.length === 0) {
+      // No orders provided - create one for these items
+      console.log(`[POST /bills] Creating new order for table ${tableId} with ${billItemsPayload.length} items`);
+      
+      const orderPhaseResult = await client.query(
+        `SELECT COALESCE(MAX(order_phase), 0) + 1 as next_phase FROM orders WHERE table_id = $1`,
+        [tableId]
+      );
+      const orderPhase = orderPhaseResult.rows[0].next_phase;
+
+      const orderResult = await client.query<{ order_id: string; created_at: string }>(
+        `INSERT INTO orders (table_id, order_phase, status, session_id)
+         VALUES ($1, $2, 'open', $3)
+         RETURNING order_id, created_at`,
+        [tableId, orderPhase, activeSessionId]
+      );
+      const newOrder = orderResult.rows[0];
+      actualOrderIds = [newOrder.order_id];
+
+      // Create order_items for each bill item
+      for (const billItem of billItemsPayload) {
+        await client.query(
+          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newOrder.order_id, billItem.item_id, billItem.quantity, billItem.unit_price, billItem.gst_rate]
+        );
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── CORE FIX: payment is treated as successful by default until payment module exists.
     // The table is NEVER freed here — that is handled by tryAutoFreeTable.
-    const paymentStatus = payNow ? 'paid' : 'unpaid';
+    const paymentStatus: 'paid' | 'unpaid' = 'paid';
+    const billIsPaid = paymentStatus === 'paid';
 
     const billResult = await client.query<BillRow>(
       `
-      INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id)
-      VALUES ($1, $2, $3, $4, 'completed', $5, $6)
+      INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id, session_id)
+      VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7)
       RETURNING *;
       `,
-      [cashierId, subtotal, gstTotal, grandTotal, paymentStatus, tableId ?? null]
+      [cashierId, subtotal, gstTotal, grandTotal, paymentStatus, tableId ?? null, activeSessionId]
     );
 
     const bill = billResult.rows[0];
@@ -226,32 +349,58 @@ billsRouter.post('/', async (req, res) => {
 
     // Update table billing status — but NEVER auto-free here (RULE 2)
     if (tableId) {
-      if (payNow) {
+      if (billIsPaid) {
         // Payment done — move to waiting_for_service_completion, NOT free
         await client.query(
           `UPDATE tables
-           SET status = 'waiting_for_service_completion', is_bill_paid = true
+           SET status = 'waiting_for_service_completion', is_bill_paid = true, occupied_since = COALESCE(occupied_since, NOW())
            WHERE table_id = $1`,
           [tableId]
         );
+        if (activeSessionId) {
+          await client.query(
+            `UPDATE table_sessions
+             SET status = 'payment_done',
+                 payment_status = 'paid',
+                 is_payment_locked = true,
+                 last_activity_at = NOW(),
+                 version = version + 1
+             WHERE session_id = $1`,
+            [activeSessionId]
+          );
+        }
+        console.log(`[POST /bills] Table ${tableId}: status → waiting_for_service_completion, occupied_since set`);
       } else {
         // Bill generated but not yet paid
         await client.query(
           `UPDATE tables
-           SET status = 'billing_done'
+           SET status = 'billing_done', occupied_since = COALESCE(occupied_since, NOW())
            WHERE table_id = $1`,
           [tableId]
         );
+        if (activeSessionId) {
+          await client.query(
+            `UPDATE table_sessions
+             SET status = 'billed',
+                 payment_status = 'unpaid',
+                 is_payment_locked = false,
+                 last_activity_at = NOW(),
+                 version = version + 1
+             WHERE session_id = $1`,
+            [activeSessionId]
+          );
+        }
+        console.log(`[POST /bills] Table ${tableId}: status → billing_done, occupied_since set`);
       }
     }
 
     // Audit bill generation
-    await auditLog(client, payNow ? 'BILL_PAID' : 'BILL_GENERATED', {
+    await auditLog(client, billIsPaid ? 'BILL_PAID' : 'BILL_GENERATED', {
       entityType: 'bill',
       entityId: String(bill.id),
       tableId: tableId ?? undefined,
       userId: cashierId,
-      reason: payNow ? 'Bill created and paid at POS' : 'Bill generated',
+      reason: billIsPaid ? 'Bill created and paid at POS' : 'Bill generated',
       metadata: { billSerialNumber: bill.bill_serial_number, grandTotal },
     });
 
@@ -265,7 +414,7 @@ billsRouter.post('/', async (req, res) => {
     // Post-commit: if bill is paid, try to auto-free the table (validated)
     // This is safe because tryAutoFreeTable opens its own transaction.
     let autoFreeResult = null;
-    if (payNow && tableId) {
+    if (billIsPaid && tableId) {
       try {
         autoFreeResult = await tryAutoFreeTable(pool, tableId, `bill:${bill.id}`);
       } catch (autoFreeErr: any) {
@@ -279,7 +428,7 @@ billsRouter.post('/', async (req, res) => {
       tableFreed: autoFreeResult?.freed ?? false,
       tableStatus: autoFreeResult?.newStatus ?? null,
       // If bill paid but table not freed: warn the client
-      warning: (payNow && autoFreeResult && !autoFreeResult.freed)
+      warning: (billIsPaid && autoFreeResult && !autoFreeResult.freed)
         ? `Bill Paid. Waiting for kitchen/service completion. Table cannot be freed. ${autoFreeResult.validation.reason}`
         : null,
     });
@@ -314,7 +463,7 @@ billsRouter.patch('/:id/payment', async (req, res) => {
     await client.query('BEGIN');
 
     const existing = await client.query(
-      `SELECT id, payment_status, table_id FROM bills WHERE id = $1 FOR UPDATE`,
+      `SELECT id, payment_status, table_id, session_id FROM bills WHERE id = $1 FOR UPDATE`,
       [billId]
     );
     if (existing.rowCount === 0) {
@@ -324,6 +473,7 @@ billsRouter.patch('/:id/payment', async (req, res) => {
 
     const bill = existing.rows[0];
     const tableId: string | null = bill.table_id;
+    const sessionId: string | null = bill.session_id;
 
     await client.query(
       `UPDATE bills SET payment_status = $1 WHERE id = $2`,
@@ -335,8 +485,9 @@ billsRouter.patch('/:id/payment', async (req, res) => {
       const billsForTable = await client.query(
         `SELECT COUNT(*) AS total,
                 COUNT(*) FILTER (WHERE payment_status = 'paid' OR id = $1) AS now_paid
-         FROM bills WHERE table_id = $2`,
-        [payment_status === 'paid' ? billId : -1, tableId]
+         FROM bills
+         WHERE ${sessionId ? 'session_id = $2' : 'table_id = $2'}`,
+        [payment_status === 'paid' ? billId : -1, sessionId ?? tableId]
       );
       const allPaid = parseInt(billsForTable.rows[0].total, 10) > 0 &&
                       parseInt(billsForTable.rows[0].total, 10) === parseInt(billsForTable.rows[0].now_paid, 10);
@@ -354,6 +505,24 @@ billsRouter.patch('/:id/payment', async (req, res) => {
            WHERE table_id = $1
              AND status NOT IN ('free')`,
           [tableId]
+        );
+      }
+
+      if (sessionId) {
+        await client.query(
+          `UPDATE table_sessions
+           SET status = $1,
+               payment_status = $2,
+               is_payment_locked = $3,
+               last_activity_at = NOW(),
+               version = version + 1
+           WHERE session_id = $4`,
+          [
+            payment_status === 'paid' ? 'payment_done' : 'payment_pending',
+            payment_status,
+            payment_status === 'paid',
+            sessionId,
+          ]
         );
       }
     }

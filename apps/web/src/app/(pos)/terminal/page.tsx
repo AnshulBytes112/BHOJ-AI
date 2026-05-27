@@ -63,9 +63,8 @@ export default function PosTerminalPage() {
           gstRate: i.gst_percentage || 5
         }));
 
-        // BUG FIX: map ALL non-free statuses to 'occupied' so they show the red/orange dot
-        // Previously new statuses like billing_done, waiting_for_service_completion, ready_to_free
-        // were falling through as 'reserved' and appearing as available (green dot)
+        // ✨ NEW: Map with new visual_state from API
+        // visual_state includes: FREE, OCCUPIED_ACTIVE, PAYMENT_DONE_WAITING_SERVICE, BILLING_IN_PROGRESS, READY_TO_CLEAN, FORCE_ATTENTION
         const tbls = tblsRes.data.map((t: any) => ({
           id: t.table_id.toString(),
           number: t.table_number.toString(),
@@ -75,6 +74,9 @@ export default function PosTerminalPage() {
           rawStatus: t.status as string,
           isBillPaid: t.is_bill_paid ?? false,
           activeItemCount: t.active_item_count ?? 0,
+          // ✨ NEW: Visual state for UI display
+          visual_state: t.visual_state ?? 'FREE',
+          active_session_id: t.active_session_id ?? null,
         }));
 
         setCategories(cats);
@@ -152,6 +154,7 @@ export default function PosTerminalPage() {
 
   // BUG FIX: When selecting an occupied table, fetch its existing open orders
   // and pre-populate the cart so staff can see what's already been ordered.
+  // ✨ NEW: Session-scoped orders — only shows active session orders, not historical
   const confirmTableSelection = async (tableId: string | null) => {
     setSelectedTable(tableId);
     setIsTableDialogOpen(false);
@@ -162,14 +165,17 @@ export default function PosTerminalPage() {
 
     // Find the table — if it's occupied, load its existing order items
     const tbl = tables.find(t => t.id === tableId) as any;
-    if (!tbl || tbl.status === 'available') return;
+    // Check both old 'available' status and new visual_state === 'FREE'
+    if (!tbl || tbl.status === 'available' || tbl.visual_state === 'FREE') return;
 
     setLoadingTableOrders(true);
     try {
       const ordersRes = await apiClient.get(`/tables/${tableId}/orders`);
-      const orders: any[] = ordersRes.data ?? [];
+      // NEW: Response structure includes orders array, active_session_id, and order_count
+      const response = ordersRes.data;
+      const orders: any[] = Array.isArray(response) ? response : (response.orders ?? []);
 
-      // Find the latest open order
+      // Find the latest open order from ACTIVE SESSION ONLY
       const openOrder = orders
         .filter((o: any) => o.status === 'open' || o.status === 'sent_to_kitchen')
         .sort((a: any, b: any) => b.order_phase - a.order_phase)[0];
@@ -250,13 +256,18 @@ export default function PosTerminalPage() {
         setCart([]);
         setSelectedTable(null);
 
-        // Refresh tables after order
+        // Refresh tables after order (now includes visual_state)
         const tblsRes = await apiClient.get('/tables');
         setTables(tblsRes.data.map((t: any) => ({
           id: t.table_id.toString(),
           number: t.table_number.toString(),
           capacity: t.capacity || 4,
           status: t.status === 'free' ? 'available' : 'occupied',
+          rawStatus: t.status as string,
+          isBillPaid: t.is_bill_paid ?? false,
+          activeItemCount: t.active_item_count ?? 0,
+          visual_state: t.visual_state ?? 'FREE',
+          active_session_id: t.active_session_id ?? null,
         })));
       }
     } catch (error: any) {
@@ -349,11 +360,13 @@ export default function PosTerminalPage() {
             <DialogTitle>{UI_CONTENT.pos.terminal.tableSelect}</DialogTitle>
           </DialogHeader>
 
-          {/* Legend */}
-          <div className="flex gap-4 text-xs text-muted-foreground pb-1">
+          {/* Legend - NEW: Updated color mapping for visual states */}
+          <div className="flex gap-3 text-xs text-muted-foreground pb-2 flex-wrap">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Free</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block" /> Occupied</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-600 inline-block" /> Bill Paid</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block" /> Dining</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Payment Done, Waiting</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> Billing</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Alert</span>
           </div>
 
           <div className="grid grid-cols-3 gap-3 py-2 max-h-[400px] overflow-y-auto">
@@ -366,15 +379,47 @@ export default function PosTerminalPage() {
             </Button>
             {tables.map(tableRaw => {
               const table = tableRaw as any;
-              const isFree = table.status === 'available';
-              const isOccupied = !isFree;
-              const isBillPaid = table.isBillPaid;
               const isSelected = selectedTable === table.id;
+              // ✨ NEW: Use visual_state from API instead of manually deriving
+              const visualState = table.visual_state || 'FREE';
 
               let dotColor = 'bg-emerald-500';
               let statusLabel = 'Free';
-              if (isOccupied && isBillPaid) { dotColor = 'bg-green-600'; statusLabel = 'Bill Paid'; }
-              else if (isOccupied) { dotColor = 'bg-orange-500'; statusLabel = 'Occupied'; }
+              let bgColor = '';
+
+              // Map visual states to colors per spec
+              switch (visualState) {
+                case 'FREE':
+                  dotColor = 'bg-emerald-500';
+                  statusLabel = 'Free';
+                  bgColor = '';
+                  break;
+                case 'OCCUPIED_ACTIVE':
+                  dotColor = 'bg-purple-600';
+                  statusLabel = 'Dining';
+                  bgColor = 'border-purple-300 bg-purple-50 hover:bg-purple-100';
+                  break;
+                case 'PAYMENT_DONE_WAITING_SERVICE':
+                  dotColor = 'bg-amber-500';
+                  statusLabel = 'Payment Done';
+                  bgColor = 'border-amber-300 bg-amber-50 hover:bg-amber-100';
+                  break;
+                case 'BILLING_IN_PROGRESS':
+                  dotColor = 'bg-blue-500';
+                  statusLabel = 'Billing';
+                  bgColor = 'border-blue-300 bg-blue-50 hover:bg-blue-100';
+                  break;
+                case 'READY_TO_CLEAN':
+                  dotColor = 'bg-teal-500';
+                  statusLabel = 'Ready to Clean';
+                  bgColor = 'border-teal-300 bg-teal-50 hover:bg-teal-100';
+                  break;
+                case 'FORCE_ATTENTION':
+                  dotColor = 'bg-red-500';
+                  statusLabel = 'Attention';
+                  bgColor = 'border-red-300 bg-red-50 hover:bg-red-100';
+                  break;
+              }
 
               return (
                 <Button
@@ -382,7 +427,7 @@ export default function PosTerminalPage() {
                   variant={isSelected ? 'default' : 'outline'}
                   // ALLOW selecting occupied tables (to add more items / view existing order)
                   className={`h-24 flex flex-col gap-1 rounded-xl relative ${
-                    isOccupied && !isSelected ? 'border-orange-300 bg-orange-50 hover:bg-orange-100' : ''
+                    visualState !== 'FREE' && !isSelected ? bgColor : ''
                   }`}
                   onClick={() => confirmTableSelection(table.id)}
                 >
@@ -390,8 +435,8 @@ export default function PosTerminalPage() {
                   <span className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full ${dotColor}`} />
                   <span className="text-xl font-bold">T{table.number}</span>
                   <span className="text-[10px] text-muted-foreground">{statusLabel}</span>
-                  {isOccupied && (table.activeItemCount > 0) && (
-                    <span className="text-[10px] font-semibold text-orange-600">{table.activeItemCount} active items</span>
+                  {visualState !== 'FREE' && (table.activeItemCount > 0) && (
+                    <span className="text-[10px] font-semibold text-amber-600">{table.activeItemCount} items</span>
                   )}
                 </Button>
               );

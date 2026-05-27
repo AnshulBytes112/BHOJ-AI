@@ -33,12 +33,29 @@ export const COMPLETED_ITEM_STATUSES = [
   'cancelled',
 ] as const;
 
+export const ACTIVE_SESSION_STATUSES = [
+  'active',
+  'billed',
+  'payment_pending',
+  'payment_done',
+  'waiting_service_completion',
+  'ready_to_close',
+] as const;
+
 export type TableStatus =
   | 'free'
   | 'occupied'
   | 'billing_done'
   | 'waiting_for_service_completion'
   | 'ready_to_free';
+
+export type TableVisualState =
+  | 'FREE'                              // No active session
+  | 'OCCUPIED_ACTIVE'                   // Customer dining normally (active session, items being prepared/served)
+  | 'PAYMENT_DONE_WAITING_SERVICE'      // Payment complete but items still pending (customer paid, waiting for food)
+  | 'BILLING_IN_PROGRESS'               // Bill generated, awaiting payment
+  | 'READY_TO_CLEAN'                    // All done, waiting for waiter cleanup
+  | 'FORCE_ATTENTION';                  // Error state or requires admin attention
 
 // ─── Audit Log Helper ─────────────────────────────────────────────────────────
 
@@ -75,6 +92,90 @@ export async function auditLog(
   }
 }
 
+// ─── canCloseSession ──────────────────────────────────────────────────────────
+
+export interface CanCloseSessionResult {
+  canClose: boolean;
+  reason: string;
+  activeItemCount: number;
+  unpaidBillCount: number;
+  billsPaid: boolean;
+  allItemsComplete: boolean;
+}
+
+/**
+ * canCloseSession — validates whether a session can be closed cleanly.
+ */
+export async function canCloseSession(
+  client: PoolClient,
+  sessionId: string
+): Promise<CanCloseSessionResult> {
+  // 1. Check all bills for this session are paid
+  const billsResult = await client.query(
+    `SELECT
+       COUNT(*)                                       AS total_bills,
+       COUNT(*) FILTER (WHERE payment_status = 'paid') AS paid_bills
+     FROM bills
+     WHERE session_id = $1
+    `,
+    [sessionId]
+  );
+  const totalBills = parseInt(billsResult.rows[0].total_bills, 10);
+  const paidBills = parseInt(billsResult.rows[0].paid_bills, 10);
+  const unpaidBillCount = totalBills - paidBills;
+  const billsPaid = totalBills > 0 && totalBills === paidBills;
+
+  // 2. Fetch all KOT items for this session
+  const itemsResult = await client.query(
+    `SELECT ski.status
+     FROM section_kot_items ski
+     JOIN section_kots sk ON sk.section_kot_id = ski.section_kot_id
+     JOIN kots k          ON k.kot_id          = sk.parent_kot_id
+     WHERE k.session_id = $1
+     FOR SHARE`,
+    [sessionId]
+  );
+
+  let activeItemCount = 0;
+  for (const row of itemsResult.rows) {
+    if (ACTIVE_ITEM_STATUSES.includes(row.status as any)) {
+      activeItemCount++;
+    }
+  }
+  const allItemsComplete = activeItemCount === 0;
+
+  if (!billsPaid) {
+    return {
+      canClose: false,
+      reason: `${unpaidBillCount} unpaid bill(s) remain for this session.`,
+      activeItemCount,
+      unpaidBillCount,
+      billsPaid: false,
+      allItemsComplete,
+    };
+  }
+
+  if (!allItemsComplete) {
+    return {
+      canClose: false,
+      reason: `Active kitchen items remain: ${activeItemCount} item(s) are still preparing.`,
+      activeItemCount,
+      unpaidBillCount,
+      billsPaid: true,
+      allItemsComplete: false,
+    };
+  }
+
+  return {
+    canClose: true,
+    reason: 'All bills paid and all items complete.',
+    activeItemCount: 0,
+    unpaidBillCount: 0,
+    billsPaid: true,
+    allItemsComplete: true,
+  };
+}
+
 // ─── canFreeTable ─────────────────────────────────────────────────────────────
 
 export interface CanFreeTableResult {
@@ -94,112 +195,105 @@ export interface CanFreeTableResult {
 /**
  * canFreeTable — validates whether a table can be freed.
  *
- * Uses a single transaction-scoped query with FOR SHARE row-level locking
- * on the relevant rows to prevent race conditions (EC-9).
- *
- * @param client  A PoolClient (within an active transaction) to ensure atomicity.
- * @param tableId The UUID of the table to validate.
+ * Uses session checks to keep full restaurant session integrity.
  */
 export async function canFreeTable(
   client: PoolClient,
   tableId: string,
   occupiedSince: Date | null = null
 ): Promise<CanFreeTableResult> {
-  // ── Step 1: Check all bills for this table are PAID ───────────────────────
-  //    Edge Case 4 (Split Billing): ALL bills must be paid.
-  const billsResult = await client.query(
-    `SELECT
-       COUNT(*)                                       AS total_bills,
-       COUNT(*) FILTER (WHERE payment_status = 'paid') AS paid_bills
-     FROM bills
-     WHERE table_id = $1 AND ($2::timestamp IS NULL OR created_at >= $2::timestamp)
-     FOR SHARE`,
-    [tableId, occupiedSince]
+  // Find the active session for this table (including merges)
+  const sessionQuery = await client.query(
+     `SELECT ts.session_id FROM table_sessions ts
+     LEFT JOIN session_tables st ON ts.session_id = st.session_id
+     WHERE (ts.table_id = $1 OR st.table_id = $1)
+       AND ts.status = ANY($2::text[])
+     LIMIT 1`,
+    [tableId, ACTIVE_SESSION_STATUSES]
   );
 
-  const totalBills = parseInt(billsResult.rows[0].total_bills, 10);
-  const paidBills  = parseInt(billsResult.rows[0].paid_bills, 10);
+  if (sessionQuery.rows.length === 0) {
+    const legacyBillsResult = await client.query(
+      `SELECT
+         COUNT(*) AS total_bills,
+         COUNT(*) FILTER (WHERE payment_status = 'paid') AS paid_bills
+       FROM bills
+       WHERE table_id = $1
+         AND ($2::timestamp IS NULL OR created_at >= $2::timestamp)
+      `,
+      [tableId, occupiedSince]
+    );
 
-  // If there are no bills at all, treat as unpaid (table not yet billed).
-  const billsPaid = totalBills > 0 && totalBills === paidBills;
-  const unpaidBillCount = totalBills - paidBills;
+    const legacyItemsResult = await client.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE ski.status = 'pending') AS pending_count,
+         COUNT(*) FILTER (WHERE ski.status = 'preparing') AS preparing_count,
+         COUNT(*) FILTER (WHERE ski.status = 'ready') AS ready_count,
+         COUNT(*) FILTER (WHERE ski.status = 'packed') AS packed_count,
+         COUNT(*) FILTER (WHERE ski.status = 'recook_requested') AS recook_count
+       FROM kots k
+       JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+       JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id
+       WHERE k.table_id = $1
+         AND ($2::timestamp IS NULL OR k.generated_at >= $2::timestamp)
+      `,
+      [tableId, occupiedSince]
+    );
 
-  if (!billsPaid) {
-    return {
-      canFree: false,
-      reason: unpaidBillCount > 0
-        ? `${unpaidBillCount} unpaid bill(s) remain for this table.`
-        : 'No bills found for this table.',
-      pendingCount: 0, preparingCount: 0, readyCount: 0,
-      packedCount: 0,  recookCount: 0,   activeItemCount: 0,
-      unpaidBillCount,
-      billsPaid: false,
-      allItemsComplete: false,
-    };
-  }
+    const totalBills = parseInt(legacyBillsResult.rows[0].total_bills, 10);
+    const paidBills = parseInt(legacyBillsResult.rows[0].paid_bills, 10);
+    const pendingCount = parseInt(legacyItemsResult.rows[0].pending_count ?? '0', 10);
+    const preparingCount = parseInt(legacyItemsResult.rows[0].preparing_count ?? '0', 10);
+    const readyCount = parseInt(legacyItemsResult.rows[0].ready_count ?? '0', 10);
+    const packedCount = parseInt(legacyItemsResult.rows[0].packed_count ?? '0', 10);
+    const recookCount = parseInt(legacyItemsResult.rows[0].recook_count ?? '0', 10);
+    const activeItemCount = pendingCount + preparingCount + readyCount + packedCount + recookCount;
+    const unpaidBillCount = totalBills - paidBills;
+    const billsPaid = totalBills > 0 && unpaidBillCount === 0;
+    const allItemsComplete = activeItemCount === 0;
 
-  // ── Step 2: Fetch ALL KOT item statuses across ALL KOTs for this table ────
-  //    Edge Case 3 (Multiple KOTs): query crosses all parent kots + all
-  //    section_kot_items so that not a single item is missed.
-  //    We lock the rows for share to prevent concurrent kitchen updates
-  //    from racing with this check (EC-9).
-  const itemsResult = await client.query(
-    `SELECT ski.status
-     FROM section_kot_items ski
-     JOIN section_kots sk  ON sk.section_kot_id = ski.section_kot_id
-     JOIN kots k           ON k.kot_id          = sk.parent_kot_id
-     WHERE k.table_id = $1 AND ($2::timestamp IS NULL OR k.generated_at >= $2::timestamp)
-     FOR SHARE`,
-    [tableId, occupiedSince]
-  );
-
-  // Count active statuses
-  let pendingCount   = 0;
-  let preparingCount = 0;
-  let readyCount     = 0;
-  let packedCount    = 0;
-  let recookCount    = 0;
-
-  for (const row of itemsResult.rows) {
-    switch (row.status) {
-      case 'pending':           pendingCount++;   break;
-      case 'preparing':         preparingCount++; break;
-      case 'ready':             readyCount++;     break;
-      case 'packed':            packedCount++;    break;
-      case 'recook_requested':  recookCount++;    break;
+    if (totalBills === 0) {
+      return {
+        canFree: false,
+        reason: 'No bill has been generated for this table. Generate and settle the bill before freeing it.',
+        pendingCount, preparingCount, readyCount, packedCount, recookCount,
+        activeItemCount, unpaidBillCount: 0, billsPaid: false, allItemsComplete,
+      };
     }
-  }
 
-  const activeItemCount = pendingCount + preparingCount + readyCount + packedCount + recookCount;
-  const allItemsComplete = activeItemCount === 0;
-
-  if (!allItemsComplete) {
-    const details: string[] = [];
-    if (pendingCount)   details.push(`${pendingCount} pending`);
-    if (preparingCount) details.push(`${preparingCount} preparing`);
-    if (readyCount)     details.push(`${readyCount} ready`);
-    if (packedCount)    details.push(`${packedCount} packed`);
-    if (recookCount)    details.push(`${recookCount} recook-requested`);
+    if (!billsPaid || !allItemsComplete) {
+      return {
+        canFree: false,
+        reason: !billsPaid
+          ? `${unpaidBillCount || totalBills || 1} unpaid bill(s) remain for this table.`
+          : `Active kitchen items remain: ${activeItemCount} item(s) are still preparing.`,
+        pendingCount, preparingCount, readyCount, packedCount, recookCount,
+        activeItemCount, unpaidBillCount, billsPaid, allItemsComplete,
+      };
+    }
 
     return {
-      canFree: false,
-      reason: `Active KOT items remain: ${details.join(', ')}.`,
-      pendingCount, preparingCount, readyCount, packedCount, recookCount,
-      activeItemCount,
+      canFree: true,
+      reason: 'No active session found for this table.',
+      pendingCount: 0, preparingCount: 0, readyCount: 0, packedCount: 0, recookCount: 0,
+      activeItemCount: 0,
       unpaidBillCount: 0,
       billsPaid: true,
-      allItemsComplete: false,
+      allItemsComplete: true,
     };
   }
 
+  const session = sessionQuery.rows[0];
+  const validation = await canCloseSession(client, session.session_id);
+
   return {
-    canFree: true,
-    reason: 'All bills paid and all items completed.',
-    pendingCount: 0, preparingCount: 0, readyCount: 0,
-    packedCount: 0,  recookCount: 0,   activeItemCount: 0,
-    unpaidBillCount: 0,
-    billsPaid: true,
-    allItemsComplete: true,
+    canFree: validation.canClose,
+    reason: validation.reason,
+    pendingCount: 0, preparingCount: 0, readyCount: 0, packedCount: 0, recookCount: 0,
+    activeItemCount: validation.activeItemCount,
+    unpaidBillCount: validation.unpaidBillCount,
+    billsPaid: validation.billsPaid,
+    allItemsComplete: validation.allItemsComplete,
   };
 }
 
@@ -218,6 +312,127 @@ export function deriveTableStatus(
   if (!hasAnyBill) return 'occupied';           // no bill yet, just occupied
   if (!billsPaid)  return 'billing_done';       // bill generated but not paid
   return 'ready_to_free';
+}
+
+// ─── Fetch Active Session Info ────────────────────────────────────────────────
+
+export interface SessionState {
+  session_id: string | null;
+  session_status: string | null;
+  payment_status: string | null;
+  payment_done: boolean;
+  active_item_count: number;
+  unpaid_bill_count: number;
+  has_active_kot_items: boolean;
+}
+
+/**
+ * Fetches the active session and its state for a table.
+ * Returns null if no active session exists.
+ */
+export async function fetchSessionState(
+  client: PoolClient,
+  tableId: string
+): Promise<SessionState> {
+  // Get active session for this table
+  const sessionQuery = await client.query(
+     `SELECT ts.session_id, ts.status as session_status, ts.payment_status
+     FROM table_sessions ts
+     LEFT JOIN session_tables st ON ts.session_id = st.session_id
+     WHERE (ts.table_id = $1 OR st.table_id = $1)
+       AND ts.status = ANY($2::text[])
+     LIMIT 1`,
+    [tableId, ACTIVE_SESSION_STATUSES]
+  );
+
+  if (sessionQuery.rows.length === 0) {
+    return {
+      session_id: null,
+      session_status: null,
+      payment_status: null,
+      payment_done: false,
+      active_item_count: 0,
+      unpaid_bill_count: 0,
+      has_active_kot_items: false,
+    };
+  }
+
+  const session = sessionQuery.rows[0];
+
+  // Count unpaid bills in this session
+  const billsQuery = await client.query(
+    `SELECT COUNT(*) FILTER (WHERE payment_status = 'unpaid') as unpaid_count
+     FROM bills
+     WHERE session_id = $1`,
+    [session.session_id]
+  );
+  const unpaidBillCount = parseInt(billsQuery.rows[0].unpaid_count, 10);
+
+  // Check for active KOT items in this session
+  const kotsQuery = await client.query(
+    `SELECT COUNT(*) as active_count
+     FROM section_kot_items ski
+     JOIN section_kots sk ON sk.section_kot_id = ski.section_kot_id
+     JOIN kots k ON k.kot_id = sk.parent_kot_id
+     WHERE k.session_id = $1
+       AND ski.status IN ('pending', 'preparing', 'ready', 'packed', 'recook_requested')`,
+    [session.session_id]
+  );
+  const activeItemCount = parseInt(kotsQuery.rows[0].active_count, 10);
+
+  return {
+    session_id: session.session_id,
+    session_status: session.session_status,
+    payment_status: session.payment_status,
+    payment_done: session.payment_status === 'paid' || session.session_status === 'payment_done',
+    active_item_count: activeItemCount,
+    unpaid_bill_count: unpaidBillCount,
+    has_active_kot_items: activeItemCount > 0,
+  };
+}
+
+// ─── Derive Table Visual State ────────────────────────────────────────────────
+
+/**
+ * Derives the UI visual state for a table based on its session lifecycle.
+ * This is the SINGLE SOURCE OF TRUTH for table display state.
+ *
+ * Logic:
+ *   - if no active session → FREE
+ *   - else if payment_done AND has_active_kot_items → PAYMENT_DONE_WAITING_SERVICE
+ *   - else if active_kot_exists → OCCUPIED_ACTIVE
+ *   - else if session.completed → READY_TO_CLEAN
+ *   - else if billing_in_progress → BILLING_IN_PROGRESS
+ *   - else → OCCUPIED_ACTIVE (default dining state)
+ */
+export function deriveTableVisualState(session: SessionState): TableVisualState {
+  // No active session → FREE
+  if (!session.session_id) {
+    return 'FREE';
+  }
+
+  // Payment complete + items still pending → Customer paid but waiting for food
+  if (session.payment_done && session.has_active_kot_items) {
+    return 'PAYMENT_DONE_WAITING_SERVICE';
+  }
+
+  // Active items being prepared/served → Normal dining
+  if (session.has_active_kot_items) {
+    return 'OCCUPIED_ACTIVE';
+  }
+
+  // Session is in payment/completed state but no items active
+  if (session.session_status === 'payment_done' || session.session_status === 'ready_to_close') {
+    return 'READY_TO_CLEAN';
+  }
+
+  // Bill generated, awaiting payment
+  if (session.session_status === 'billed' || session.session_status === 'payment_pending') {
+    return 'BILLING_IN_PROGRESS';
+  }
+
+  // Active session, dining normally
+  return 'OCCUPIED_ACTIVE';
 }
 
 // ─── tryAutoFreeTable ─────────────────────────────────────────────────────────
@@ -257,6 +472,38 @@ export async function tryAutoFreeTable(
     let newStatus: string = tableRow.rows[0].status;
 
     if (validation.canFree) {
+      const sessionsToClose = await client.query(
+        `SELECT ts.session_id
+         FROM table_sessions ts
+         LEFT JOIN session_tables st ON ts.session_id = st.session_id
+         WHERE (ts.table_id = $1 OR st.table_id = $1)
+           AND ts.status = ANY($2::text[])
+         FOR UPDATE OF ts`,
+        [tableId, ACTIVE_SESSION_STATUSES]
+      );
+
+      if (sessionsToClose.rows.length > 0) {
+        const sessionIds = Array.from(new Set(sessionsToClose.rows.map(row => row.session_id)));
+        await client.query(
+          `UPDATE table_sessions
+           SET status = 'completed',
+               payment_status = 'paid',
+               ended_at = COALESCE(ended_at, NOW()),
+               last_activity_at = NOW(),
+               version = version + 1
+           WHERE session_id = ANY($1::uuid[])`,
+          [sessionIds]
+        );
+
+        for (const sessionId of sessionIds) {
+          await client.query(
+            `INSERT INTO session_events (session_id, event_type, timestamp, metadata, source_device, source_channel)
+             VALUES ($1, 'SESSION_COMPLETED', NOW(), $2, 'SYSTEM', $3)`,
+            [sessionId, JSON.stringify({ table_id: tableId, triggered_by: triggeredBy }), triggeredBy]
+          );
+        }
+      }
+
       await client.query(
         `UPDATE tables
          SET status = 'free',

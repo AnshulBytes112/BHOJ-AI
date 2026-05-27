@@ -256,6 +256,20 @@ export async function initializeDatabase(): Promise<void> {
   }
 
   try {
+    await pool.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'preparing'`);
+    console.log('order_status_enum: preparing value ensured');
+  } catch (e: any) {
+    console.warn('order_status_enum preparing ALTER skipped:', e.message);
+  }
+
+  try {
+    await pool.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'ready'`);
+    console.log('order_status_enum: ready value ensured');
+  } catch (e: any) {
+    console.warn('order_status_enum ready ALTER skipped:', e.message);
+  }
+
+  try {
     await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'completed'`);
     console.log('kot_status: completed value ensured');
   } catch (e: any) {
@@ -285,6 +299,11 @@ export async function initializeDatabase(): Promise<void> {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       UNIQUE(table_id, order_phase)
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
   `);
 
   await pool.query(`
@@ -320,7 +339,9 @@ export async function initializeDatabase(): Promise<void> {
       order_phase INTEGER NOT NULL,
       kot_number VARCHAR(50) NOT NULL UNIQUE,
       status kot_status DEFAULT 'pending',
-      generated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      generated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS kot_items (
@@ -358,7 +379,9 @@ export async function initializeDatabase(): Promise<void> {
       section_name VARCHAR(255),
       section_kot_number VARCHAR(100) UNIQUE NOT NULL,
       status kot_status DEFAULT 'pending',
-      generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS section_kot_items (
@@ -462,14 +485,14 @@ export async function initializeDatabase(): Promise<void> {
   await pool.query(`
     ALTER TABLE kot_items
       ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
   `);
 
   // 5. Add per-item status tracking to section_kot_items (section-level items).
   await pool.query(`
     ALTER TABLE section_kot_items
       ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
   `);
 
   // 6. Audit log table — tracks all critical lifecycle events.
@@ -490,11 +513,161 @@ export async function initializeDatabase(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_action      ON audit_log(action);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at  ON audit_log(created_at DESC);`);
 
+  // 6b. ITEM-CENTRIC KOT REFACTOR: Add timestamp columns and versioning to section_kot_items.
+  //     These track the lifecycle of individual items independently.
+  await pool.query(`
+    ALTER TABLE section_kot_items
+      ADD COLUMN IF NOT EXISTS acknowledged_at    TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS preparing_at       TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS ready_at           TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS served_at          TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS cancelled_at       TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS delivered_at       TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS recook_requested_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS version           INTEGER NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS updated_by        INTEGER,
+      ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+  `);
+
+  // 6c. Same enhancements for kot_items table (main KOT items, not section-specific)
+  await pool.query(`
+    ALTER TABLE kot_items
+      ADD COLUMN IF NOT EXISTS acknowledged_at    TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS preparing_at       TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS ready_at           TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS served_at          TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS cancelled_at       TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS delivered_at       TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS recook_requested_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS version           INTEGER NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS updated_by        INTEGER,
+      ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+  `);
+
   // 7. Index to speed up canFreeTable checks.
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_section_kot_items_status ON section_kot_items(status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_kot_items_status         ON kot_items(status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_kots_table_id            ON kots(table_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_payment_status     ON bills(payment_status);`);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 8. DATA MIGRATION: Normalize table status values to match enum definition
+  //    Fix capitalized legacy values that don't match the enum
+  // ─────────────────────────────────────────────────────────────────────────
+  try {
+    const updateAvailable = await pool.query(`UPDATE tables SET status = 'free' WHERE status = 'Available' RETURNING table_id;`);
+    if (updateAvailable.rowCount > 0) {
+      console.log(`✓ Migrated ${updateAvailable.rowCount} tables from 'Available' to 'free'`);
+    }
+  } catch (e: any) {
+    console.warn('Migration: Available→free skipped:', e.message);
+  }
+
+  try {
+    const updateOccupied = await pool.query(`UPDATE tables SET status = 'occupied' WHERE status = 'Occupied' RETURNING table_id;`);
+    if (updateOccupied.rowCount > 0) {
+      console.log(`✓ Migrated ${updateOccupied.rowCount} tables from 'Occupied' to 'occupied'`);
+    }
+  } catch (e: any) {
+    console.warn('Migration: Occupied→occupied skipped:', e.message);
+  }
+
+  try {
+    const updateBilling = await pool.query(`UPDATE tables SET status = 'billing_done' WHERE status = 'Billing' RETURNING table_id;`);
+    if (updateBilling.rowCount > 0) {
+      console.log(`✓ Migrated ${updateBilling.rowCount} tables from 'Billing' to 'billing_done'`);
+    }
+  } catch (e: any) {
+    console.warn('Migration: Billing→billing_done skipped:', e.message);
+  }
+
+  // ─── TABLE SESSIONS SYSTEM SCHEMA ──────────────────────────────────────────
+  console.log('Running Table Session System migrations...');
+  
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS table_sessions (
+      session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      table_id UUID NOT NULL REFERENCES tables(table_id) ON DELETE RESTRICT,
+      session_code VARCHAR NOT NULL UNIQUE,
+      status VARCHAR NOT NULL CHECK (status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close', 'completed', 'force_closed', 'abandoned')) DEFAULT 'active',
+      guest_count INTEGER NOT NULL DEFAULT 1,
+      started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      ended_at TIMESTAMP,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      close_reason TEXT,
+      active_order_id UUID,
+      payment_status VARCHAR NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'paid', 'partially_paid')),
+      is_payment_locked BOOLEAN NOT NULL DEFAULT false,
+      is_force_closed BOOLEAN NOT NULL DEFAULT false,
+      source_type VARCHAR NOT NULL DEFAULT 'POS' CHECK (source_type IN ('POS', 'WAITER_QR', 'CUSTOMER_QR', 'DELIVERY', 'API')),
+      snapshot JSONB,
+      assigned_waiter_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      last_activity_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      heartbeat_timeout INTEGER NOT NULL DEFAULT 3600,
+      notes TEXT,
+      version INTEGER NOT NULL DEFAULT 1
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS session_tables (
+      session_id UUID NOT NULL REFERENCES table_sessions(session_id) ON DELETE CASCADE,
+      table_id UUID NOT NULL REFERENCES tables(table_id) ON DELETE CASCADE,
+      PRIMARY KEY (session_id, table_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS session_events (
+      event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id UUID NOT NULL REFERENCES table_sessions(session_id) ON DELETE CASCADE,
+      event_type VARCHAR NOT NULL,
+      timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+      metadata JSONB,
+      performed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      source_device VARCHAR,
+      source_channel VARCHAR
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS idempotency_keys (
+      key_hash VARCHAR PRIMARY KEY,
+      response_status INTEGER NOT NULL,
+      response_body JSONB NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE orders 
+      ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES table_sessions(session_id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS source_type VARCHAR NOT NULL DEFAULT 'POS' CHECK (source_type IN ('POS', 'WAITER_QR', 'CUSTOMER_QR', 'DELIVERY', 'API'));
+  `);
+
+  await pool.query(`
+    ALTER TABLE kots 
+      ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES table_sessions(session_id) ON DELETE SET NULL;
+  `);
+
+  await pool.query(`
+    ALTER TABLE bills 
+      ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES table_sessions(session_id) ON DELETE SET NULL;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_table_sessions_table_id ON table_sessions(table_id);
+    CREATE INDEX IF NOT EXISTS idx_table_sessions_status   ON table_sessions(status);
+    CREATE INDEX IF NOT EXISTS idx_orders_session_id        ON orders(session_id);
+    CREATE INDEX IF NOT EXISTS idx_kots_session_id          ON kots(session_id);
+    CREATE INDEX IF NOT EXISTS idx_bills_session_id         ON bills(session_id);
+    CREATE INDEX IF NOT EXISTS idx_session_tables_table_id  ON session_tables(table_id);
+  `);
+
   console.log('Table management schema migrations complete.');
 }
+

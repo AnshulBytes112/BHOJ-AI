@@ -147,6 +147,7 @@ export default function POSTerminal() {
   const [dbTables, setDbTables] = useState<{ table_id: string; table_number: string; status: string }[]>([]);
   const [existingOrders, setExistingOrders] = useState<any[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+  const [tableBilling, setTableBilling] = useState<{ isBillPaid: boolean; paidBills: number; unpaidBills: number } | null>(null);
   const [selectedWaiter, setSelectedWaiter] = useState('John Paul');
   const [guests, setGuests] = useState(4);
   const [activeWorkflow, setActiveWorkflow] = useState('categories');
@@ -274,29 +275,62 @@ export default function POSTerminal() {
     loadData();
   }, []);
 
-  const fetchTableOrders = useCallback(async (tableId: string) => {
-    const table = dbTables.find(t => t.table_id === tableId);
-    if (!table || table.status === 'free') {
-      setExistingOrders([]);
-      return;
-    }
-
-    setIsLoadingOrders(true);
+  const fetchTableOrders = useCallback(async (tableId: string, silent = false) => {
+    if (!silent) setIsLoadingOrders(true);
     try {
+      // Step 1: Fetch fresh table data to check current status
+      const tableResp = await apiClient.get(`/tables/${tableId}`);
+      const table = tableResp.data;
+      
+      console.log(`[POS] Table ${tableId} status: ${table.status}, occupied_since: ${table.occupied_since}`);
+
+      setTableBilling({
+        isBillPaid: Boolean(table.is_bill_paid),
+        paidBills: Number(table.paid_bills ?? 0),
+        unpaidBills: Number(table.unpaid_bills ?? 0),
+      });
+
+      // Update local dbTables with fresh status
+      setDbTables(prev => prev.map(t => t.table_id === tableId ? { ...t, status: table.status } : t));
+
+      // Step 2: If table is free, clear all orders and exit
+      // Check if table status is anything other than 'free'.
+      if (!table || table.status === 'free') {
+        console.log(`[POS] Table ${tableId} is free - clearing orders`);
+        setExistingOrders([]);
+        setTableBilling(null);
+        return;
+      }
+
+      // Step 3: For occupied tables, fetch their orders
+      console.log(`[POS] Table ${tableId} is occupied - fetching running orders`);
       const response = await apiClient.get(`/tables/${tableId}/orders`);
-      setExistingOrders(response.data || []);
+      // NEW: API returns { orders, active_session_id, order_count } structure
+      const fetchedOrders = Array.isArray(response.data) ? response.data : (response.data.orders || []);
+      console.log(`[POS] Fetched ${fetchedOrders.length} running orders for table ${tableId}`);
+      setExistingOrders(fetchedOrders);
     } catch (error) {
       console.error('Failed to fetch table orders:', error);
       setExistingOrders([]);
     } finally {
-      setIsLoadingOrders(false);
+      if (!silent) setIsLoadingOrders(false);
     }
-  }, [dbTables]);
+  }, []);
 
   useEffect(() => {
     if (selectedTable) {
       fetchTableOrders(selectedTable);
     }
+  }, [selectedTable, fetchTableOrders]);
+
+  useEffect(() => {
+    if (!selectedTable) return;
+
+    const interval = window.setInterval(() => {
+      fetchTableOrders(selectedTable, true);
+    }, 8000);
+
+    return () => window.clearInterval(interval);
   }, [selectedTable, fetchTableOrders]);
 
   const handleImageFile = useCallback(async (file: File) => {
@@ -500,24 +534,26 @@ export default function POSTerminal() {
     // Combine items from existing orders and current cart for billing calculation
     const allItemsToBill: Array<{ id: string; price: number; quantity: number; name: string; categoryId: string; gstRate?: number }> = [];
     
-    // Add items from existing orders
-    existingOrders.forEach((o: any) => {
-      (o.items || []).forEach((oi: any) => {
-        const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
-        if (existing) {
-          existing.quantity += oi.quantity;
-        } else {
-          allItemsToBill.push({
-            id: String(oi.item_id),
-            name: oi.item_name || `Item #${oi.item_id}`,
-            price: Number(oi.price_at_billing),
-            quantity: oi.quantity,
-            categoryId: '', // We use explicit gstRate from order item
-            gstRate: Number(oi.gst_percent_at_billing)
-          });
-        }
+    // Add items from existing orders (safe check for array)
+    if (Array.isArray(existingOrders)) {
+      existingOrders.forEach((o: any) => {
+        (o.items || []).forEach((oi: any) => {
+          const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
+          if (existing) {
+            existing.quantity += oi.quantity;
+          } else {
+            allItemsToBill.push({
+              id: String(oi.item_id),
+              name: oi.item_name || `Item #${oi.item_id}`,
+              price: Number(oi.price_at_billing),
+              quantity: oi.quantity,
+              categoryId: '', // We use explicit gstRate from order item
+              gstRate: Number(oi.gst_percent_at_billing)
+            });
+          }
+        });
       });
-    });
+    }
 
     // Add items from current cart
     cart.forEach(item => {
@@ -609,6 +645,11 @@ export default function POSTerminal() {
   const generateBillAndPrint = async () => {
     // Check if there is anything to bill (either in cart or already ordered)
     if (cart.length === 0 && existingOrders.length === 0) return;
+
+    if (tableBilling?.isBillPaid) {
+      alert('Bill already generated for this table.');
+      return;
+    }
     
     setIsGeneratingBill(true);
     try {
@@ -1417,7 +1458,7 @@ export default function POSTerminal() {
             </Button>
             <Button 
               onClick={() => setIsPreviewOpen(true)}
-              disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable}
+              disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable || Boolean(tableBilling?.isBillPaid)}
               className="w-full h-12 bg-green-500 hover:bg-green-600 text-white font-semibold"
             >
               {isGeneratingBill ? 'Generating...' : 'Bill'}
