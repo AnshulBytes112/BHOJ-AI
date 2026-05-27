@@ -147,7 +147,14 @@ export default function POSTerminal() {
   const [dbTables, setDbTables] = useState<{ table_id: string; table_number: string; status: string }[]>([]);
   const [existingOrders, setExistingOrders] = useState<any[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
-  const [tableBilling, setTableBilling] = useState<{ isBillPaid: boolean; paidBills: number; unpaidBills: number } | null>(null);
+  const [unbilledItems, setUnbilledItems] = useState<any[]>([]);
+  const [tableBilling, setTableBilling] = useState<{
+    isBillPaid: boolean;
+    paidBills: number;
+    unpaidBills: number;
+    sessionId: string | null;
+    sessionStatus: string | null;
+  } | null>(null);
   const [selectedWaiter, setSelectedWaiter] = useState('John Paul');
   const [guests, setGuests] = useState(4);
   const [activeWorkflow, setActiveWorkflow] = useState('categories');
@@ -163,6 +170,7 @@ export default function POSTerminal() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showWipDialog, setShowWipDialog] = useState(false);
+  const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [autoRedirectTimer, setAutoRedirectTimer] = useState<number | null>(null);
 
   // Catalog CRUD states
@@ -288,6 +296,8 @@ export default function POSTerminal() {
         isBillPaid: Boolean(table.is_bill_paid),
         paidBills: Number(table.paid_bills ?? 0),
         unpaidBills: Number(table.unpaid_bills ?? 0),
+        sessionId: table.active_session_id ?? null,
+        sessionStatus: table.session_status ?? null,
       });
 
       // Update local dbTables with fresh status
@@ -298,6 +308,7 @@ export default function POSTerminal() {
       if (!table || table.status === 'free') {
         console.log(`[POS] Table ${tableId} is free - clearing orders`);
         setExistingOrders([]);
+        setUnbilledItems([]);
         setTableBilling(null);
         return;
       }
@@ -309,9 +320,16 @@ export default function POSTerminal() {
       const fetchedOrders = Array.isArray(response.data) ? response.data : (response.data.orders || []);
       console.log(`[POS] Fetched ${fetchedOrders.length} running orders for table ${tableId}`);
       setExistingOrders(fetchedOrders);
+
+      const unbilledResp = await apiClient.get(`/tables/${tableId}/unbilled-items`);
+      const pendingItems = Array.isArray(unbilledResp.data)
+        ? unbilledResp.data
+        : (unbilledResp.data.items || []);
+      setUnbilledItems(pendingItems);
     } catch (error) {
       console.error('Failed to fetch table orders:', error);
       setExistingOrders([]);
+      setUnbilledItems([]);
     } finally {
       if (!silent) setIsLoadingOrders(false);
     }
@@ -531,27 +549,25 @@ export default function POSTerminal() {
   };
 
   const totals = useMemo(() => {
-    // Combine items from existing orders and current cart for billing calculation
+    // Combine items from unbilled order items and current cart for billing calculation
     const allItemsToBill: Array<{ id: string; price: number; quantity: number; name: string; categoryId: string; gstRate?: number }> = [];
     
-    // Add items from existing orders (safe check for array)
-    if (Array.isArray(existingOrders)) {
-      existingOrders.forEach((o: any) => {
-        (o.items || []).forEach((oi: any) => {
-          const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
-          if (existing) {
-            existing.quantity += oi.quantity;
-          } else {
-            allItemsToBill.push({
-              id: String(oi.item_id),
-              name: oi.item_name || `Item #${oi.item_id}`,
-              price: Number(oi.price_at_billing),
-              quantity: oi.quantity,
-              categoryId: '', // We use explicit gstRate from order item
-              gstRate: Number(oi.gst_percent_at_billing)
-            });
-          }
-        });
+    // Add items from unbilled order items
+    if (Array.isArray(unbilledItems)) {
+      unbilledItems.forEach((oi: any) => {
+        const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
+        if (existing) {
+          existing.quantity += oi.quantity;
+        } else {
+          allItemsToBill.push({
+            id: String(oi.item_id),
+            name: oi.item_name || `Item #${oi.item_id}`,
+            price: Number(oi.price_at_billing),
+            quantity: oi.quantity,
+            categoryId: '',
+            gstRate: Number(oi.gst_percent_at_billing)
+          });
+        }
       });
     }
 
@@ -612,11 +628,15 @@ export default function POSTerminal() {
       total,
       gstBreakdown
     };
-  }, [cart, existingOrders, discountType, discountValue, gstRates]);
+  }, [cart, unbilledItems, discountType, discountValue, gstRates]);
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!selectedTable) {
       setOrderError('Please select a table before placing an order.');
+      return;
+    }
+    if (tableBilling?.isBillPaid) {
+      setOrderError('Session is billed. Reopen the session to add new orders.');
       return;
     }
     setIsPlacingOrder(true);
@@ -639,6 +659,28 @@ export default function POSTerminal() {
       setOrderError(msg);
     } finally {
       setIsPlacingOrder(false);
+    }
+  };
+
+  const handleReopenSession = async () => {
+    if (!selectedTable) return;
+    if (!tableBilling?.sessionId) {
+      alert('No active session to reopen for this table.');
+      return;
+    }
+
+    try {
+      await apiClient.post('/sessions/reopen', {
+        table_id: selectedTable,
+        performed_by: 1,
+        reason: 'Reopen for additional orders from POS',
+        source_type: 'POS',
+      });
+      await fetchTableOrders(selectedTable);
+      await loadData();
+      alert('Session reopened. You can add new orders now.');
+    } catch (error: any) {
+      alert(error?.response?.data?.message ?? 'Failed to reopen session.');
     }
   };
 
@@ -1451,7 +1493,7 @@ export default function POSTerminal() {
             )}
             <Button 
               onClick={handlePlaceOrder}
-              disabled={cart.length === 0 || isPlacingOrder || !selectedTable}
+              disabled={cart.length === 0 || isPlacingOrder || !selectedTable || Boolean(tableBilling?.isBillPaid)}
               className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white font-semibold"
             >
               {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
@@ -1462,6 +1504,14 @@ export default function POSTerminal() {
               className="w-full h-12 bg-green-500 hover:bg-green-600 text-white font-semibold"
             >
               {isGeneratingBill ? 'Generating...' : 'Bill'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsReopenDialogOpen(true)}
+              disabled={!selectedTable || !tableBilling?.isBillPaid}
+              className="w-full h-12"
+            >
+              Reopen Session
             </Button>
           </div>
         </div>
@@ -1596,6 +1646,23 @@ export default function POSTerminal() {
                 <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>Cancel</Button>
                 <Button onClick={handleCreateCategory} disabled={isCategorySaving}>
                   {isCategorySaving ? 'Saving...' : 'Create Category'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen}>
+            <DialogContent className="sm:max-w-[420px]">
+              <DialogHeader>
+                <DialogTitle>Reopen Session?</DialogTitle>
+                <DialogDescription>
+                  This will unlock the billed session so you can add new orders.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsReopenDialogOpen(false)}>Cancel</Button>
+                <Button onClick={() => { setIsReopenDialogOpen(false); handleReopenSession(); }}>
+                  Reopen
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1797,7 +1864,7 @@ export default function POSTerminal() {
           <div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
             <div className="space-y-2 border-b pb-4">
               <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
-              <div className="text-xs text-gray-500">Consolidating {existingOrders.length} previous orders + current cart</div>
+              <div className="text-xs text-gray-500">Consolidating {unbilledItems.length} unbilled items + current cart</div>
             </div>
             
             <div className="space-y-2">

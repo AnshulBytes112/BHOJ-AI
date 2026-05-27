@@ -50,7 +50,7 @@ tablesRouter.get('/', async (req, res) => {
 
     // Derive visual state for each table
     const tablesWithVisualState = await Promise.all(
-      result.rows.map(async (row) => {
+      result.rows.map(async (row: { table_id: string }) => {
         const sessionState = await fetchSessionState(client, row.table_id);
         const visualState = deriveTableVisualState(sessionState);
         return {
@@ -267,7 +267,7 @@ tablesRouter.post('/:tableId/force-free', async (req, res) => {
     );
 
     if (sessionsToClose.rows.length > 0) {
-      const sessionIds = Array.from(new Set(sessionsToClose.rows.map(row => row.session_id)));
+      const sessionIds = Array.from(new Set(sessionsToClose.rows.map((row: { session_id: string }) => row.session_id)));
       await client.query(
         `UPDATE table_sessions
          SET status = 'force_closed',
@@ -424,7 +424,7 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
 
     // Step 4: Hydrate orders with their items
     let orders = await Promise.all(
-      ordersResult.rows.map(async (order) => {
+      ordersResult.rows.map(async (order: { order_id: string }) => {
         const itemsResult = await client.query(
           `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
                   oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
@@ -470,7 +470,7 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
 
       if (legacyOrdersResult.rows.length > 0) {
         orders = await Promise.all(
-          legacyOrdersResult.rows.map(async (order) => {
+          legacyOrdersResult.rows.map(async (order: { order_id: string }) => {
             const itemsResult = await client.query(
               `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
                       oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
@@ -494,6 +494,72 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
   } catch (err: any) {
     console.error(`GET /tables/${tableId}/orders error:`, err);
     res.status(500).json({ message: 'Failed to fetch table orders' });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /tables/:tableId/unbilled-items — items pending billing for current session
+// ─────────────────────────────────────────────────────────────────────────────
+tablesRouter.get('/:tableId/unbilled-items', async (req, res) => {
+  const { tableId } = req.params;
+  const client = await pool.connect();
+  try {
+    const tableMeta = await client.query(
+      `SELECT occupied_since FROM tables WHERE table_id = $1`,
+      [tableId]
+    );
+    const occupiedSince = tableMeta.rows[0]?.occupied_since ?? null;
+
+    const sessionQuery = await client.query(
+      `SELECT ts.session_id FROM table_sessions ts
+       LEFT JOIN session_tables st ON ts.session_id = st.session_id
+       WHERE (ts.table_id = $1 OR st.table_id = $1)
+         AND ts.status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close')
+       LIMIT 1`,
+      [tableId]
+    );
+
+    if (sessionQuery.rows.length === 0) {
+      return res.json({ items: [], active_session_id: null });
+    }
+
+    const activeSessionId = sessionQuery.rows[0].session_id;
+
+    const itemsResult = await client.query(
+      `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
+              oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
+       FROM order_items oi
+       JOIN orders o ON o.order_id = oi.order_id
+       JOIN items i ON i.id = oi.item_id
+       WHERE o.session_id = $1
+         AND oi.billing_status = 'UNBILLED'
+       ORDER BY o.order_phase, oi.created_at`,
+      [activeSessionId]
+    );
+
+    if (itemsResult.rowCount === 0) {
+      const legacyItems = await client.query(
+        `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
+                oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
+         FROM order_items oi
+         JOIN orders o ON o.order_id = oi.order_id
+         JOIN items i ON i.id = oi.item_id
+         WHERE o.table_id = $1
+           AND ($2::timestamp IS NULL OR o.created_at >= $2::timestamp)
+           AND oi.billing_status = 'UNBILLED'
+         ORDER BY o.order_phase, oi.created_at`,
+        [tableId, occupiedSince]
+      );
+
+      return res.json({ items: legacyItems.rows, active_session_id: activeSessionId });
+    }
+
+    res.json({ items: itemsResult.rows, active_session_id: activeSessionId });
+  } catch (err: any) {
+    console.error(`GET /tables/${tableId}/unbilled-items error:`, err);
+    res.status(500).json({ message: 'Failed to fetch unbilled items' });
   } finally {
     client.release();
   }

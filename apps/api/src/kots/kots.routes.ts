@@ -252,7 +252,7 @@ kotsRouter.get('/section/:sectionId', async (req, res) => {
     );
 
     const sectionKots = await Promise.all(
-      skotsResult.rows.map(async (skot) => {
+      skotsResult.rows.map(async (skot: { section_kot_id: string }) => {
         const itemsResult = await pool.query(
           `SELECT ski.section_kot_item_id, ski.item_id, ski.item_name,
                   ski.quantity, ski.serial_number, ski.status
@@ -501,7 +501,7 @@ kotsRouter.get('/:kotId/sections', async (req, res) => {
     );
 
     const sectionKots = await Promise.all(
-      skotsResult.rows.map(async (skot) => {
+      skotsResult.rows.map(async (skot: { section_kot_id: string }) => {
         const itemsResult = await pool.query(
           `SELECT ski.section_kot_item_id, ski.item_id, ski.item_name, ski.quantity, ski.serial_number
            FROM section_kot_items ski WHERE ski.section_kot_id = $1`,

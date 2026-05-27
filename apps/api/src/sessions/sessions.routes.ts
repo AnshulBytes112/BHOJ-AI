@@ -160,6 +160,89 @@ sessionsRouter.get('/active/:tableId', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /sessions/reopen — Reopen a billed/locked session for a table
+// ─────────────────────────────────────────────────────────────────────────────
+sessionsRouter.post('/reopen', async (req, res) => {
+  const { table_id, performed_by, reason, source_type } = req.body;
+
+  if (!table_id) {
+    return res.status(400).json({ message: 'table_id is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const sessionResult = await client.query(
+      `SELECT ts.session_id, ts.table_id, ts.status, ts.is_payment_locked
+       FROM table_sessions ts
+       LEFT JOIN session_tables st ON ts.session_id = st.session_id
+       WHERE (ts.table_id = $1 OR st.table_id = $1)
+         AND ts.status IN ('active', 'billed', 'payment_pending', 'payment_done', 'waiting_service_completion', 'ready_to_close')
+       LIMIT 1
+       FOR UPDATE OF ts`,
+      [table_id]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'No active session found for this table.' });
+    }
+
+    const session = sessionResult.rows[0];
+    const previousStatus = session.status;
+
+    if (previousStatus === 'active' && !session.is_payment_locked) {
+      await client.query('COMMIT');
+      return res.json({ message: 'Session already active and unlocked.', session_id: session.session_id });
+    }
+
+    await client.query(
+      `UPDATE table_sessions
+       SET status = 'active',
+           payment_status = 'unpaid',
+           is_payment_locked = false,
+           last_activity_at = NOW(),
+           version = version + 1
+       WHERE session_id = $1`,
+      [session.session_id]
+    );
+
+    await client.query(
+      `UPDATE tables
+       SET status = 'occupied',
+           is_bill_paid = false,
+           occupied_since = COALESCE(occupied_since, NOW())
+       WHERE table_id = $1
+          OR table_id IN (SELECT table_id FROM session_tables WHERE session_id = $2)`,
+      [session.table_id, session.session_id]
+    );
+
+    await client.query(
+      `INSERT INTO session_events (
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
+       ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4, $5)`,
+      [
+        session.session_id,
+        JSON.stringify({ previous_status: previousStatus, reason: reason ?? 'Reopened for new orders' }),
+        performed_by ?? null,
+        req.header('x-device') ?? 'POS_TERMINAL',
+        source_type ?? 'POS',
+      ]
+    );
+
+    await client.query('COMMIT');
+    return res.json({ message: 'Session reopened.', session_id: session.session_id });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    const message = error instanceof Error ? error.message : 'Failed to reopen session.';
+    return res.status(400).json({ message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // IDEMPOTENCY HELPER FUNCTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 async function checkIdempotency(client: any, key: string | undefined): Promise<any | null> {

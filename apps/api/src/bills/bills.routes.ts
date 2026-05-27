@@ -74,11 +74,12 @@ function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Arra
   const body = rawBody as { cashier_id?: unknown; items?: unknown; table_id?: unknown; order_ids?: unknown; pay_now?: unknown };
   const cashierId = body.cashier_id === undefined ? 1 : parsePositiveInt(body.cashier_id, 'cashier_id');
 
-  if (!Array.isArray(body.items) || body.items.length === 0) {
-    throw new Error('items must be a non-empty array.');
+  const itemsInput = Array.isArray(body.items) ? body.items : [];
+  if (itemsInput.length === 0 && !Array.isArray(body.order_ids)) {
+    throw new Error('items must be a non-empty array when order_ids are not provided.');
   }
 
-  const lines = body.items.map((line, index) => {
+  const lines = itemsInput.map((line, index) => {
     if (!line || typeof line !== 'object' || Array.isArray(line)) {
       throw new Error(`items[${index}] must be an object.`);
     }
@@ -189,78 +190,40 @@ billsRouter.post('/', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // ... existing logic to calculate subtotal, gstTotal, etc.
+    // Build order items if no orders were provided
     const mergedLineMap = new Map<number, number>();
     for (const line of lines) {
       mergedLineMap.set(line.itemId, (mergedLineMap.get(line.itemId) ?? 0) + line.quantity);
     }
-
-    const uniqueItemIds = Array.from(mergedLineMap.keys());
-    const itemRows = await client.query<CatalogItemRow>(
-      'SELECT id, name, category, selling_price, is_active FROM items WHERE id = ANY($1::int[]);',
-      [uniqueItemIds]
-    );
-
-    const itemById = new Map<number, CatalogItemRow>(itemRows.rows.map((row) => [row.id, row]));
-    for (const itemId of uniqueItemIds) {
-      const item = itemById.get(itemId);
-      if (!item) {
-        throw new Error(`Item ${itemId} not found.`);
-      }
-      if (!item.is_active) {
-        throw new Error(`Item ${itemId} is inactive and cannot be billed.`);
-      }
-    }
-
-    let subtotal = 0;
-    let gstTotal = 0;
-
-    const billItemsPayload: Array<{
-      item_id: number;
-      item_name: string;
-      quantity: number;
-      unit_price: number;
-      gst_rate: number;
-      gst_amount: number;
-      line_total: number;
-    }> = [];
-
-    for (const [itemId, quantity] of mergedLineMap.entries()) {
-      const item = itemById.get(itemId) as CatalogItemRow;
-      const unitPrice = Number(item.selling_price);
-      const gstRate = await getGstRateForCategory(client, item.category);
-
-      const baseAmount = roundMoney(unitPrice * quantity);
-      const gstAmount = roundMoney(baseAmount * (gstRate / 100));
-      const lineTotal = roundMoney(baseAmount + gstAmount);
-
-      subtotal = roundMoney(subtotal + baseAmount);
-      gstTotal = roundMoney(gstTotal + gstAmount);
-
-      billItemsPayload.push({
-        item_id: item.id,
-        item_name: item.name,
-        quantity,
-        unit_price: unitPrice,
-        gst_rate: gstRate,
-        gst_amount: gstAmount,
-        line_total: lineTotal,
-      });
-    }
-
-    const grandTotal = roundMoney(subtotal + gstTotal);
     const activeSessionId = tableId
       ? await ensureActiveTableSession(client, tableId, cashierId)
       : null;
 
     if (activeSessionId) {
-      const paidBillCheck = await client.query(
-        `SELECT id FROM bills WHERE session_id = $1 AND payment_status = 'paid' LIMIT 1`,
+      const paidBillResult = await client.query(
+        `SELECT id, created_at
+         FROM bills
+         WHERE session_id = $1 AND payment_status = 'paid'
+         ORDER BY created_at DESC
+         LIMIT 1`,
         [activeSessionId]
       );
-      if (paidBillCheck.rowCount > 0) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ message: 'Bill already generated for this session.' });
+
+      if (paidBillResult.rowCount > 0) {
+        const lastPaidAt = paidBillResult.rows[0].created_at;
+        const newerOrders = await client.query(
+          `SELECT 1
+           FROM orders
+           WHERE session_id = $1
+             AND created_at > $2
+           LIMIT 1`,
+          [activeSessionId, lastPaidAt]
+        );
+
+        if (newerOrders.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ message: 'Bill already generated for this session.' });
+        }
       }
     }
 
@@ -278,8 +241,25 @@ billsRouter.post('/', async (req, res) => {
     }
     
     if (tableId && actualOrderIds.length === 0) {
+      const uniqueItemIds = Array.from(mergedLineMap.keys());
+      const itemRows = await client.query<CatalogItemRow>(
+        'SELECT id, name, category, selling_price, is_active FROM items WHERE id = ANY($1::int[]);',
+        [uniqueItemIds]
+      );
+
+      const itemById = new Map<number, CatalogItemRow>(itemRows.rows.map((row: CatalogItemRow) => [row.id, row]));
+      for (const itemId of uniqueItemIds) {
+        const item = itemById.get(itemId);
+        if (!item) {
+          throw new Error(`Item ${itemId} not found.`);
+        }
+        if (!item.is_active) {
+          throw new Error(`Item ${itemId} is inactive and cannot be billed.`);
+        }
+      }
+
       // No orders provided - create one for these items
-      console.log(`[POST /bills] Creating new order for table ${tableId} with ${billItemsPayload.length} items`);
+      console.log(`[POST /bills] Creating new order for table ${tableId} with ${mergedLineMap.size} items`);
       
       const orderPhaseResult = await client.query(
         `SELECT COALESCE(MAX(order_phase), 0) + 1 as next_phase FROM orders WHERE table_id = $1`,
@@ -297,15 +277,77 @@ billsRouter.post('/', async (req, res) => {
       actualOrderIds = [newOrder.order_id];
 
       // Create order_items for each bill item
-      for (const billItem of billItemsPayload) {
+      for (const [itemId, quantity] of mergedLineMap.entries()) {
+        const item = itemById.get(itemId) as CatalogItemRow;
+        const gstRate = await getGstRateForCategory(client, item.category);
         await client.query(
           `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing)
            VALUES ($1, $2, $3, $4, $5)`,
-          [newOrder.order_id, billItem.item_id, billItem.quantity, billItem.unit_price, billItem.gst_rate]
+          [newOrder.order_id, item.id, quantity, Number(item.selling_price), gstRate]
         );
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
+
+    // Fetch ONLY unbilled order items for this bill
+    if (actualOrderIds.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'No orders found to bill.' });
+    }
+
+    const unbilledItemsResult = await client.query(
+      `SELECT oi.order_item_id, oi.item_id, oi.quantity,
+              oi.price_at_billing, oi.gst_percent_at_billing,
+              i.name as item_name
+       FROM order_items oi
+       JOIN items i ON i.id = oi.item_id
+       WHERE oi.order_id = ANY($1::uuid[])
+         AND oi.billing_status = 'UNBILLED'`,
+      [actualOrderIds]
+    );
+
+    if (unbilledItemsResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'No unbilled items found for this session.' });
+    }
+
+    let subtotal = 0;
+    let gstTotal = 0;
+    const billItemsPayload: Array<{
+      order_item_id: string;
+      item_id: number;
+      item_name: string;
+      quantity: number;
+      unit_price: number;
+      gst_rate: number;
+      gst_amount: number;
+      line_total: number;
+    }> = [];
+
+    for (const row of unbilledItemsResult.rows) {
+      const unitPrice = Number(row.price_at_billing);
+      const gstRate = Number(row.gst_percent_at_billing);
+      const quantity = Number(row.quantity);
+      const baseAmount = roundMoney(unitPrice * quantity);
+      const gstAmount = roundMoney(baseAmount * (gstRate / 100));
+      const lineTotal = roundMoney(baseAmount + gstAmount);
+
+      subtotal = roundMoney(subtotal + baseAmount);
+      gstTotal = roundMoney(gstTotal + gstAmount);
+
+      billItemsPayload.push({
+        order_item_id: row.order_item_id,
+        item_id: row.item_id,
+        item_name: row.item_name,
+        quantity,
+        unit_price: unitPrice,
+        gst_rate: gstRate,
+        gst_amount: gstAmount,
+        line_total: lineTotal,
+      });
+    }
+
+    const grandTotal = roundMoney(subtotal + gstTotal);
 
     // ── CORE FIX: payment is treated as successful by default until payment module exists.
     // The table is NEVER freed here — that is handled by tryAutoFreeTable.
@@ -343,6 +385,13 @@ billsRouter.post('/', async (req, res) => {
         ]
       );
     }
+
+    await client.query(
+      `UPDATE order_items
+       SET billing_status = 'BILLED'
+       WHERE order_item_id = ANY($1::uuid[])`,
+      [billItemsPayload.map((item) => item.order_item_id)]
+    );
 
     // We no longer update order status to 'completed' here.
     // Order status should be driven by the KOT workflow (when items are served).
@@ -656,7 +705,7 @@ billsRouter.get('/:id/receipt', async (req, res) => {
       footer_text: layout.footer_text,
       logo_url: layout.logo_url,
       show_gst_breakdown: layout.show_gst_breakdown,
-      items: itemResult.rows.map(item => ({
+      items: itemResult.rows.map((item: BillItemRow) => ({
         item_name: item.item_name,
         quantity: item.quantity,
         unit_price: item.unit_price,

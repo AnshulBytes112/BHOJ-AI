@@ -318,6 +318,8 @@ export async function initializeDatabase(): Promise<void> {
       quantity INTEGER NOT NULL CHECK (quantity > 0),
       price_at_billing DECIMAL(10,2) NOT NULL,
       gst_percent_at_billing DECIMAL(5,2) NOT NULL DEFAULT 0,
+      billing_status VARCHAR NOT NULL DEFAULT 'UNBILLED'
+        CHECK (billing_status IN ('UNBILLED','BILLED')),
       serial_number SERIAL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -479,6 +481,13 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS table_id UUID REFERENCES tables(table_id) ON DELETE SET NULL;
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_table_id ON bills(table_id);`);
+
+  // 3b. Add billing status to order_items for incremental billing.
+  await pool.query(`
+    ALTER TABLE order_items
+      ADD COLUMN IF NOT EXISTS billing_status VARCHAR NOT NULL DEFAULT 'UNBILLED'
+        CHECK (billing_status IN ('UNBILLED','BILLED'));
+  `);
 
   // 4. Add per-item status tracking to kot_items (main KOT items table).
   //    Using VARCHAR so we never hit enum-migration headaches.
