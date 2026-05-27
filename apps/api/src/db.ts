@@ -651,6 +651,19 @@ export async function initializeDatabase(): Promise<void> {
     );
   `);
 
+  // ── QR Table Identity ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS table_qr (
+      qr_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      table_id UUID NOT NULL REFERENCES tables(table_id) ON DELETE CASCADE,
+      qr_token VARCHAR NOT NULL UNIQUE,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_qr_table_id ON table_qr(table_id);`);
+
   await pool.query(`
     ALTER TABLE orders 
       ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES table_sessions(session_id) ON DELETE SET NULL,

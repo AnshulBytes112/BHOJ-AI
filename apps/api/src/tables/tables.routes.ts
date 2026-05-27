@@ -13,6 +13,29 @@ import {
 
 export const tablesRouter = Router();
 
+async function generateQrToken(): Promise<string> {
+  return randomBytes(18).toString('hex');
+}
+
+async function ensureActiveTableQr(client: any, tableId: string): Promise<{ qr_id: string; qr_token: string }> {
+  const existing = await client.query(
+    `SELECT qr_id, qr_token FROM table_qr WHERE table_id = $1 AND is_active = true LIMIT 1`,
+    [tableId]
+  );
+  if (existing.rowCount > 0) {
+    return existing.rows[0];
+  }
+
+  const qrToken = await generateQrToken();
+  const created = await client.query(
+    `INSERT INTO table_qr (table_id, qr_token, is_active)
+     VALUES ($1, $2, true)
+     RETURNING qr_id, qr_token`,
+    [tableId, qrToken]
+  );
+  return created.rows[0];
+}
+
 // GET /tables — list all tables with live status summary and visual states
 // ─────────────────────────────────────────────────────────────────────────────
 tablesRouter.get('/', async (req, res) => {
@@ -51,6 +74,7 @@ tablesRouter.get('/', async (req, res) => {
     // Derive visual state for each table
     const tablesWithVisualState = await Promise.all(
       result.rows.map(async (row: { table_id: string }) => {
+        await ensureActiveTableQr(client, row.table_id);
         const sessionState = await fetchSessionState(client, row.table_id);
         const visualState = deriveTableVisualState(sessionState);
         return {
@@ -100,6 +124,7 @@ tablesRouter.get('/:tableId', async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ message: 'Table not found' });
 
     const tableData = result.rows[0];
+    await ensureActiveTableQr(client, tableId);
     const sessionState = await fetchSessionState(client, tableId);
     const visualState = deriveTableVisualState(sessionState);
 
@@ -129,7 +154,14 @@ tablesRouter.post('/', async (req, res) => {
        RETURNING table_id, table_number, status, created_at`,
       [table_number]
     );
-    res.status(201).json(result.rows[0]);
+    const table = result.rows[0];
+    const client = await pool.connect();
+    try {
+      await ensureActiveTableQr(client, table.table_id);
+    } finally {
+      client.release();
+    }
+    res.status(201).json(table);
   } catch (err: any) {
     if (err.code === '23505') return res.status(409).json({ message: 'Table number already exists' });
     console.error('POST /tables error:', err);
@@ -153,6 +185,126 @@ tablesRouter.delete('/:tableId', async (req, res) => {
   } catch (err: any) {
     console.error('DELETE /tables/:tableId error:', err);
     res.status(500).json({ message: 'Failed to delete table' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /tables/qr/bootstrap — ensure every table has an active QR
+// ─────────────────────────────────────────────────────────────────────────────
+tablesRouter.post('/qr/bootstrap', async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    const tables = await client.query(`SELECT table_id FROM tables`);
+    for (const row of tables.rows) {
+      await ensureActiveTableQr(client, row.table_id);
+    }
+    res.json({ message: 'QR bootstrap complete', tables: tables.rows.length });
+  } catch (err: any) {
+    console.error('POST /tables/qr/bootstrap error:', err);
+    res.status(500).json({ message: 'Failed to bootstrap QR codes' });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /tables/:tableId/qr — fetch active QR for a table
+// ─────────────────────────────────────────────────────────────────────────────
+tablesRouter.get('/:tableId/qr', async (req, res) => {
+  const { tableId } = req.params;
+  const client = await pool.connect();
+  try {
+    const qr = await ensureActiveTableQr(client, tableId);
+    res.json({ table_id: tableId, ...qr });
+  } catch (err: any) {
+    console.error('GET /tables/:tableId/qr error:', err);
+    res.status(500).json({ message: 'Failed to fetch QR' });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /tables/:tableId/qr/regenerate — invalidate old QR and create new
+// ─────────────────────────────────────────────────────────────────────────────
+tablesRouter.post('/:tableId/qr/regenerate', async (req, res) => {
+  const { tableId } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE table_qr SET is_active = false, updated_at = NOW()
+       WHERE table_id = $1 AND is_active = true`,
+      [tableId]
+    );
+    const qrToken = await generateQrToken();
+    const created = await client.query(
+      `INSERT INTO table_qr (table_id, qr_token, is_active)
+       VALUES ($1, $2, true)
+       RETURNING qr_id, qr_token`,
+      [tableId, qrToken]
+    );
+    await client.query('COMMIT');
+    res.json({ table_id: tableId, ...created.rows[0] });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error('POST /tables/:tableId/qr/regenerate error:', err);
+    res.status(500).json({ message: 'Failed to regenerate QR' });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /tables/:tableId/qr/disable — disable active QR
+// ─────────────────────────────────────────────────────────────────────────────
+tablesRouter.post('/:tableId/qr/disable', async (req, res) => {
+  const { tableId } = req.params;
+  try {
+    await pool.query(
+      `UPDATE table_qr SET is_active = false, updated_at = NOW()
+       WHERE table_id = $1 AND is_active = true`,
+      [tableId]
+    );
+    res.json({ message: 'QR disabled', table_id: tableId });
+  } catch (err: any) {
+    console.error('POST /tables/:tableId/qr/disable error:', err);
+    res.status(500).json({ message: 'Failed to disable QR' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /tables/qr/resolve — resolve QR token to table and active session
+// ─────────────────────────────────────────────────────────────────────────────
+tablesRouter.post('/qr/resolve', async (req, res) => {
+  const { token } = req.body;
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ message: 'token is required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const qrResult = await client.query(
+      `SELECT table_id FROM table_qr WHERE qr_token = $1 AND is_active = true LIMIT 1`,
+      [token]
+    );
+    if (qrResult.rowCount === 0) {
+      return res.status(404).json({ message: 'Invalid or disabled QR token.' });
+    }
+
+    const tableId = qrResult.rows[0].table_id;
+    const sessionState = await fetchSessionState(client, tableId);
+
+    res.json({
+      table_id: tableId,
+      active_session_id: sessionState.session_id,
+      session_status: sessionState.session_status,
+    });
+  } catch (err: any) {
+    console.error('POST /tables/qr/resolve error:', err);
+    res.status(500).json({ message: 'Failed to resolve QR' });
+  } finally {
+    client.release();
   }
 });
 
