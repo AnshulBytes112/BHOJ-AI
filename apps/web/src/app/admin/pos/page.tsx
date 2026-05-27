@@ -171,6 +171,7 @@ export default function POSTerminal() {
   const [orderError, setOrderError] = useState<string | null>(null);
   const [showWipDialog, setShowWipDialog] = useState(false);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
+  const [isFreeTableDialogOpen, setIsFreeTableDialogOpen] = useState(false);
   const [autoRedirectTimer, setAutoRedirectTimer] = useState<number | null>(null);
 
   // Catalog CRUD states
@@ -684,9 +685,21 @@ export default function POSTerminal() {
     }
   };
 
+  const handleFreeTable = async () => {
+    if (!selectedTable) return;
+    try {
+      await apiClient.post(`/tables/${selectedTable}/free`, { user_id: 1 });
+      await fetchTableOrders(selectedTable);
+      await loadData();
+      alert('Table freed successfully.');
+    } catch (error: any) {
+      alert(error?.response?.data?.message ?? 'Failed to free table.');
+    }
+  };
+
   const generateBillAndPrint = async () => {
     // Check if there is anything to bill (either in cart or already ordered)
-    if (cart.length === 0 && existingOrders.length === 0) return;
+    if (cart.length === 0 && unbilledItems.length === 0) return;
 
     if (tableBilling?.isBillPaid) {
       alert('Bill already generated for this table.');
@@ -695,18 +708,24 @@ export default function POSTerminal() {
     
     setIsGeneratingBill(true);
     try {
-      // Get all order IDs for this table
+      // Ensure current cart items are saved as an order before billing
       const orderIds = existingOrders.map(o => o.order_id);
+      if (cart.length > 0) {
+        const orderResult = await apiClient.post(`/tables/${selectedTable}/orders`, {
+          items: cart.map(item => ({ id: Number(item.id), quantity: item.quantity })),
+        });
+        const newOrderId = orderResult.data.order_id;
+        orderIds.push(newOrderId);
+        try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) {}
+        setCart([]);
+        await fetchTableOrders(selectedTable);
+      }
 
-      // 1. Generate real bill on server
+      // Generate real bill on server (unbilled items only)
       const response = await apiClient.post('/bills', {
         cashier_id: 1, 
         table_id: selectedTable,
         order_ids: orderIds,
-        items: totals.allItemsToBill.map(item => ({
-          item_id: Number(item.id),
-          quantity: item.quantity
-        }))
       });
       
       const billData = response.data;
@@ -741,25 +760,7 @@ export default function POSTerminal() {
       setReceiptData(data);
       setOrderId(`BILL-${billData.bill.bill_serial_number}`);
       setIsReceiptOpen(true);
-      setActiveWorkflow('receipt');
-      
-      // Auto-redirect to POS after 15 seconds
-      setAutoRedirectTimer(15);
-      const timer = setInterval(() => {
-        setAutoRedirectTimer((prev) => {
-          if (prev === null || prev <= 1) {
-            clearInterval(timer);
-            if (prev === 1) {
-              setIsReceiptOpen(false);
-              handleNewBill();
-              loadData(); // Refresh tables
-            }
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      
+      await fetchTableOrders(selectedTable);
     } catch (error: any) {
       console.error('Failed to generate bill:', error);
       alert(error?.response?.data?.message ?? 'Failed to generate bill. Please check your connection.');
@@ -768,15 +769,7 @@ export default function POSTerminal() {
     }
   };
 
-  // Effect to trigger print when receipt data is loaded and dialog is open
-  useEffect(() => {
-    if (isReceiptOpen && receiptData) {
-      const timer = setTimeout(() => {
-        window.print();
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [isReceiptOpen, receiptData]);
+
 
   const handleShare = (method: 'whatsapp' | 'email') => {
     const message = `Order ID: ${orderId}\nTotal: Rs ${totals.total.toFixed(2)}`;
@@ -1513,6 +1506,14 @@ export default function POSTerminal() {
             >
               Reopen Session
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsFreeTableDialogOpen(true)}
+              disabled={!selectedTable}
+              className="w-full h-12"
+            >
+              Free Table
+            </Button>
           </div>
         </div>
       );
@@ -1663,6 +1664,23 @@ export default function POSTerminal() {
                 <Button variant="outline" onClick={() => setIsReopenDialogOpen(false)}>Cancel</Button>
                 <Button onClick={() => { setIsReopenDialogOpen(false); handleReopenSession(); }}>
                   Reopen
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isFreeTableDialogOpen} onOpenChange={setIsFreeTableDialogOpen}>
+            <DialogContent className="sm:max-w-[420px]">
+              <DialogHeader>
+                <DialogTitle>Free Table?</DialogTitle>
+                <DialogDescription>
+                  This will attempt to free the table if all billing and service conditions are met.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsFreeTableDialogOpen(false)}>Cancel</Button>
+                <Button onClick={() => { setIsFreeTableDialogOpen(false); handleFreeTable(); }}>
+                  Free Table
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1858,7 +1876,7 @@ export default function POSTerminal() {
           <DialogHeader>
             <DialogTitle>Bill Preview & Confirmation</DialogTitle>
             <DialogDescription>
-              Review the items from all orders for this table before generating the final bill.
+              Review the unbilled items for this table before generating the final bill.
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
@@ -1926,23 +1944,19 @@ export default function POSTerminal() {
       {isReceiptOpen && receiptData && (
         <div className="fixed inset-0 z-[100] bg-white flex items-start justify-center overflow-auto p-4 md:p-10 no-print-background">
           <div className="no-print absolute top-4 right-4 flex gap-2 items-center">
-            {autoRedirectTimer !== null && (
-              <span className="text-xs text-gray-500 mr-2">
-                Auto-closing in {autoRedirectTimer}s...
-              </span>
-            )}
-            <Button onClick={() => window.print()}>Print Again</Button>
+            <Button onClick={() => window.print()}>Print Bill</Button>
+            <Button variant="outline" onClick={() => window.print()}>
+              Download PDF
+            </Button>
             <Button 
               variant="default" 
               className="bg-blue-600 hover:bg-blue-700"
               onClick={() => {
-                setAutoRedirectTimer(null);
                 setIsReceiptOpen(false);
-                handleNewBill(); 
                 loadData();
               }}
             >
-              Done & New Order
+              Back to POS
             </Button>
           </div>
           <div className="print:block">
