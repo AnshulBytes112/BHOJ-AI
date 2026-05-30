@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RoleGuard } from '@/components/auth/role-guard';
+import { PageContainer } from '@/components/common/page-container';
+import { ResponsiveGrid } from '@/components/common/responsive-grid';
+import { MobileDrawer } from '@/components/common/mobile-drawer';
 import { cn, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -173,6 +176,7 @@ export default function POSTerminal() {
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [isFreeTableDialogOpen, setIsFreeTableDialogOpen] = useState(false);
   const [autoRedirectTimer, setAutoRedirectTimer] = useState<number | null>(null);
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Catalog CRUD states
   const [isSaving, setIsSaving] = useState(false);
@@ -796,11 +800,11 @@ export default function POSTerminal() {
         return (
           <div className="flex flex-col h-full">
             {/* Categories Bar */}
-            <div className="bg-white border-b px-6 py-3">
-              <div className="flex gap-2 overflow-x-auto">
+            <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0">
+              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mb-1 whitespace-nowrap">
                 <Button 
                   variant={activeCategory === 'all' ? 'default' : 'outline'}
-                  className={cn("rounded-lg px-4 h-8 text-xs", activeCategory === 'all' && "bg-blue-500 text-white")}
+                  className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === 'all' && "bg-blue-500 text-white")}
                   onClick={() => setActiveCategory('all')}
                 >
                   All
@@ -809,7 +813,7 @@ export default function POSTerminal() {
                   <Button 
                     key={cat.id}
                     variant={activeCategory === cat.id ? 'default' : 'outline'}
-                    className={cn("rounded-lg px-4 h-8 text-xs", activeCategory === cat.id && "bg-blue-500 text-white")}
+                    className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === cat.id && "bg-blue-500 text-white")}
                     onClick={() => setActiveCategory(cat.id)}
                   >
                     {cat.name}
@@ -819,8 +823,8 @@ export default function POSTerminal() {
             </div>
 
             {/* Items Grid */}
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-3 sm:p-4 md:p-6">
+           <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                   const isInCart = cart.find(cartItem => cartItem.id === item.id);
@@ -886,8 +890,7 @@ export default function POSTerminal() {
                       </CardContent>
                     </Card>
                   );
-                })}
-              </div>
+                })}              </ResponsiveGrid>
             </div>
           </div>
         );
@@ -896,11 +899,11 @@ export default function POSTerminal() {
         return (
           <div className="flex flex-col h-full">
             {/* Categories Bar */}
-            <div className="bg-white border-b px-6 py-3">
-              <div className="flex gap-2 overflow-x-auto">
+            <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0">
+              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mb-1 whitespace-nowrap">
                 <Button 
                   variant={activeCategory === 'all' ? 'default' : 'outline'}
-                  className={cn("rounded-lg px-4 h-8 text-xs", activeCategory === 'all' && "bg-blue-500 text-white")}
+                  className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === 'all' && "bg-blue-500 text-white")}
                   onClick={() => setActiveCategory('all')}
                 >
                   All Items
@@ -909,7 +912,7 @@ export default function POSTerminal() {
                   <Button 
                     key={cat.id}
                     variant={activeCategory === cat.id ? 'default' : 'outline'}
-                    className={cn("rounded-lg px-4 h-8 text-xs transition-all", activeCategory === cat.id && "bg-blue-500 text-white shadow-md")}
+                    className={cn("rounded-lg px-4 h-8 text-xs transition-all shrink-0 whitespace-nowrap", activeCategory === cat.id && "bg-blue-500 text-white shadow-md")}
                     onClick={() => setActiveCategory(cat.id)}
                   >
                     {cat.name}
@@ -918,19 +921,19 @@ export default function POSTerminal() {
               </div>
             </div>
 
-            <div className="bg-white border-b px-6 py-3 flex items-center justify-between gap-3">
+            <div className="bg-white border-b px-4 py-3 md:px-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-shrink-0">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Item Catalog</h2>
-                <p className="text-sm text-gray-600">Add or Manage items and categories.</p>
+                <h2 className="text-base md:text-lg font-bold text-gray-900 leading-tight">Item Catalog</h2>
+                <p className="text-xs md:text-sm text-gray-500">Add or Manage items and categories.</p>
               </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" onClick={openCreateModal} className="gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={openCreateModal} className="gap-1.5 text-xs h-9">
                   <Plus size={14} /> Add Item
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="gap-2">
+                <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="gap-1.5 text-xs h-9">
                   <Plus size={14} /> Add Category
                 </Button>
-                <div className="text-sm text-gray-500 ml-4">{filteredItems.length} items</div>
+                <div className="text-xs text-gray-500 ml-2">{filteredItems.length} items</div>
               </div>
             </div>
 
@@ -943,8 +946,8 @@ export default function POSTerminal() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-3 sm:p-4 md:p-6">
+           <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                   const isInCart = cart.find(cartItem => cartItem.id === item.id);
@@ -1035,8 +1038,7 @@ export default function POSTerminal() {
                       </CardContent>
                     </Card>
                   );
-                })}
-              </div>
+                })}              </ResponsiveGrid>
             </div>
           </div>
         );
@@ -1401,34 +1403,36 @@ export default function POSTerminal() {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                   const itemSubtotal = item.price * item.quantity;
                   return (
-                    <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                      <div className="flex-1">
-                        <h4 className="text-sm font-medium">{item.name}</h4>
-                        <p className="text-xs text-gray-500">Rs {item.price} x {item.quantity}</p>
+                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 bg-gray-50 rounded gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-medium truncate">{item.name}</h4>
+                        <p className="text-xs text-gray-500">Rs {item.price}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-1 sm:mt-0 border-gray-200/60">
+                        <div className="flex items-center gap-1 bg-white border rounded p-0.5">
                           <button 
                             onClick={() => updateQuantity(item.id, -1)}
-                            className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                            className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
                           >
                             <Minus size={12} />
                           </button>
                           <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
                           <button 
                             onClick={() => updateQuantity(item.id, 1)}
-                            className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                            className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
                           >
                             <Plus size={12} />
                           </button>
                         </div>
-                        <span className="text-sm font-semibold">Rs {itemSubtotal.toFixed(2)}</span>
-                        <button 
-                          onClick={() => removeFromCart(item.id)}
-                          className="text-red-500 hover:text-red-700 p-1"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900 min-w-[70px] text-right">Rs {itemSubtotal.toFixed(2)}</span>
+                          <button 
+                            onClick={() => removeFromCart(item.id)}
+                            className="text-red-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1569,45 +1573,46 @@ export default function POSTerminal() {
 
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin', 'staff']}>
-      <DashboardLayout>
-        <div className="flex flex-col h-[calc(100vh-120px)]">
+      <DashboardLayout disablePadding>
+        <PageContainer className="p-0 m-0 max-w-none sm:px-0 sm:py-0 lg:px-0 lg:py-0 flex flex-col h-[calc(100vh-56px)] w-full min-w-0 min-h-0 overflow-hidden">
           {/* Header Section */}
-          <div className="bg-white border-b px-6 py-4">
-            <div className="flex items-center justify-between">
+          <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">POS Billing</h1>
-                <p className="text-sm text-gray-600">RestoBill Restaurant</p>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900 leading-tight">POS Billing</h1>
+                <p className="text-xs md:text-sm text-gray-500">RestoBill Restaurant</p>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:w-auto flex-1 sm:flex-initial">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <Input 
                     placeholder="Search items..." 
-                    className="pl-10 h-10 w-64"
+                    className="pl-9 h-10 w-full sm:w-60 bg-gray-50/50 text-sm"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <Button size="sm" onClick={openCreateModal} className="h-10 gap-2">
-                  <Plus size={16} /> Add Item
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="h-10 gap-2">
-                  <Plus size={16} /> Add Category
-                </Button>
-                <Button 
-                  onClick={handleNewBill}
-                  className="h-10 gap-2"
-                >
-                  <Plus size={18} />
-                  New Bill
-                </Button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button size="sm" onClick={openCreateModal} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
+                    <Plus size={14} /> Add Item
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
+                    <Plus size={14} /> Add Category
+                  </Button>
+                  <Button 
+                    onClick={handleNewBill}
+                    className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none bg-orange-500 hover:bg-orange-600 text-white"
+                  >
+                    <Plus size={14} /> New Bill
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Tabs Section */}
-          <div className="bg-white border-b">
-            <div className="flex">
+          <div className="bg-white border-b overflow-x-auto scrollbar-none flex-shrink-0">
+            <div className="flex min-w-max">
               {workflowTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -1846,8 +1851,8 @@ export default function POSTerminal() {
             </DialogContent>
           </Dialog>
 
-          {/* Content Section */}
-          <div className="flex-1 flex">
+                    {/* Content Section */}
+          <div className="flex-1 flex min-h-0 relative">
             {activeWorkflow !== 'receipt' ? (
               <>
                 {/* Main Content Area */}
@@ -1855,19 +1860,47 @@ export default function POSTerminal() {
                   {renderWorkflowContent()}
                 </div>
                 
-                {/* Right Sidebar */}
-                <div className="w-80 bg-white border-l overflow-hidden">
+                {/* Right Sidebar - Visible on Desktop only */}
+                <div className="hidden lg:block w-80 bg-white border-l overflow-hidden flex-shrink-0">
                   {renderSidebar()}
+                </div>
+
+                {/* Mobile & Tablet Drawer for Cart */}
+                <MobileDrawer
+                  isOpen={isCartOpen}
+                  onClose={() => setIsCartOpen(false)}
+                  title="Current Order & Cart"
+                  size="md"
+                  disablePadding
+                >
+                  <div className="h-full flex flex-col min-h-0 bg-white">
+                    {renderSidebar()}
+                  </div>
+                </MobileDrawer>
+
+                {/* Floating Cart Button for Mobile & Tablet */}
+                <div className="lg:hidden fixed bottom-6 right-6 z-40">
+                  <Button
+                    onClick={() => setIsCartOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-14 h-14 shadow-lg flex items-center justify-center relative border border-blue-500"
+                  >
+                    <ShoppingCart size={24} />
+                    {cart.length > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shadow-md">
+                        {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                      </span>
+                    )}
+                  </Button>
                 </div>
               </>
             ) : (
               /* Receipt View - Full Width */
-              <div className="flex-1 bg-gray-50">
+              <div className="flex-1 bg-gray-50 overflow-y-auto">
                 {renderWorkflowContent()}
               </div>
             )}
           </div>
-        </div>
+        </PageContainer>
 
       </DashboardLayout>
 

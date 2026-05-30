@@ -6,6 +6,9 @@ import { useFilter } from '@/lib/filter-context';
 import { cn } from '@/lib/utils';
 import { RoleGuard } from '@/components/auth/role-guard';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { PageContainer } from '@/components/common/page-container';
+import { ResponsiveGrid } from '@/components/common/responsive-grid';
+import { MobileDrawer } from '@/components/common/mobile-drawer';
 import {
   LayoutGrid,
   UtensilsCrossed,
@@ -518,24 +521,25 @@ function KOTPageInner() {
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin', 'manager', 'staff']}>
       <DashboardLayout>
+        <PageContainer className="p-0">
         {/* ── Page Header ── */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               KOT <span className="text-gray-500 font-normal text-lg">(Kitchen Order Tickets)</span>
             </h1>
             <p className="text-sm text-gray-400 mt-0.5">View and manage kitchen orders by sections</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative group">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative group w-full sm:w-auto">
               <button
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm h-11 sm:h-9"
               >
                 <Filter size={14} />
                 {showStatusFilter === 'all' ? 'All Status' : statusLabel(showStatusFilter)}
               </button>
 
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-1">
+              <div className="absolute right-0 top-full mt-2 w-full sm:w-48 bg-white border border-gray-200 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 p-1">
                 <button
                   onClick={() => setShowStatusFilter('all')}
                   className={cn("w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50", showStatusFilter === 'all' && "bg-orange-50 text-orange-600 font-bold")}
@@ -557,13 +561,13 @@ function KOTPageInner() {
               </div>
             </div>
 
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <input
                 type="text"
                 placeholder="Search table or KOT..."
                 value={localSearch}
                 onChange={(e) => setLocalSearch(e.target.value)}
-                className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 w-64 shadow-sm"
+                className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 w-full sm:w-64 shadow-sm h-11 sm:h-9"
               />
               <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
               {localSearch && (
@@ -582,7 +586,7 @@ function KOTPageInner() {
                 refresh().finally(() => setTimeout(() => setLoading(false), 500));
               }}
               disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm disabled:opacity-50"
+              className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm disabled:opacity-50 h-11 sm:h-9"
             >
               <RefreshCw size={14} className={cn(loading && "animate-spin")} /> Refresh
             </button>
@@ -629,12 +633,12 @@ function KOTPageInner() {
         </div>
 
         {/* ── Status Counter Cards ── */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <ResponsiveGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }} className="mb-6">
           <StatCard label="Total KOT" value={counts.total} sub="All Sections" valueClass="text-gray-800" icon={<LayoutGrid className="text-blue-400" size={22} />} iconBg="bg-blue-50" />
           <StatCard label="New / Pending" value={counts.pending} sub="Need Attention" valueClass="text-orange-500" icon={<Clock className="text-orange-400" size={22} />} iconBg="bg-orange-50" subClass="text-orange-400" />
           <StatCard label="Ready" value={counts.completed} sub="To be Served" valueClass="text-blue-500" icon={<ChefHat className="text-blue-400" size={22} />} iconBg="bg-blue-50" subClass="text-blue-400" />
           <StatCard label="Served" value={counts.served} sub="Done" valueClass="text-green-500" icon={<CheckCheck className="text-green-400" size={22} />} iconBg="bg-green-50" subClass="text-green-400" />
-        </div>
+        </ResponsiveGrid>
 
         {/* ── Main Content ── */}
         <div className="flex flex-col gap-6" style={{ minHeight: '400px' }}>
@@ -733,173 +737,165 @@ function KOTPageInner() {
           </div>
 
           {/* ── KOT Detail Panel Overlay ── */}
-          {selectedKot && (
-            <>
-              <div className="fixed inset-y-0 right-0 w-[400px] bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                  <div>
-                    <h2 className="font-bold text-gray-900">Order Detail</h2>
-                    <p className="text-[10px] text-gray-400 font-mono uppercase tracking-tighter">
-                      KOT: {selectedKot.section_kot_number} | ORD: {selectedKot.order_id?.slice(0, 8)}
+                    <MobileDrawer
+            isOpen={!!selectedKot}
+            onClose={() => setSelectedKot(null)}
+            title="Order Detail"
+            size="md"
+            footer={
+              selectedKot && (
+                <Button
+                  variant="outline"
+                  className="w-full h-12 rounded-xl border-gray-200 text-gray-600 font-bold gap-2 hover:bg-gray-50"
+                  onClick={() => setPrintKotOpen(true)}
+                >
+                  <Printer size={18} /> PRINT KOT
+                </Button>
+              )
+            }
+          >
+            {selectedKot && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest ${statusPill(selectedKot.status)}`}>
+                      {statusLabel(selectedKot.status)}
+                    </span>
+                    <p className={cn('text-3xl font-black', getSectionPalette(selectedKot.section_id).text)}>
+                      T-{selectedKot.table_number}
                     </p>
                   </div>
-                  <button onClick={() => setSelectedKot(null)} className="p-2 hover:bg-white rounded-full border border-transparent hover:border-gray-200 transition-all text-gray-400 hover:text-gray-600">
-                    <X size={20} />
-                  </button>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 uppercase font-bold tracking-tighter">Order Time</p>
+                    <p className="font-mono text-sm text-gray-700">{fmtTime(selectedKot.generated_at)}</p>
+                  </div>
                 </div>
 
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest', statusPill(selectedKot.status))}>
-                        {statusLabel(selectedKot.status)}
-                      </span>
-                      <p className={cn('text-3xl font-black', getSectionPalette(selectedKot.section_id).text)}>
-                        T-{selectedKot.table_number}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400 uppercase font-bold tracking-tighter">Order Time</p>
-                      <p className="font-mono text-sm text-gray-700">{fmtTime(selectedKot.generated_at)}</p>
-                    </div>
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-3">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400 uppercase tracking-widest font-black border-b pb-2">
+                    <span>Item Name</span>
+                    <span>Qty</span>
+                    <span>Status</span>
                   </div>
+                  <div className="space-y-4">
+                    {selectedKot.items.map((item, idx) => {
+                      const itemCfg = ITEM_STATUS_CONFIG[item.status] || {};
+                      const validTransitions = ITEM_STATUS_TRANSITIONS[item.status] || [];
+                      const itemBusy = busyItems.has(item.section_kot_item_id);
 
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between text-[10px] text-gray-400 uppercase tracking-widest font-black border-b pb-2">
-                      <span>Item Name</span>
-                      <span>Qty</span>
-                      <span>Status</span>
-                    </div>
-                    <div className="space-y-4">
-                      {selectedKot.items.map((item, idx) => {
-                        const itemCfg = ITEM_STATUS_CONFIG[item.status] || {};
-                        const validTransitions = ITEM_STATUS_TRANSITIONS[item.status] || [];
-                        const itemBusy = busyItems.has(item.section_kot_item_id);
-
-                        return (
-                          <div key={idx} className="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
-                            <div className="flex justify-between items-start">
-                              <div className="flex flex-col">
-                                <span className="font-bold text-gray-800 text-sm">{item.item_name}</span>
-                                <span className="text-[9px] text-gray-300 font-mono">ID: {item.item_id}</span>
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                <span className="bg-white border shadow-sm px-2 py-1 rounded font-black text-blue-600 text-xs">
-                                  x{item.quantity}
-                                </span>
-                                <span className={cn('text-[9px] px-2 py-0.5 rounded border font-bold', itemCfg.bg, itemCfg.color)}>
-                                  {itemCfg.label}
-                                </span>
-                              </div>
+                      return (
+                        <div key={idx} className="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
+                          <div className="flex justify-between items-start">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-gray-800 text-sm">{item.item_name}</span>
+                              <span className="text-[9px] text-gray-300 font-mono">ID: {item.item_id}</span>
                             </div>
-
-                            {/* Item Status Buttons */}
-                            {validTransitions.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 pt-2 border-t">
-                                {validTransitions.map(nextStatus => {
-                                  const nextCfg = ITEM_STATUS_CONFIG[nextStatus] || {};
-                                  const isServe = nextStatus === 'served' || nextStatus === 'delivered';
-                                  const isReady = nextStatus === 'ready';
-                                  const isRecook = nextStatus === 'recook_requested';
-
-                                  return (
-                                    <button
-                                      key={nextStatus}
-                                      disabled={itemBusy}
-                                      onClick={() => advanceStatus(item.section_kot_item_id, nextStatus)}
-                                      className={cn(
-                                        'flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-all disabled:opacity-50',
-                                        isServe
-                                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                          : isReady
-                                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                          : isRecook
-                                          ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                          : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                      )}
-                                    >
-                                      {itemBusy && <RefreshCw size={10} className="animate-spin" />}
-                                      {nextStatus === 'recook_requested' ? '↻ Recook' : nextCfg.label || nextStatus}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-[9px] text-gray-500 pt-2 italic">✓ {itemCfg.label}</div>
-                            )}
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="bg-white border shadow-sm px-2 py-1 rounded font-black text-blue-600 text-xs">
+                                x{item.quantity}
+                              </span>
+                              <span className={cn('text-[9px] px-2 py-0.5 rounded border font-bold', itemCfg.bg, itemCfg.color)}>
+                                {itemCfg.label}
+                              </span>
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
 
-                  {/* Metadata Section */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
-                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Section</p>
-                      <p className="text-xs font-bold text-gray-600">{selectedKot.section_name}</p>
-                    </div>
-                    <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
-                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Phase</p>
-                      <p className="text-xs font-bold text-gray-600">Phase {selectedKot.order_phase || 1}</p>
-                    </div>
+                          {/* Item Status Buttons */}
+                          {validTransitions.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 pt-2 border-t">
+                              {validTransitions.map(nextStatus => {
+                                const nextCfg = ITEM_STATUS_CONFIG[nextStatus] || {};
+                                const isServe = nextStatus === 'served' || nextStatus === 'delivered';
+                                const isReady = nextStatus === 'ready';
+                                const isRecook = nextStatus === 'recook_requested';
+
+                                return (
+                                  <button
+                                    key={nextStatus}
+                                    disabled={itemBusy}
+                                    onClick={() => advanceStatus(item.section_kot_item_id, nextStatus)}
+                                    className={cn(
+                                      'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 h-10',
+                                      isServe
+                                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                        : isReady
+                                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                        : isRecook
+                                        ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                        : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                    )}
+                                  >
+                                    {itemBusy && <RefreshCw size={10} className="animate-spin" />}
+                                    {nextStatus === 'recook_requested' ? '↻ Recook' : nextCfg.label || nextStatus}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-[9px] text-gray-500 pt-2 italic">✓ {itemCfg.label}</div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Action Footer */}
-                <div className="p-6 bg-white border-t border-gray-100 space-y-3">
-                  <Button
-                    variant="outline"
-                    className="w-full h-12 rounded-xl border-gray-200 text-gray-600 font-bold gap-2 hover:bg-gray-50"
-                    onClick={() => setPrintKotOpen(true)}
-                  >
-                    <Printer size={18} /> PRINT KOT
-                  </Button>
+                {/* Metadata Section */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Section</p>
+                    <p className="text-xs font-bold text-gray-600">{selectedKot.section_name}</p>
+                  </div>
+                  <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Phase</p>
+                    <p className="text-xs font-bold text-gray-600">Phase {selectedKot.order_phase || 1}</p>
+                  </div>
                 </div>
               </div>
+            )}
+          </MobileDrawer>
 
-              {/* Print Dialog */}
-              <Dialog open={printKotOpen} onOpenChange={setPrintKotOpen}>
-                <DialogContent className="max-w-sm">
-                  <DialogHeader>
-                    <DialogTitle className="text-center font-black tracking-widest uppercase py-2">KOT PRINT PREVIEW</DialogTitle>
-                  </DialogHeader>
-                  <div className="font-mono text-xs border p-4 bg-gray-50 rounded-lg space-y-4">
-                    <div className="text-center border-b pb-2">
-                      <p className="font-bold text-sm uppercase">Restro-Manager</p>
-                      <p className="text-[10px] text-gray-500">Kitchen Copy</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-y-1">
-                      <span>ORDER ID:</span><span className="text-right font-bold">{selectedKot.order_id?.slice(0, 8)}</span>
-                      <span>KOT NO:</span><span className="text-right font-bold">#{selectedKot.section_kot_number}</span>
-                      <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
-                      <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>
-                    </div>
-                    <div className="border-t border-gray-300 pt-2">
-                      {selectedKot.items.map((it, i) => (
-                        <div key={i} className="flex justify-between py-1">
-                          <span>{it.item_name}</span>
-                          <span className="font-bold">x{it.quantity}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="border-t pt-2 text-center text-[10px] text-gray-400 italic">
-                      Software by RestroManager
-                    </div>
+          {/* Print Dialog */}
+          {selectedKot && (
+            <Dialog open={printKotOpen} onOpenChange={setPrintKotOpen}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="text-center font-black tracking-widest uppercase py-2">KOT PRINT PREVIEW</DialogTitle>
+                </DialogHeader>
+                <div className="font-mono text-xs border p-4 bg-gray-50 rounded-lg space-y-4">
+                  <div className="text-center border-b pb-2">
+                    <p className="font-bold text-sm uppercase">Restro-Manager</p>
+                    <p className="text-[10px] text-gray-500">Kitchen Copy</p>
                   </div>
-                  <DialogFooter className="pt-4">
-                    <Button variant="outline" onClick={() => setPrintKotOpen(false)}>Close</Button>
-                    <Button className="bg-blue-600 hover:bg-blue-700 font-bold text-white" onClick={() => window.print()}>
-                      <Printer className="mr-2" size={16} /> Print Now
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </>
+                  <div className="grid grid-cols-2 gap-y-1">
+                    <span>ORDER ID:</span><span className="text-right font-bold">{selectedKot.order_id?.slice(0, 8)}</span>
+                    <span>KOT NO:</span><span className="text-right font-bold">#{selectedKot.section_kot_number}</span>
+                    <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
+                    <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>
+                  </div>
+                  <div className="border-t border-gray-300 pt-2">
+                    {selectedKot.items.map((it, i) => (
+                      <div key={i} className="flex justify-between py-1">
+                        <span>{it.item_name}</span>
+                        <span className="font-bold">x{it.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-t pt-2 text-center text-[10px] text-gray-400 italic">
+                    Software by RestroManager
+                  </div>
+                </div>
+                <DialogFooter className="pt-4">
+                  <Button variant="outline" onClick={() => setPrintKotOpen(false)}>Close</Button>
+                  <Button className="bg-blue-600 hover:bg-blue-700 font-bold text-white" onClick={() => window.print()}>
+                    <Printer className="mr-2" size={16} /> Print Now
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
         </div>
+        </PageContainer>
       </DashboardLayout>
     </RoleGuard>
   );

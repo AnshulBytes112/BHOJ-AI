@@ -3,8 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './sidebar';
 import { useAuth } from '@/hooks/use-auth';
-import { CalendarDays, Clock, Bell, ChevronDown } from 'lucide-react';
+import { CalendarDays, Clock, Bell, ChevronDown, Menu } from 'lucide-react';
 import { FilterProvider, useFilter } from '@/lib/filter-context';
+import { useBreakpoint } from '@/hooks/use-breakpoint';
+import { MobileDrawer } from '@/components/common/mobile-drawer';
+import { cn } from '@/lib/utils';
 
 function DateTimeFilter() {
   const { filterDate, filterTime, setFilterDate, setFilterTime } = useFilter();
@@ -82,47 +85,82 @@ function DateTimeFilter() {
   );
 }
 
-export function DashboardLayout({ children }: { children: React.ReactNode }) {
+export function DashboardLayout({ children, disablePadding = false }: { children: React.ReactNode; disablePadding?: boolean }) {
   const { user } = useAuth();
+  const { isMobile, isTablet } = useBreakpoint();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   return (
     <FilterProvider>
       <div className="flex min-h-screen bg-muted/30 print:hidden">
-        <Sidebar />
-        <div className="flex-1 flex flex-col">
+        {/* Render normal sidebar on Desktop (expanded) and Tablet (collapsed) */}
+        {!isMobile && <Sidebar collapsed={isTablet} />}
+
+        {/* Render Mobile Sidebar in a MobileDrawer */}
+        {isMobile && (
+          <MobileDrawer
+            isOpen={mobileSidebarOpen}
+            onClose={() => setMobileSidebarOpen(false)}
+            title="Navigation Menu"
+            size="sm"
+          >
+            <div className="h-full flex flex-col justify-between -mx-6 -my-5">
+              <Sidebar collapsed={false} />
+            </div>
+          </MobileDrawer>
+        )}
+
+        <div className="flex-1 flex flex-col min-w-0">
           {/* ── Top Header Bar ── */}
-          <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-end px-6 gap-4 shrink-0 shadow-sm">
-            <DateTimeFilter />
+          <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-6 shrink-0 shadow-sm">
+            {/* Show Hamburger Button on Mobile */}
+            <div className="flex items-center gap-4">
+              {isMobile && (
+                <button
+                  onClick={() => setMobileSidebarOpen(true)}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                >
+                  <Menu size={20} />
+                </button>
+              )}
+            </div>
 
-            {/* Notification bell */}
-            <div className="w-px h-5 bg-gray-200 mx-1" />
-            <button className="relative text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-lg hover:bg-gray-50">
-              <Bell size={18} />
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                3
-              </span>
-            </button>
+            <div className="flex items-center gap-4">
+              <DateTimeFilter />
 
-            {/* User profile */}
-            <div className="w-px h-5 bg-gray-200 mx-1" />
-            <div className="flex items-center gap-2.5 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-primary/20">
-                <img
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
-                  alt="User"
-                  className="w-full h-full object-cover"
-                />
+              {/* Notification bell */}
+              <div className="w-px h-5 bg-gray-200 mx-1" />
+              <button className="relative text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-lg hover:bg-gray-50">
+                <Bell size={18} />
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                  3
+                </span>
+              </button>
+
+              {/* User profile */}
+              <div className="w-px h-5 bg-gray-200 mx-1" />
+              <div className="flex items-center gap-2.5 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-primary/20">
+                  <img
+                    src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
+                    alt="User"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="hidden md:block text-right leading-tight">
+                  <p className="text-sm font-bold text-gray-800">{user?.name || 'Admin User'}</p>
+                  <p className="text-[10px] text-gray-400 capitalize">{user?.role || 'Admin'}</p>
+                </div>
+                <ChevronDown size={14} className="text-gray-400" />
               </div>
-              <div className="hidden md:block text-right leading-tight">
-                <p className="text-sm font-bold text-gray-800">{user?.name || 'Admin User'}</p>
-                <p className="text-[10px] text-gray-400 capitalize">{user?.role || 'Admin'}</p>
-              </div>
-              <ChevronDown size={14} className="text-gray-400" />
             </div>
           </header>
 
           {/* ── Main Content ── */}
-          <main className="flex-1 p-8 overflow-y-auto">
+          <main className={cn(
+            "flex-1 flex flex-col min-h-0 min-w-0",
+            disablePadding ? "p-0 overflow-hidden" : (isMobile ? "p-4 overflow-y-auto" : "p-8 overflow-y-auto")
+          )}>
             {children}
           </main>
         </div>

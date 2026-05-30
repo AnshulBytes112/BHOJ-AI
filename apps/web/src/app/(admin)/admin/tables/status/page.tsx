@@ -1,6 +1,6 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RoleGuard } from '@/components/auth/role-guard';
-import TableStatusPage from '@/app/(admin)/admin/tables/page';
+import TableStatusPage from '@/app/(admin)/admin/tables/table-status-view';
 
 export default function AdminTableStatusPage() {
   return (

@@ -16,6 +16,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { UI_CONTENT } from '@/lib/content';
 import { mockDb, DashboardMetrics } from '@/lib/mock-api';
+import { PageContainer } from '@/components/common/page-container';
+import { ResponsiveGrid } from '@/components/common/responsive-grid';
 
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -60,36 +62,37 @@ export default function AdminDashboard() {
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin']}>
       <DashboardLayout>
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{admin.welcomeTitle}</h1>
-            <p className="text-muted-foreground text-sm">{admin.welcomeSubtitle}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="bg-white px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-medium text-muted-foreground shadow-sm">
-              <Clock size={14} className="text-primary" />
-              {currentTime}
+        <PageContainer className="p-0">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">{admin.welcomeTitle}</h1>
+              <p className="text-muted-foreground text-sm">{admin.welcomeSubtitle}</p>
             </div>
-            <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm">
-              <Zap size={14} className="text-primary fill-primary" />
-              {actionsContent.liveSync}
-            </Button>
-            <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm">
-              <Users size={14} className="text-primary" />
-              {actionsContent.waiterDesk}
-            </Button>
-            <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm">
-              <RefreshCcw size={14} />
-              {actionsContent.refresh}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="bg-white px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-medium text-muted-foreground shadow-sm h-11 shrink-0">
+                <Clock size={14} className="text-primary" />
+                {currentTime}
+              </div>
+              <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
+                <Zap size={14} className="text-primary fill-primary" />
+                <span className="hidden sm:inline">{actionsContent.liveSync}</span>
+              </Button>
+              <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
+                <Users size={14} className="text-primary" />
+                <span className="hidden sm:inline">{actionsContent.waiterDesk}</span>
+              </Button>
+              <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
+                <RefreshCcw size={14} />
+                <span className="hidden sm:inline">{actionsContent.refresh}</span>
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Total Sales */}
-          <Card className="border-none shadow-sm bg-white rounded-2xl overflow-hidden group hover:shadow-md transition-all">
+          {/* Metrics Grid */}
+          <ResponsiveGrid columns={{ mobile: 1, tablet: 2, desktop: 4 }} className="mb-8">
+            {/* Total Sales */}
+            <Card className="border-none shadow-sm bg-white rounded-2xl overflow-hidden group hover:shadow-md transition-all">
             <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
               <CardTitle className="text-sm font-medium text-muted-foreground">{content.totalSales.label}</CardTitle>
             </CardHeader>
@@ -191,7 +194,7 @@ export default function AdminDashboard() {
               </p>
             </CardContent>
           </Card>
-        </div>
+        </ResponsiveGrid>
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -260,6 +263,7 @@ export default function AdminDashboard() {
             </div>
           </Card>
         </div>
+        </PageContainer>
       </DashboardLayout>
     </RoleGuard>
   );

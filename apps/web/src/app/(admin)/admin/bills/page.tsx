@@ -25,6 +25,8 @@ import {
 import apiClient from '@/services/apiClient';
 import { ReceiptData, ReceiptPrint } from '@/components/admin/receipt-print';
 import { formatDate } from '@/lib/utils';
+import { PageContainer } from '@/components/common/page-container';
+import { ResponsiveTable } from '@/components/common/responsive-table';
 
 type BillStatus = 'draft' | 'completed' | 'printed';
 
@@ -86,6 +88,161 @@ export default function BillsHistoryPage() {
   const [isPrinting, setIsPrinting] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  const columns = [
+    {
+      header: 'Bill No',
+      accessor: (row: BillListItem) => row.bill_serial_number,
+    },
+    {
+      header: 'Date',
+      accessor: (row: BillListItem) => formatDate(row.created_at),
+    },
+    {
+      header: 'Items Count',
+      accessor: (row: BillListItem) => row.items_count,
+      className: 'text-right',
+    },
+    {
+      header: 'Subtotal',
+      accessor: (row: BillListItem) => `Rs ${Number(row.subtotal).toFixed(2)}`,
+      className: 'text-right',
+    },
+    {
+      header: 'GST',
+      accessor: (row: BillListItem) => `Rs ${Number(row.gst_total).toFixed(2)}`,
+      className: 'text-right',
+    },
+    {
+      header: 'Grand Total',
+      accessor: (row: BillListItem) => `Rs ${Number(row.grand_total).toFixed(2)}`,
+      className: 'text-right font-bold',
+    },
+    {
+      header: 'Status',
+      accessor: (row: BillListItem) => (
+        <Badge variant={statusVariant(row.status)} className="capitalize">
+          {row.status}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Action',
+      accessor: (row: BillListItem) => (
+        <div className="inline-flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => handleViewBill(row.id)} className="h-10 px-3">
+            View
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => handlePrintBill(row.id)}
+            disabled={isPrinting || row.status === 'draft'}
+            className="h-10 px-3 bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Print
+          </Button>
+        </div>
+      ),
+      className: 'text-right',
+    },
+  ];
+
+  const mobileCardRender = (bill: BillListItem) => (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center border-b pb-2">
+        <span className="font-bold text-gray-800 text-sm">Bill #{bill.bill_serial_number}</span>
+        <Badge variant={statusVariant(bill.status)} className="capitalize">
+          {bill.status}
+        </Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Date</span>
+          <span className="font-medium">{formatDate(bill.created_at)}</span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Items Count</span>
+          <span className="font-medium">{bill.items_count} items</span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Subtotal</span>
+          <span className="font-medium">Rs {Number(bill.subtotal).toFixed(2)}</span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">GST</span>
+          <span className="font-medium">Rs {Number(bill.gst_total).toFixed(2)}</span>
+        </div>
+      </div>
+      <div className="flex justify-between items-center border-t pt-2 mt-2">
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Grand Total</span>
+          <span className="text-sm font-bold text-blue-600">Rs {Number(bill.grand_total).toFixed(2)}</span>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => handleViewBill(bill.id)} className="h-10 px-3">
+            View
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => handlePrintBill(bill.id)}
+            disabled={isPrinting || bill.status === 'draft'}
+            className="h-10 px-3 bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Print
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const detailColumns = [
+    {
+      header: 'Item',
+      accessor: (row: any) => row.item_name,
+    },
+    {
+      header: 'Qty',
+      accessor: (row: any) => row.quantity,
+      className: 'text-right',
+    },
+    {
+      header: 'Unit Price',
+      accessor: (row: any) => `Rs ${Number(row.unit_price).toFixed(2)}`,
+      className: 'text-right',
+    },
+    {
+      header: 'GST%',
+      accessor: (row: any) => `${Number(row.gst_rate).toFixed(2)}%`,
+      className: 'text-right',
+    },
+    {
+      header: 'GST Amt',
+      accessor: (row: any) => `Rs ${Number(row.gst_amount).toFixed(2)}`,
+      className: 'text-right',
+    },
+    {
+      header: 'Line Total',
+      accessor: (row: any) => `Rs ${Number(row.line_total).toFixed(2)}`,
+      className: 'text-right font-bold',
+    },
+  ];
+
+  const detailMobileCardRender = (line: any) => (
+    <div className="space-y-1 text-xs">
+      <div className="flex justify-between items-center border-b pb-1 font-semibold">
+        <span>{line.item_name}</span>
+        <span>Qty: {line.quantity}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-2 pt-1 text-gray-500">
+        <div>Unit Price: Rs {Number(line.unit_price).toFixed(2)}</div>
+        <div className="text-right">GST: {Number(line.gst_rate).toFixed(2)}% (Rs {Number(line.gst_amount).toFixed(2)})</div>
+      </div>
+      <div className="flex justify-between items-center font-bold text-slate-700 pt-1">
+        <span>Line Total</span>
+        <span>Rs {Number(line.line_total).toFixed(2)}</span>
+      </div>
+    </div>
+  );
 
   const grandTotalOfAll = useMemo(() => {
     return bills.reduce((sum, bill) => sum + Number(bill.grand_total), 0);
@@ -164,8 +321,8 @@ export default function BillsHistoryPage() {
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin']}>
       <DashboardLayout>
-        <div className="space-y-6">
-          <div className="flex items-start justify-between">
+        <PageContainer className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Bills History</h1>
               <p className="text-sm text-muted-foreground">
@@ -189,65 +346,13 @@ export default function BillsHistoryPage() {
               <CardTitle>All Bills</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Bill No</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Items Count</TableHead>
-                    <TableHead className="text-right">Subtotal</TableHead>
-                    <TableHead className="text-right">GST</TableHead>
-                    <TableHead className="text-right">Grand Total</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-20 text-center text-muted-foreground">
-                        Loading bills...
-                      </TableCell>
-                    </TableRow>
-                  ) : bills.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-20 text-center text-muted-foreground">
-                        No bills available.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    bills.map((bill) => (
-                      <TableRow key={bill.id}>
-                        <TableCell className="font-medium">{bill.bill_serial_number}</TableCell>
-                        <TableCell>{formatDate(bill.created_at)}</TableCell>
-                        <TableCell className="text-right">{bill.items_count}</TableCell>
-                        <TableCell className="text-right">Rs {Number(bill.subtotal).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">Rs {Number(bill.gst_total).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">Rs {Number(bill.grand_total).toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Badge variant={statusVariant(bill.status)} className="capitalize">
-                            {bill.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="inline-flex items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={() => handleViewBill(bill.id)}>
-                              View
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handlePrintBill(bill.id)}
-                              disabled={isPrinting || bill.status === 'draft'}
-                            >
-                              Print
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <ResponsiveTable
+                data={bills}
+                columns={columns}
+                rowKey={(row) => row.id}
+                mobileCardRender={mobileCardRender}
+                loading={isLoading}
+              />
             </CardContent>
           </Card>
 
@@ -285,30 +390,12 @@ export default function BillsHistoryPage() {
                     </div>
                   </div>
 
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Unit Price</TableHead>
-                        <TableHead className="text-right">GST%</TableHead>
-                        <TableHead className="text-right">GST Amt</TableHead>
-                        <TableHead className="text-right">Line Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedBill.items.map((line) => (
-                        <TableRow key={line.id}>
-                          <TableCell>{line.item_name}</TableCell>
-                          <TableCell className="text-right">{line.quantity}</TableCell>
-                          <TableCell className="text-right">Rs {Number(line.unit_price).toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{Number(line.gst_rate).toFixed(2)}%</TableCell>
-                          <TableCell className="text-right">Rs {Number(line.gst_amount).toFixed(2)}</TableCell>
-                          <TableCell className="text-right">Rs {Number(line.line_total).toFixed(2)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <ResponsiveTable
+                    data={selectedBill.items}
+                    columns={detailColumns}
+                    rowKey={(row) => row.id}
+                    mobileCardRender={detailMobileCardRender}
+                  />
 
                   <div className="ml-auto w-full max-w-sm space-y-1 rounded-lg border bg-muted/20 p-3 text-sm">
                     <div className="flex justify-between">
@@ -344,7 +431,7 @@ export default function BillsHistoryPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+        </PageContainer>
       </DashboardLayout>
 
       {isReceiptOpen && receiptData && (
