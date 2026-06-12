@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './sidebar';
 import { useAuth } from '@/hooks/use-auth';
 import { getWebSocketUrl } from '@/hooks/useWebSocket';
-import { CalendarDays, Clock, Bell, ChevronDown, Menu } from 'lucide-react';
+import { CalendarDays, Clock, Bell, ChevronDown, Menu, X } from 'lucide-react';
 import { FilterProvider, useFilter } from '@/lib/filter-context';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 import { MobileDrawer } from '@/components/common/mobile-drawer';
@@ -95,6 +95,16 @@ export function DashboardLayout({ children, disablePadding = false }: { children
   const [notifications, setNotifications] = useState<any[]>([]);
   const [bellOpen, setBellOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const [toastList, setToastList] = useState<{ id: string; text: string; type: 'info' | 'success' | 'warning' }[]>([]);
+
+  const addToast = (text: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    const id = Math.random().toString();
+    const newToast = { id, text, type };
+    setToastList(prev => [newToast, ...prev].slice(0, 3));
+    setTimeout(() => {
+      setToastList(prev => prev.filter(t => t.id !== id));
+    }, 7000);
+  };
 
   // Load notifications from local storage on mount
   useEffect(() => {
