@@ -12,7 +12,11 @@ interface OrderDetailsProps {
 
 export default function OrderDetails({ order, onBack, onCancelOrder }: OrderDetailsProps) {
   const subtotalVal = order.items.reduce((sum, item) => sum + parseFloat(item.price_at_billing) * item.quantity, 0);
-  const taxesVal = subtotalVal * 0.10;
+  const taxesVal = order.items.reduce((sum, item) => {
+    const itemSubtotal = parseFloat(item.price_at_billing) * item.quantity;
+    const rate = parseFloat((item as any).gst_percent_at_billing ?? 5);
+    return sum + (itemSubtotal * (rate / 100));
+  }, 0);
   const totalVal = subtotalVal + taxesVal;
 
   return (
@@ -68,12 +72,12 @@ export default function OrderDetails({ order, onBack, onCancelOrder }: OrderDeta
               <span>₹{subtotalVal}</span>
             </div>
             <div className="flex justify-between text-xs text-stone-500">
-              <span>Taxes & Charges (10%)</span>
-              <span>₹{taxesVal}</span>
+              <span>Taxes & Charges (GST)</span>
+              <span>₹{taxesVal.toFixed(2)}</span>
             </div>
             <div className="border-t border-stone-200 my-1 pt-1.5 flex justify-between font-black text-gray-900 text-base">
               <span>Total</span>
-              <span>₹{totalVal}</span>
+              <span>₹{totalVal.toFixed(2)}</span>
             </div>
           </div>
 

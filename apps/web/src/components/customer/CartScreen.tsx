@@ -54,7 +54,22 @@ export default function CartScreen({
   };
 
   const discountAmount = promoApplied ? subtotal * 0.10 : 0;
-  const taxesAndCharges = (subtotal - discountAmount) * 0.10;
+  const calculateTaxes = () => {
+    return cart.reduce((sum, item) => {
+      let itemPrice = item.selling_price;
+      if (item.extras) {
+        item.extras.forEach(extra => {
+          if (extra.includes('Cheese')) itemPrice += 40;
+          if (extra.includes('Paneer')) itemPrice += 60;
+        });
+      }
+      const rate = item.gst_rate ?? 5;
+      const itemSubtotal = itemPrice * item.quantity;
+      const netItemSubtotal = promoApplied ? itemSubtotal * 0.90 : itemSubtotal;
+      return sum + (netItemSubtotal * (rate / 100));
+    }, 0);
+  };
+  const taxesAndCharges = calculateTaxes();
   const total = subtotal - discountAmount + taxesAndCharges;
 
   return (
@@ -179,16 +194,16 @@ export default function CartScreen({
               {promoApplied && (
                 <div className="flex justify-between text-xs text-emerald-600 font-semibold">
                   <span>Promo Discount (10%)</span>
-                  <span>- ₹{discountAmount}</span>
+                  <span>- ₹{discountAmount.toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between text-xs text-stone-500">
-                <span>Taxes & Charges (10%)</span>
-                <span>₹{taxesAndCharges}</span>
+                <span>Taxes & Charges (GST)</span>
+                <span>₹{taxesAndCharges.toFixed(2)}</span>
               </div>
               <div className="border-t border-stone-200 my-1 pt-1.5 flex justify-between font-black text-gray-900 text-base">
                 <span>Total Amount</span>
-                <span>₹{total}</span>
+                <span>₹{total.toFixed(2)}</span>
               </div>
             </div>
 

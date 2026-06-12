@@ -24,6 +24,7 @@ export interface OrderItem {
   quantity: number;
   price_at_billing: string;
   item_status: string;
+  gst_percent_at_billing?: string | number;
 }
 
 export interface Order {

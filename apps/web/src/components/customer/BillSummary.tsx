@@ -11,10 +11,11 @@ interface BillSummaryProps {
 
 export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
   // Combine all items from all orders in the current session
-  const allItems: { name: string; qty: number; price: number }[] = [];
+  const allItems: { name: string; qty: number; price: number; gstRate: number }[] = [];
   
   orders.forEach(order => {
     order.items.forEach(item => {
+      const rate = parseFloat((item as any).gst_percent_at_billing ?? 5);
       const match = allItems.find(i => i.name === item.item_name);
       if (match) {
         match.qty += item.quantity;
@@ -22,14 +23,15 @@ export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
         allItems.push({
           name: item.item_name,
           qty: item.quantity,
-          price: parseFloat(item.price_at_billing)
+          price: parseFloat(item.price_at_billing),
+          gstRate: rate
         });
       }
     });
   });
 
   const billSubtotal = allItems.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const billTaxes = billSubtotal * 0.10;
+  const billTaxes = allItems.reduce((sum, item) => sum + (item.price * item.qty * (item.gstRate / 100)), 0);
   const billTotal = billSubtotal + billTaxes;
 
   return (
@@ -77,12 +79,12 @@ export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
                 <span>₹{billSubtotal}</span>
               </div>
               <div className="flex justify-between text-xs text-stone-500">
-                <span>Taxes & Charges (10%)</span>
-                <span>₹{billTaxes}</span>
+                <span>Taxes & Charges (GST)</span>
+                <span>₹{billTaxes.toFixed(2)}</span>
               </div>
               <div className="border-t border-stone-200 my-1 pt-1.5 flex justify-between font-black text-gray-900 text-base">
                 <span>Grand Total</span>
-                <span>₹{billTotal}</span>
+                <span>₹{billTotal.toFixed(2)}</span>
               </div>
             </div>
 

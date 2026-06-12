@@ -46,7 +46,22 @@ export default function CheckoutScreen({
     return itemPrice * item.quantity;
   };
 
-  const taxesAndCharges = (subtotal - discountAmount) * 0.10;
+  const calculateTaxes = () => {
+    return cart.reduce((sum, item) => {
+      let itemPrice = item.selling_price;
+      if (item.extras) {
+        item.extras.forEach(extra => {
+          if (extra.includes('Cheese')) itemPrice += 40;
+          if (extra.includes('Paneer')) itemPrice += 60;
+        });
+      }
+      const rate = item.gst_rate ?? 5;
+      const itemSubtotal = itemPrice * item.quantity;
+      const netItemSubtotal = promoApplied ? itemSubtotal * 0.90 : itemSubtotal;
+      return sum + (netItemSubtotal * (rate / 100));
+    }, 0);
+  };
+  const taxesAndCharges = calculateTaxes();
   const total = subtotal - discountAmount + taxesAndCharges;
 
   return (
@@ -75,7 +90,7 @@ export default function CheckoutScreen({
             ))}
             <div className="border-t border-stone-200 pt-2 flex justify-between font-black text-gray-900 text-sm">
               <span>Total Amount</span>
-              <span>₹{total}</span>
+              <span>₹{total.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -174,7 +189,7 @@ export default function CheckoutScreen({
           className="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-bold py-3.5 rounded-xl shadow flex items-center justify-between px-4 transition-all disabled:bg-stone-300"
         >
           <span>{isSubmitting ? 'Placing Order...' : 'Place Order'}</span>
-          <span className="text-sm">₹{total}</span>
+          <span className="text-sm">₹{total.toFixed(2)}</span>
         </button>
       </div>
     </div>
