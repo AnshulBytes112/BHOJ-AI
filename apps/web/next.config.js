@@ -15,4 +15,8 @@ const plugins = [
   withNx,
 ];
 
-module.exports = composePlugins(...plugins)(nextConfig);
+if (process.env.VERCEL) {
+  module.exports = nextConfig;
+} else {
+  module.exports = composePlugins(...plugins)(nextConfig);
+}
