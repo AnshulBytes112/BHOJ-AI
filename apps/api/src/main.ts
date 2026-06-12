@@ -51,6 +51,11 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/public', publicRouter);
 
+// Basic Root Route (Public)
+app.get('/api', (req, res) => {
+  res.send({ message: 'Welcome to the Hotel Management API' });
+});
+
 app.use('/api', requireAdminRole);
 
 app.use('/api/items', itemsRouter);
@@ -64,10 +69,7 @@ app.use('/api/kots', kotsRouter);
 app.use('/api/sessions', sessionsRouter);
 
 
-// Basic Root Route
-app.get('/api', (req, res) => {
-  res.send({ message: 'Welcome to the Hotel Management API' });
-});
+
 
 const port = process.env.PORT || 3333;
 initializeDatabase()
