@@ -242,7 +242,7 @@ function CustomerMenuContent() {
 
         {/* BOTTOM GLOBAL NAVIGATION BAR */}
         {activeView !== 'landing' && activeView !== 'item-details' && (
-          <nav className="absolute bottom-0 left-0 right-0 h-16 bg-white border-t border-stone-200 flex justify-around items-center px-2 z-10 shadow-lg">
+          <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md h-16 bg-white border-t border-stone-200 flex justify-around items-center px-2 z-50 shadow-lg">
             <button
               onClick={() => setActiveView('menu')}
               className={cn(
