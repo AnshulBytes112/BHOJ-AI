@@ -385,170 +385,196 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Split View */}
-            <div className="flex flex-col xl:flex-row min-h-[500px] bg-slate-50/30">
-              {/* Orders Table */}
-              <div className="p-4 sm:p-6 flex-1">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold">Orders List</h2>
-                  <span className="text-sm font-medium text-primary bg-primary/10 px-3 py-1 rounded-full">Total: {filtered.length}</span>
-                </div>
-                <div className="bg-white border rounded-xl p-2 sm:p-4">
-                  <ResponsiveTable
-                    data={paged}
-                    columns={columns}
-                    rowKey={(row: Order) => row.order_id}
-                    mobileCardRender={mobileCardRender}
-                    loading={isLoading}
-                  />
+            {/* Orders List Container */}
+            <div className="p-4 sm:p-6 bg-slate-50/10">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-slate-800">Orders List</h2>
+                <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">Total: {filtered.length}</span>
+              </div>
+              
+              <ResponsiveTable
+                data={paged}
+                columns={columns}
+                rowKey={(row: Order) => row.order_id}
+                mobileCardRender={mobileCardRender}
+                loading={isLoading}
+              />
 
-                  {/* Pagination */}
-                  <div className="p-4 border-t flex flex-col sm:flex-row gap-4 items-center justify-between text-sm text-muted-foreground mt-4">
-                    <span>Showing {filtered.length === 0 ? 0 : (page - 1) * rowsPerPage + 1}–{Math.min(page * rowsPerPage, filtered.length)} of {filtered.length}</span>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button variant="outline" size="icon" className="w-8 h-8" disabled={page === 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className="w-4 h-4" /></Button>
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 2), page + 1).map(p =>
-                        <Button key={p} variant="outline" size="icon" className={cn("w-8 h-8", p === page && "border-primary text-primary bg-primary/5")} onClick={() => setPage(p)}>{p}</Button>)}
-                      <Button variant="outline" size="icon" className="w-8 h-8" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className="w-4 h-4" /></Button>
-                      <Select value={String(rowsPerPage)} onValueChange={v => { setRowsPerPage(Number(v)); setPage(1); }}>
-                        <SelectTrigger className="w-[70px] h-8"><SelectValue /></SelectTrigger>
-                        <SelectContent>{[10, 20, 50].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+              {/* Pagination */}
+              <div className="p-4 border border-t-0 rounded-b-xl bg-white flex flex-col sm:flex-row gap-4 items-center justify-between text-sm text-muted-foreground shadow-sm">
+                <span>Showing {filtered.length === 0 ? 0 : (page - 1) * rowsPerPage + 1}–{Math.min(page * rowsPerPage, filtered.length)} of {filtered.length}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" size="icon" className="w-8 h-8" disabled={page === 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 2), page + 1).map(p =>
+                    <Button key={p} variant="outline" size="icon" className={cn("w-8 h-8", p === page && "border-primary text-primary bg-primary/5")} onClick={() => setPage(p)}>{p}</Button>)}
+                  <Button variant="outline" size="icon" className="w-8 h-8" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className="w-4 h-4" /></Button>
+                  <Select value={String(rowsPerPage)} onValueChange={v => { setRowsPerPage(Number(v)); setPage(1); }}>
+                    <SelectTrigger className="w-[70px] h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>{[10, 20, 50].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
+                  </Select>
                 </div>
               </div>
+            </div>
 
-              {/* Detail Panel - Desktop Only */}
+            {/* Slider Drawer for Details (Desktop and Mobile) */}
+            <MobileDrawer
+              isOpen={!!selected}
+              onClose={() => setSelected(null)}
+              title="Order Details"
+              size="lg"
+              footer={selected && (
+                <div className="flex gap-3 w-full">
+                  <Button variant="outline" className="flex-1 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10 h-11"
+                    disabled={isSending || selected.status === 'in_progress'} onClick={() => sendToKitchen(selected)}>
+                    <Printer className="w-4 h-4 mr-2" />
+                    {isSending ? 'Sending...' : 
+                     selected.status === 'open' ? 'Send to Kitchen' : 
+                     selected.status === 'in_progress' ? 'Preparing in Kitchen' :
+                     selected.status === 'completed' ? 'KOT Printed' : 'Print KOT'}
+                  </Button>
+                  <Button className="flex-1 bg-primary hover:bg-primary/90 text-white h-11"
+                    disabled={selected.status === 'billed'} onClick={() => openBill(selected)}>
+                    <CreditCard className="w-4 h-4 mr-2" /> Generate Bill
+                  </Button>
+                </div>
+              )}
+            >
               {selected && (
-                <div className="hidden xl:flex w-full xl:w-[430px] bg-white border-l flex-col shrink-0">
-                  <div className="p-5 border-b flex items-center justify-between bg-slate-50/50">
-                    <h3 className="font-bold text-lg">Order Details</h3>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelected(null)}><X className="w-5 h-5" /></Button>
-                  </div>
-                  <div className="p-5 flex-1 overflow-y-auto space-y-5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-primary text-lg">{shortId(selected.order_id)}</span>
-                      {statusBadge(selected.status)}
-                    </div>
-                    {actionMsg && <div className="rounded-lg bg-primary/10 text-primary px-3 py-2 text-sm">{actionMsg}</div>}
-                    <div className="bg-slate-50 border rounded-xl p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                      <div className="text-slate-500">Table</div><div className="font-medium text-right">{selected.table_number || selected.table_id}</div>
-                      <div className="text-slate-500">Order Time</div><div className="font-medium text-right">{fmtDate(selected.created_at)}</div>
-                      <div className="text-slate-500">Payment</div>
-                      <div className="text-right">
-                        <Badge variant="outline" className={selected.status === 'billed' || selected.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}>
-                          {selected.status === 'billed' || selected.status === 'completed' ? 'Paid' : 'Unpaid'}
-                        </Badge>
-                      </div>
+                <div className="space-y-6">
+                  {/* Order metadata card */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Order ID</span>
+                      <h3 className="font-bold text-slate-800 text-lg uppercase">{shortId(selected.order_id)}</h3>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-sm mb-3">Order Items ({safeItems(selected.items).length})</h4>
-                      <div className="space-y-2">
-                        {safeItems(selected.items).length === 0
-                          ? <p className="text-sm text-muted-foreground">No items</p>
-                          : safeItems(selected.items).map((item, i) => (
-                            <div key={i} className="flex justify-between text-sm">
-                              <span className="flex-1 font-medium">{item.item_name || `Item #${item.item_id}`}</span>
-                              <span className="text-slate-500 w-28 text-right">{item.quantity} × ₹{Number(item.price_at_billing).toFixed(2)}</span>
-                              <span className="font-medium w-20 text-right">₹{(item.quantity * Number(item.price_at_billing)).toFixed(2)}</span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                    <div className="border-t border-dashed pt-4 space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-slate-500">Sub Total</span><span className="font-medium">₹ {detSubtotal.toFixed(2)}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">CGST (2.5%)</span><span className="font-medium">₹ {detCGST.toFixed(2)}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">SGST (2.5%)</span><span className="font-medium">₹ {detSGST.toFixed(2)}</span></div>
-                      <div className="flex justify-between items-center pt-2 border-t font-bold text-lg">
-                        <span>Total Amount</span><span className="text-primary">₹ {detTotal.toFixed(2)}</span>
-                      </div>
+                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block text-right">Status</span>
+                      {statusBadge(selected.status)}
                     </div>
                   </div>
-                  <div className="p-5 border-t bg-slate-50/50 flex gap-3">
-                    <Button variant="outline" className="flex-1 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10"
-                      disabled={isSending || selected.status === 'in_progress'} onClick={() => sendToKitchen(selected)}>
-                      <Printer className="w-4 h-4 mr-2" />
-                      {isSending ? 'Sending...' : 
-                       selected.status === 'open' ? 'Send to Kitchen' : 
-                       selected.status === 'in_progress' ? 'Kitchen is Preparing' :
-                       selected.status === 'completed' ? 'Order Completed' : 'Print KOT'}
-                    </Button>
-                    <Button className="flex-1 bg-primary hover:bg-primary/90 text-white"
-                      disabled={selected.status === 'billed'} onClick={() => openBill(selected)}>
-                      <CreditCard className="w-4 h-4 mr-2" /> Generate Bill
-                    </Button>
+
+                  {actionMsg && (
+                    <div className="rounded-lg bg-blue-50 border border-blue-100 text-blue-700 px-3 py-2 text-sm">
+                      {actionMsg}
+                    </div>
+                  )}
+
+                  {/* Stepper progress tracker */}
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                    <div className="flex items-center justify-between text-xs font-medium text-slate-400 mb-2">
+                      <span>ORDER PROGRESS</span>
+                      <span className="text-primary uppercase font-bold">{selected.status.replace('_', ' ')}</span>
+                    </div>
+                    <div className="relative flex items-center justify-between mt-4 px-2">
+                      {/* Progress Line */}
+                      <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 z-0" />
+                      <div 
+                        className="absolute left-6 top-1/2 -translate-y-1/2 h-0.5 bg-primary transition-all duration-300 z-0" 
+                        style={{ 
+                          width: `${
+                            selected.status === 'open' ? '0%' :
+                            selected.status === 'sent_to_kitchen' ? '25%' :
+                            selected.status === 'in_progress' ? '50%' :
+                            selected.status === 'completed' ? '75%' :
+                            selected.status === 'billed' ? '100%' : '0%'
+                          }` 
+                        }} 
+                      />
+
+                      {/* Steps */}
+                      {[
+                        { label: 'New', key: 'open' },
+                        { label: 'KOT Sent', key: 'sent_to_kitchen' },
+                        { label: 'Preparing', key: 'in_progress' },
+                        { label: 'Completed', key: 'completed' },
+                        { label: 'Billed', key: 'billed' }
+                      ].map((step, idx) => {
+                        const statuses = ['open', 'sent_to_kitchen', 'in_progress', 'completed', 'billed'];
+                        const currentIdx = statuses.indexOf(selected.status);
+                        const stepIdx = statuses.indexOf(step.key);
+                        const isDone = stepIdx <= currentIdx;
+                        const isCurrent = stepIdx === currentIdx;
+
+                        return (
+                          <div key={idx} className="flex flex-col items-center relative z-10">
+                            <div className={cn(
+                              "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300",
+                              isCurrent ? "bg-primary text-white ring-4 ring-primary/20 scale-110" :
+                              isDone ? "bg-primary text-white" : "bg-slate-100 text-slate-400 border border-slate-200"
+                            )}>
+                              {idx + 1}
+                            </div>
+                            <span className={cn(
+                              "text-[9px] mt-1 font-semibold whitespace-nowrap",
+                              isCurrent ? "text-primary font-bold" :
+                              isDone ? "text-slate-700" : "text-slate-400"
+                            )}>
+                              {step.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Order info details */}
+                  <div className="bg-white border rounded-xl p-4 shadow-sm grid grid-cols-2 gap-y-3 text-sm">
+                    <div className="text-slate-500">Table</div>
+                    <div className="font-semibold text-right text-slate-800">Table {selected.table_number || selected.table_id}</div>
+                    
+                    <div className="text-slate-500">Order Time</div>
+                    <div className="font-medium text-right text-slate-600">{fmtDate(selected.created_at)}</div>
+                    
+                    <div className="text-slate-500">Payment Status</div>
+                    <div className="text-right">
+                      <Badge variant="outline" className={selected.status === 'billed' || selected.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}>
+                        {selected.status === 'billed' || selected.status === 'completed' ? 'Paid' : 'Unpaid'}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Order items list */}
+                  <div>
+                    <h4 className="font-bold text-slate-700 text-sm mb-3">Order Items ({safeItems(selected.items).length})</h4>
+                    <div className="border rounded-xl divide-y bg-white overflow-hidden shadow-sm">
+                      {safeItems(selected.items).length === 0 ? (
+                        <p className="text-sm text-muted-foreground p-4 text-center">No items in this order</p>
+                      ) : (
+                        safeItems(selected.items).map((item, i) => (
+                          <div key={i} className="flex justify-between items-center p-3 text-sm hover:bg-slate-50/50">
+                            <div className="flex-1">
+                              <span className="font-semibold text-slate-800">{item.item_name || `Item #${item.item_id}`}</span>
+                              <span className="block text-xs text-slate-400">Qty: {item.quantity} × ₹{Number(item.price_at_billing).toFixed(2)}</span>
+                            </div>
+                            <span className="font-bold text-slate-700 text-right">₹{(item.quantity * Number(item.price_at_billing)).toFixed(2)}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Pricing summaries formatted like a receipt */}
+                  <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-4 space-y-2.5 text-sm">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Subtotal</span>
+                      <span className="font-medium">₹ {detSubtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500">
+                      <span>CGST (2.5%)</span>
+                      <span className="font-medium">₹ {detCGST.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500">
+                      <span>SGST (2.5%)</span>
+                      <span className="font-medium">₹ {detSGST.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2.5 border-t border-dashed border-slate-200 font-bold text-slate-800 text-base">
+                      <span>Total Amount</span>
+                      <span className="text-primary text-lg font-bold">₹ {detTotal.toFixed(2)}</span>
+                    </div>
                   </div>
                 </div>
               )}
-
-              {/* Mobile Drawer for Details */}
-              <MobileDrawer
-                isOpen={!!selected}
-                onClose={() => setSelected(null)}
-                title="Order Details"
-                size="md"
-                className="xl:hidden"
-              >
-                {selected && (
-                  <div className="h-full flex flex-col min-h-0 bg-white">
-                    <div className="p-5 flex-1 overflow-y-auto space-y-5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-primary text-lg">{shortId(selected.order_id)}</span>
-                        {statusBadge(selected.status)}
-                      </div>
-                      {actionMsg && <div className="rounded-lg bg-primary/10 text-primary px-3 py-2 text-sm">{actionMsg}</div>}
-                      <div className="bg-slate-50 border rounded-xl p-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                        <div className="text-slate-500">Table</div><div className="font-medium text-right">{selected.table_number || selected.table_id}</div>
-                        <div className="text-slate-500">Order Time</div><div className="font-medium text-right">{fmtDate(selected.created_at)}</div>
-                        <div className="text-slate-500">Payment</div>
-                        <div className="text-right">
-                          <Badge variant="outline" className={selected.status === 'billed' || selected.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}>
-                            {selected.status === 'billed' || selected.status === 'completed' ? 'Paid' : 'Unpaid'}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-sm mb-3">Order Items ({safeItems(selected.items).length})</h4>
-                        <div className="space-y-2">
-                          {safeItems(selected.items).length === 0
-                            ? <p className="text-sm text-muted-foreground">No items</p>
-                            : safeItems(selected.items).map((item, i) => (
-                              <div key={i} className="flex justify-between text-sm">
-                                <span className="flex-1 font-medium">{item.item_name || `Item #${item.item_id}`}</span>
-                                <span className="text-slate-500 w-28 text-right">{item.quantity} × ₹{Number(item.price_at_billing).toFixed(2)}</span>
-                                <span className="font-medium w-20 text-right">₹{(item.quantity * Number(item.price_at_billing)).toFixed(2)}</span>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                      <div className="border-t border-dashed pt-4 space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-slate-500">Sub Total</span><span className="font-medium">₹ {detSubtotal.toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-500">CGST (2.5%)</span><span className="font-medium">₹ {detCGST.toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-500">SGST (2.5%)</span><span className="font-medium">₹ {detSGST.toFixed(2)}</span></div>
-                        <div className="flex justify-between items-center pt-2 border-t font-bold text-lg">
-                          <span>Total Amount</span><span className="text-primary">₹ {detTotal.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-5 border-t bg-slate-50/50 flex gap-3 pb-8 sm:pb-5">
-                      <Button variant="outline" className="flex-1 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10 h-12"
-                        disabled={isSending || selected.status === 'in_progress'} onClick={() => sendToKitchen(selected)}>
-                        <Printer className="w-4 h-4 mr-2" />
-                        {isSending ? 'Sending...' : 
-                         selected.status === 'open' ? 'Send' : 
-                         selected.status === 'in_progress' ? 'Preparing' :
-                         selected.status === 'completed' ? 'Done' : 'Print'}
-                      </Button>
-                      <Button className="flex-1 bg-primary hover:bg-primary/90 text-white h-12"
-                        disabled={selected.status === 'billed'} onClick={() => openBill(selected)}>
-                        <CreditCard className="w-4 h-4 mr-2" /> Bill
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </MobileDrawer>
-            </div>
+            </MobileDrawer>
           </div>
         </PageContainer>
 
