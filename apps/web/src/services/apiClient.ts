@@ -14,13 +14,29 @@ apiClient.interceptors.request.use(
   (config) => {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('token');
+      const userStr = localStorage.getItem('user');
+      
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          if (user.role) {
+            config.headers['x-role'] = user.role.toUpperCase();
+          }
+        } catch (e) {
+          console.error('Failed to parse user from localStorage', e);
+        }
+      }
     }
 
-    // Current backend RBAC accepts ADMIN only.
-    config.headers['x-role'] = 'ADMIN';
+    // Default to ADMIN if no role found to keep legacy behavior
+    if (!config.headers['x-role']) {
+      config.headers['x-role'] = 'ADMIN';
+    }
+    
     return config;
   },
   (error) => {

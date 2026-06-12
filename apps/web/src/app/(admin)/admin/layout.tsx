@@ -10,10 +10,8 @@ import { AdminDashboardShell } from '@/components/admin/admin-dashboard-shell';
  */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <RoleGuard allowedRoles={['admin']}>
-      <AdminDashboardShell>
-        {children}
-      </AdminDashboardShell>
+    <RoleGuard allowedRoles={['admin', 'superadmin']}>
+      {children}
     </RoleGuard>
   );
 }

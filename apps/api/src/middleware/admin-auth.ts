@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 
-const ADMIN_ROLE = 'ADMIN';
+const ADMIN_ROLES = ['ADMIN', 'SUPERADMIN', 'MANAGER', 'STAFF'];
 
 export function requireAdminRole(req: Request, res: Response, next: NextFunction): void {
   if (req.method === 'OPTIONS') {
@@ -14,8 +14,8 @@ export function requireAdminRole(req: Request, res: Response, next: NextFunction
     return;
   }
 
-  const roleHeader = req.header('x-role') ?? req.header('x-user-role');
-  if (!roleHeader || roleHeader.toUpperCase() !== ADMIN_ROLE) {
+  const roleHeader = (req.header('x-role') ?? req.header('x-user-role'))?.toUpperCase();
+  if (!roleHeader || !ADMIN_ROLES.includes(roleHeader)) {
     res.status(403).json({ message: 'Forbidden: ADMIN role is required.' });
     return;
   }

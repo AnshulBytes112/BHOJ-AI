@@ -443,8 +443,8 @@ function KOTPageInner() {
 
       fetchSections(true);
     } catch (e: any) {
-      console.error('Item status update error:', e?.response?.data);
-      const errMsg = e?.response?.data?.message || e?.message || 'Item update failed';
+      console.error('Item status update error:', e);
+      const errMsg = e?.response?.data?.message || e?.response?.statusText || e?.message || 'Item update failed';
       alert(`Error: ${errMsg}`);
     } finally {
       setBusyItems(prev => {

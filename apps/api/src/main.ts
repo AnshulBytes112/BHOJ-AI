@@ -13,7 +13,8 @@ import { tablesRouter } from './tables/tables.routes';
 import { ordersRouter } from './orders/orders.routes';
 import { kotsRouter } from './kots/kots.routes';
 import { sessionsRouter } from './sessions/sessions.routes';
-
+import { publicRouter } from './public/public.routes';
+import { initializeWebSocket } from './websocket';
 
 dotenv.config();
 
@@ -42,6 +43,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.use('/api/public', publicRouter);
+
 app.use('/api', requireAdminRole);
 
 app.use('/api/items', itemsRouter);
@@ -66,9 +69,11 @@ initializeDatabase()
     const server = app.listen(port, () => {
       console.log(`Listening at http://localhost:${port}/api`);
     });
+    initializeWebSocket(server);
     server.on('error', console.error);
   })
   .catch((error) => {
     console.error('Failed to initialize database schema:', error);
     process.exit(1);
   });
+

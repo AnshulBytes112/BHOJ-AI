@@ -352,7 +352,7 @@ export async function initializeDatabase(): Promise<void> {
       item_id INTEGER REFERENCES items(id),
       item_name VARCHAR(255) NOT NULL,
       quantity INTEGER NOT NULL CHECK (quantity > 0),
-      serial_number INTEGER
+      serial_number UUID
     );
   `);
 
@@ -392,7 +392,7 @@ export async function initializeDatabase(): Promise<void> {
       item_id INTEGER REFERENCES items(id),
       item_name VARCHAR(255) NOT NULL,
       quantity INTEGER NOT NULL,
-      serial_number INTEGER
+      serial_number UUID
     );
   `);
 
@@ -443,6 +443,39 @@ export async function initializeDatabase(): Promise<void> {
       SELECT 1 FROM item_section_mapping m WHERE m.item_id = i.id
     );
   `);
+
+  // Migrate kot_items/section_kot_items serial_number to UUID
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'kot_items'
+          AND column_name = 'serial_number'
+          AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE kot_items ALTER COLUMN serial_number TYPE UUID USING NULL;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'section_kot_items'
+          AND column_name = 'serial_number'
+          AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE section_kot_items ALTER COLUMN serial_number TYPE UUID USING NULL;
+      END IF;
+    END $$;
+  `);
+
+
 
   // ─────────────────────────────────────────────────────────────────────────
   // TABLE MANAGEMENT WORKFLOW — Schema Migrations

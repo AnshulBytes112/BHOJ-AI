@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db';
 import { tryAutoFreeTable, auditLog, ACTIVE_ITEM_STATUSES } from '../tables/table-management';
+import { broadcastToTable } from '../websocket';
 
 export const kotsRouter = Router();
 
@@ -424,6 +425,17 @@ kotsRouter.post('/items/:itemId/status', async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    if (tableId) {
+      broadcastToTable(tableId, {
+        type: 'KOT_STATUS_UPDATED',
+        tableId,
+        itemId,
+        status,
+        derivedKotStatus,
+        derivedOrderStatus: orderStatus
+      });
+    }
 
     res.json({ 
       ...updatedItem, 
