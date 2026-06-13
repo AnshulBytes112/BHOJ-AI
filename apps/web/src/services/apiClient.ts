@@ -30,6 +30,9 @@ apiClient.interceptors.request.use(
           if (user.role) {
             config.headers['x-role'] = user.role.toUpperCase();
           }
+          if (user.id) {
+            config.headers['x-user-id'] = user.id.toString();
+          }
         } catch (e) {
           console.error('Failed to parse user from localStorage', e);
         }

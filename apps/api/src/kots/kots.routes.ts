@@ -324,6 +324,9 @@ kotsRouter.post('/items/:itemId/status', async (req, res) => {
 
     // Step 4: Build UPDATE query with appropriate timestamp
     const timestampColumn = getTimestampColumnForStatus(status);
+    const userIdHeader = req.header('x-user-id');
+    const userId = userIdHeader ? parseInt(userIdHeader, 10) : null;
+
     let updateQuery = `
       UPDATE section_kot_items
       SET status = $1,
@@ -336,11 +339,56 @@ kotsRouter.post('/items/:itemId/status', async (req, res) => {
       updateQuery += `, ${timestampColumn} = CURRENT_TIMESTAMP`;
     }
 
-    updateQuery += ` WHERE section_kot_item_id = $2 RETURNING *`;
+    if (userId !== null && !isNaN(userId)) {
+      updateQuery += `, updated_by = $2`;
+      queryParams.push(userId);
+    }
+
+    const itemPlaceholder = userId !== null && !isNaN(userId) ? '$3' : '$2';
+    updateQuery += ` WHERE section_kot_item_id = ${itemPlaceholder} RETURNING *`;
     queryParams.push(itemId);
 
     const updateResult = await client.query(updateQuery, queryParams);
     const updatedItem = updateResult.rows[0];
+
+    // Step 4b: Also update the corresponding parent KOT item in the main `kot_items` table
+    const parentKotResult = await client.query(
+      `SELECT parent_kot_id FROM section_kots WHERE section_kot_id = $1`,
+      [item.section_kot_id]
+    );
+    const parentKotId = parentKotResult.rows[0]?.parent_kot_id;
+    
+    if (parentKotId) {
+      let updateParentQuery = `
+        UPDATE kot_items
+        SET status = $1,
+            version = version + 1,
+            updated_at = CURRENT_TIMESTAMP
+      `;
+      const parentParams: any[] = [status];
+      
+      if (timestampColumn) {
+        updateParentQuery += `, ${timestampColumn} = CURRENT_TIMESTAMP`;
+      }
+      
+      let paramIndex = 2;
+      if (userId !== null && !isNaN(userId)) {
+        updateParentQuery += `, updated_by = $${paramIndex}`;
+        parentParams.push(userId);
+        paramIndex++;
+      }
+      
+      if (item.serial_number) {
+        updateParentQuery += ` WHERE serial_number = $${paramIndex} AND kot_id = $${paramIndex + 1}`;
+        parentParams.push(item.serial_number, parentKotId);
+      } else {
+        updateParentQuery += ` WHERE item_id = $${paramIndex} AND kot_id = $${paramIndex + 1}`;
+        parentParams.push(item.item_id, parentKotId);
+      }
+      
+      await client.query(updateParentQuery, parentParams);
+      console.log(`[KOT-DEBUG] Updated parent kot_items for parentKotId=${parentKotId}, serial_number=${item.serial_number}`);
+    }
 
     // Step 5: Fetch all items in this section KOT
     console.log(`[KOT-DEBUG] Looking for items in section_kot_id: ${item.section_kot_id}`);
@@ -361,10 +409,17 @@ kotsRouter.post('/items/:itemId/status', async (req, res) => {
       return res.status(500).json({ message: 'Section KOT ID is missing' });
     }
     
-    const updateKotResult = await client.query(
-      `UPDATE section_kots SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE section_kot_id = $2 RETURNING section_kot_id, status`,
-      [derivedKotStatus, item.section_kot_id]
-    );
+    let updateSectionKotQuery = `UPDATE section_kots SET status = $1, updated_at = CURRENT_TIMESTAMP`;
+    const sectionKotParams: any[] = [derivedKotStatus];
+    if (userId !== null && !isNaN(userId)) {
+      updateSectionKotQuery += `, updated_by = $2`;
+      sectionKotParams.push(userId);
+    }
+    const sectionKotIdPlaceholder = userId !== null && !isNaN(userId) ? '$3' : '$2';
+    updateSectionKotQuery += ` WHERE section_kot_id = ${sectionKotIdPlaceholder} RETURNING section_kot_id, status`;
+    sectionKotParams.push(item.section_kot_id);
+
+    const updateKotResult = await client.query(updateSectionKotQuery, sectionKotParams);
     console.log(`[KOT-DEBUG] Update section_kots returned ${updateKotResult.rowCount} rows:`, updateKotResult.rows);
 
     // Step 7: Fetch parent KOT info for cascading status updates
@@ -393,10 +448,17 @@ kotsRouter.post('/items/:itemId/status', async (req, res) => {
       parentKotStatus = deriveParentKotStatusFromSections(siblingStatuses);
       console.log(`[KOT-DEBUG] Parent KOT ${parentKotId}: sibling statuses = [${siblingStatuses.join(', ')}], derived parent status = ${parentKotStatus}`);
       
-      await client.query(
-        `UPDATE kots SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE kot_id = $2`,
-        [parentKotStatus, parentKotId]
-      );
+      let updateParentKotQuery = `UPDATE kots SET status = $1, updated_at = CURRENT_TIMESTAMP`;
+      const parentKotParams: any[] = [parentKotStatus];
+      if (userId !== null && !isNaN(userId)) {
+        updateParentKotQuery += `, updated_by = $2`;
+        parentKotParams.push(userId);
+      }
+      const parentKotIdPlaceholder = userId !== null && !isNaN(userId) ? '$3' : '$2';
+      updateParentKotQuery += ` WHERE kot_id = ${parentKotIdPlaceholder}`;
+      parentKotParams.push(parentKotId);
+
+      await client.query(updateParentKotQuery, parentKotParams);
 
       const orderResult = await client.query(
         `SELECT order_id FROM kots WHERE kot_id = $1`,
