@@ -90,6 +90,18 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_addons (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     ALTER TABLE items
     ADD COLUMN IF NOT EXISTS stock_quantity INTEGER NOT NULL DEFAULT 0;
   `);
@@ -535,6 +547,25 @@ export async function initializeDatabase(): Promise<void> {
     ALTER TABLE section_kot_items
       ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+  `);
+
+  // 5b. Add extras and spice_level to order_items, kot_items, and section_kot_items.
+  await pool.query(`
+    ALTER TABLE order_items
+      ADD COLUMN IF NOT EXISTS extras TEXT[] DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS spice_level VARCHAR(50);
+  `);
+
+  await pool.query(`
+    ALTER TABLE kot_items
+      ADD COLUMN IF NOT EXISTS extras TEXT[] DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS spice_level VARCHAR(50);
+  `);
+
+  await pool.query(`
+    ALTER TABLE section_kot_items
+      ADD COLUMN IF NOT EXISTS extras TEXT[] DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS spice_level VARCHAR(50);
   `);
 
   // 6. Audit log table — tracks all critical lifecycle events.

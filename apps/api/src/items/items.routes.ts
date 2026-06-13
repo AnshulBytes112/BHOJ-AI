@@ -26,6 +26,7 @@ type ItemPayload = {
   is_active?: boolean;
   stock_type?: StockType;
   image_url?: string | null;
+  addons?: Array<{ name: string; price: number }>;
 };
 
 const IMMUTABLE_FIELDS = new Set(['id', 'serial_number', 'created_at', 'updated_at']);
@@ -37,6 +38,7 @@ const ALLOWED_MUTABLE_FIELDS = new Set([
   'is_active',
   'stock_type',
   'image_url',
+  'addons',
 ]);
 
 async function ensureCategoryExists(category: string): Promise<void> {
@@ -151,6 +153,28 @@ function parseItemPayload(rawBody: unknown, allowPartial: boolean): ItemPayload 
     parsed.image_url = body.image_url as string | null;
   }
 
+  if ('addons' in body) {
+    if (!Array.isArray(body.addons)) {
+      throw new Error('addons must be a valid array.');
+    }
+    parsed.addons = body.addons.map((a: any, i) => {
+      if (!a || typeof a !== 'object') {
+        throw new Error(`Addon at index ${i} must be an object.`);
+      }
+      if (typeof a.name !== 'string' || a.name.trim().length === 0) {
+        throw new Error(`Addon at index ${i} must have a non-empty name.`);
+      }
+      const p = Number(a.price);
+      if (!Number.isFinite(p) || p < 0) {
+        throw new Error(`Addon at index ${i} must have a valid non-negative price.`);
+      }
+      return {
+        name: a.name.trim(),
+        price: Number(p.toFixed(2)),
+      };
+    });
+  }
+
   if (!allowPartial) {
     if (
       !parsed.name ||
@@ -173,11 +197,14 @@ function parseItemPayload(rawBody: unknown, allowPartial: boolean): ItemPayload 
 export const itemsRouter = Router();
 
 itemsRouter.post('/', async (req, res) => {
+  const client = await pool.connect();
   try {
     const payload = parseItemPayload(req.body, false);
     await ensureCategoryExists(payload.category as string);
 
-    const result = await pool.query<ItemRow>(
+    await client.query('BEGIN');
+
+    const result = await client.query<ItemRow>(
       `
       INSERT INTO items (serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, image_url)
       VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7, $8)
@@ -195,10 +222,30 @@ itemsRouter.post('/', async (req, res) => {
       ]
     );
 
-    res.status(201).json(result.rows[0]);
+    const newItem = result.rows[0];
+
+    // Insert addons if provided
+    const addonsResult: any[] = [];
+    if (payload.addons && payload.addons.length > 0) {
+      for (const addon of payload.addons) {
+        const addonInsert = await client.query(
+          `INSERT INTO item_addons (item_id, name, price)
+           VALUES ($1, $2, $3)
+           RETURNING id, name, price, is_active`,
+          [newItem.id, addon.name, addon.price]
+        );
+        addonsResult.push(addonInsert.rows[0]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ ...newItem, addons: addonsResult });
   } catch (error) {
+    await client.query('ROLLBACK');
     const message = error instanceof Error ? error.message : 'Failed to create item.';
     res.status(400).json({ message });
+  } finally {
+    client.release();
   }
 });
 
@@ -209,23 +256,31 @@ itemsRouter.get('/', async (req, res) => {
 
     if (typeof req.query.category === 'string' && req.query.category.trim()) {
       params.push(req.query.category.trim());
-      whereParts.push(`category = $${params.length}`);
+      whereParts.push(`i.category = $${params.length}`);
     }
 
     const isActive = parseBooleanQuery(req.query.is_active);
     if (isActive !== undefined) {
       params.push(isActive);
-      whereParts.push(`is_active = $${params.length}`);
+      whereParts.push(`i.is_active = $${params.length}`);
     }
 
     const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
 
     const result = await pool.query<ItemRow>(
       `
-      SELECT *
-      FROM items
+      SELECT i.*,
+             COALESCE(
+               (
+                 SELECT json_agg(json_build_object('id', ia.id, 'name', ia.name, 'price', ia.price, 'is_active', ia.is_active))
+                 FROM item_addons ia
+                 WHERE ia.item_id = i.id
+               ),
+               '[]'::json
+             ) as addons
+      FROM items i
       ${whereClause}
-      ORDER BY id ASC;
+      ORDER BY i.id ASC;
       `,
       params
     );
@@ -244,7 +299,22 @@ itemsRouter.get('/:id', async (req, res) => {
     return;
   }
 
-  const result = await pool.query<ItemRow>('SELECT * FROM items WHERE id = $1;', [itemId]);
+  const result = await pool.query<ItemRow>(
+    `
+    SELECT i.*,
+           COALESCE(
+             (
+               SELECT json_agg(json_build_object('id', ia.id, 'name', ia.name, 'price', ia.price, 'is_active', ia.is_active))
+               FROM item_addons ia
+               WHERE ia.item_id = i.id
+             ),
+             '[]'::json
+           ) as addons
+    FROM items i
+    WHERE i.id = $1;
+    `,
+    [itemId]
+  );
   if (result.rowCount === 0) {
     res.status(404).json({ message: 'Item not found.' });
     return;
@@ -260,44 +330,93 @@ itemsRouter.put('/:id', async (req, res) => {
     return;
   }
 
+  const client = await pool.connect();
   try {
     const payload = parseItemPayload(req.body, true);
     if (payload.category) {
       await ensureCategoryExists(payload.category);
     }
 
-    const updates: string[] = [];
-    const values: Array<string | number | boolean> = [];
+    await client.query('BEGIN');
 
-    const allowedEntries = Object.entries(payload) as Array<[keyof ItemPayload, string | number | boolean]>;
+    // Filter out addons from the updates list for the items table
+    const updates: string[] = [];
+    const values: Array<string | number | boolean | null> = [];
+
+    const allowedEntries = Object.entries(payload) as Array<[keyof ItemPayload, any]>;
     for (const [key, value] of allowedEntries) {
+      if (key === 'addons') continue;
       updates.push(`${key} = $${values.length + 1}`);
       values.push(value);
     }
 
-    values.push(itemId);
+    let updatedItem: any;
 
-    const result = await pool.query<ItemRow>(
-      `
-      UPDATE items
-      SET ${updates.join(', ')}, updated_at = NOW()
-      WHERE id = $${values.length}
-      RETURNING *;
-      `,
-      values
-    );
+    if (updates.length > 0) {
+      values.push(itemId);
+      const result = await client.query<ItemRow>(
+        `
+        UPDATE items
+        SET ${updates.join(', ')}, updated_at = NOW()
+        WHERE id = $${values.length}
+        RETURNING *;
+        `,
+        values
+      );
 
-    if (result.rowCount === 0) {
-      res.status(404).json({ message: 'Item not found.' });
-      return;
+      if (result.rowCount === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ message: 'Item not found.' });
+        return;
+      }
+      updatedItem = result.rows[0];
+    } else {
+      // If only addons are being updated
+      const itemCheck = await client.query('SELECT * FROM items WHERE id = $1', [itemId]);
+      if (itemCheck.rowCount === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ message: 'Item not found.' });
+        return;
+      }
+      updatedItem = itemCheck.rows[0];
     }
 
-    res.json(result.rows[0]);
+    // Handle addons if provided
+    if ('addons' in payload) {
+      // Delete old addons
+      await client.query('DELETE FROM item_addons WHERE item_id = $1', [itemId]);
+
+      // Insert new addons
+      const addonsResult: any[] = [];
+      if (payload.addons && payload.addons.length > 0) {
+        for (const addon of payload.addons) {
+          const addonInsert = await client.query(
+            `INSERT INTO item_addons (item_id, name, price)
+             VALUES ($1, $2, $3)
+             RETURNING id, name, price, is_active`,
+            [itemId, addon.name, addon.price]
+          );
+          addonsResult.push(addonInsert.rows[0]);
+        }
+      }
+      updatedItem.addons = addonsResult;
+    } else {
+      // If addons not provided in update, fetch existing ones to return
+      const addonsCheck = await client.query('SELECT id, name, price, is_active FROM item_addons WHERE item_id = $1', [itemId]);
+      updatedItem.addons = addonsCheck.rows;
+    }
+
+    await client.query('COMMIT');
+    res.json(updatedItem);
   } catch (error) {
+    await client.query('ROLLBACK');
     const message = error instanceof Error ? error.message : 'Failed to update item.';
     res.status(400).json({ message });
+  } finally {
+    client.release();
   }
 });
+
 
 itemsRouter.delete('/:id', async (req, res) => {
   const itemId = Number(req.params.id);

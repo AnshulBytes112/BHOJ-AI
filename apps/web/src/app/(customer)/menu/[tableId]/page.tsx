@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { Utensils, ShoppingCart, Clock, Bell } from 'lucide-react';
 import { CartProvider } from '@/context/CartContext';
@@ -44,6 +44,55 @@ function CustomerMenuContent() {
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
 
+  // Sync hash state helper
+  const navigateToView = (view: typeof activeView, replace = false) => {
+    const targetHash = view === 'landing' ? '' : `#${view}`;
+    if (window.location.hash !== targetHash) {
+      if (replace) {
+        const url = new URL(window.location.href);
+        url.hash = view === 'landing' ? '' : view;
+        window.history.replaceState(null, '', url.toString());
+        setActiveView(view);
+      } else {
+        window.location.hash = view === 'landing' ? '' : view;
+      }
+    }
+  };
+
+  // Sync active view with browser URL hash (for system back gestures)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      const validViews = [
+        'landing', 'menu', 'item-details', 'cart', 'checkout', 
+        'order-confirmation', 'order-tracking', 'order-details', 
+        'call-waiter', 'request-bill', 'bill-summary'
+      ];
+      if (validViews.includes(hash)) {
+        setActiveView(hash as any);
+      } else if (!hash) {
+        setActiveView('landing');
+      }
+    };
+
+    handleHashChange();
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, []);
+
+  // Automatically reset auxiliary states when shifting views
+  useEffect(() => {
+    if (activeView !== 'item-details') {
+      setSelectedMenuItem(null);
+    }
+    if (activeView !== 'order-details') {
+      setViewingOrderId(null);
+    }
+  }, [activeView]);
+
   // Hooks
   const { cart, updateQuantity, clearCart, subtotal, totalCartQuantity, addToCart } = useCart();
   const { 
@@ -69,7 +118,7 @@ function CustomerMenuContent() {
     },
     onBillStatusUpdate: (status) => {
       if (status === 'billed') {
-        setActiveView('bill-summary');
+        navigateToView('bill-summary', true);
       }
     }
   });
@@ -109,7 +158,7 @@ function CustomerMenuContent() {
         {activeView === 'landing' && (
           <LandingScreen 
             tableNumber={tableDetails?.table_number || '8'} 
-            onStart={() => setActiveView('menu')} 
+            onStart={() => navigateToView('menu')} 
           />
         )}
 
@@ -123,9 +172,9 @@ function CustomerMenuContent() {
             totalCartQuantity={totalCartQuantity}
             onSelectItem={(item) => {
               setSelectedMenuItem(item);
-              setActiveView('item-details');
+              navigateToView('item-details');
             }}
-            onViewCart={() => setActiveView('cart')}
+            onViewCart={() => navigateToView('cart')}
           />
         )}
 
@@ -133,13 +182,11 @@ function CustomerMenuContent() {
           <ItemDetailsScreen
             item={selectedMenuItem}
             onBack={() => {
-              setSelectedMenuItem(null);
-              setActiveView('menu');
+              navigateToView('menu');
             }}
             onConfirm={(spiceLevel, selectedExtras, quantity) => {
               addToCart(selectedMenuItem, quantity, spiceLevel, selectedExtras);
-              setSelectedMenuItem(null);
-              setActiveView('menu');
+              navigateToView('menu');
             }}
           />
         )}
@@ -149,13 +196,13 @@ function CustomerMenuContent() {
             cart={cart}
             subtotal={subtotal}
             totalCartQuantity={totalCartQuantity}
-            onBack={() => setActiveView('menu')}
+            onBack={() => navigateToView('menu')}
             onUpdateQuantity={updateQuantity}
             onClearCart={clearCart}
             onProceed={(discount, applied) => {
               setDiscountAmount(discount);
               setPromoApplied(applied);
-              setActiveView('checkout');
+              navigateToView('checkout');
             }}
           />
         )}
@@ -167,14 +214,14 @@ function CustomerMenuContent() {
             discountAmount={discountAmount}
             promoApplied={promoApplied}
             tableNumber={tableDetails?.table_number || '8'}
-            onBack={() => setActiveView('cart')}
+            onBack={() => navigateToView('cart')}
             isSubmitting={submitting}
             onPlaceOrder={async (instructions) => {
               try {
                 const res = await placeOrder(cart, instructions);
                 setPlacedOrderId(res.order_id);
                 clearCart();
-                setActiveView('order-confirmation');
+                navigateToView('order-confirmation', true);
               } catch (e) {
                 // Error is handled inside OrderContext
               }
@@ -185,18 +232,18 @@ function CustomerMenuContent() {
         {activeView === 'order-confirmation' && (
           <OrderConfirmation
             orderId={placedOrderId}
-            onTrack={() => setActiveView('order-tracking')}
+            onTrack={() => navigateToView('order-tracking', true)}
           />
         )}
 
         {activeView === 'order-tracking' && (
           <OrderTracking
             orders={orders}
-            onBack={() => setActiveView('menu')}
+            onBack={() => navigateToView('menu')}
             onRefresh={reloadOrders}
             onViewOrderDetails={(orderId) => {
               setViewingOrderId(orderId);
-              setActiveView('order-details');
+              navigateToView('order-details');
             }}
             onCallWaiter={() => callWaiter('General assistance')}
           />
@@ -205,7 +252,7 @@ function CustomerMenuContent() {
         {activeView === 'order-details' && activeOrder && (
           <OrderDetails
             order={activeOrder}
-            onBack={() => setActiveView('order-tracking')}
+            onBack={() => navigateToView('order-tracking')}
             onCancelOrder={(orderId) => {
               if (confirm('Are you sure you want to cancel this order?')) {
                 alert('Cancellation request sent. Please confirm with staff.');
@@ -227,7 +274,7 @@ function CustomerMenuContent() {
             onConfirmRequest={async () => {
               try {
                 await requestBill();
-                setActiveView('bill-summary');
+                navigateToView('bill-summary', true);
               } catch (e) {}
             }}
           />
@@ -244,7 +291,7 @@ function CustomerMenuContent() {
         {activeView !== 'landing' && activeView !== 'item-details' && (
           <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md h-16 bg-white border-t border-stone-200 flex justify-around items-center px-2 z-50 shadow-lg">
             <button
-              onClick={() => setActiveView('menu')}
+              onClick={() => navigateToView('menu')}
               className={cn(
                 "flex flex-col items-center gap-1 text-[10px] font-bold transition-all px-3 py-1 rounded-xl",
                 activeView === 'menu' ? "text-emerald-800" : "text-stone-400"
@@ -254,7 +301,7 @@ function CustomerMenuContent() {
               <span>Menu</span>
             </button>
             <button
-              onClick={() => setActiveView('cart')}
+              onClick={() => navigateToView('cart')}
               className={cn(
                 "flex flex-col items-center gap-1 text-[10px] font-bold transition-all px-3 py-1 rounded-xl relative",
                 activeView === 'cart' ? "text-emerald-800" : "text-stone-400"
@@ -269,7 +316,7 @@ function CustomerMenuContent() {
               )}
             </button>
             <button
-              onClick={() => setActiveView('order-tracking')}
+              onClick={() => navigateToView('order-tracking')}
               className={cn(
                 "flex flex-col items-center gap-1 text-[10px] font-bold transition-all px-3 py-1 rounded-xl",
                 activeView === 'order-tracking' || activeView === 'order-details' ? "text-emerald-800" : "text-stone-400"
@@ -279,7 +326,7 @@ function CustomerMenuContent() {
               <span>Orders</span>
             </button>
             <button
-              onClick={() => setActiveView('call-waiter')}
+              onClick={() => navigateToView('call-waiter')}
               className={cn(
                 "flex flex-col items-center gap-1 text-[10px] font-bold transition-all px-3 py-1 rounded-xl",
                 activeView === 'call-waiter' ? "text-emerald-800" : "text-stone-400"

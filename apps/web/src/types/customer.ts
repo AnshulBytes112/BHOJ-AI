@@ -1,3 +1,10 @@
+export interface Addon {
+  id?: number;
+  name: string;
+  price: number | string;
+  is_active?: boolean;
+}
+
 export interface MenuItem {
   id: number;
   serial_number: string;
@@ -8,6 +15,7 @@ export interface MenuItem {
   gst_rate?: number;
   stock_quantity?: number;
   stock_type?: string;
+  addons?: Addon[];
 }
 
 export interface CartItem extends MenuItem {

@@ -26,7 +26,7 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
   // 2. Get items for this order
   const itemsResult = await client.query(
     `SELECT oi.order_item_id, oi.item_id, i.name as item_name, oi.quantity, i.serial_number,
-            i.category as section_name
+            i.category as section_name, oi.extras, oi.spice_level
      FROM order_items oi
      LEFT JOIN items i ON i.id = oi.item_id
      WHERE oi.order_id = $1`,
@@ -56,9 +56,9 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
   // 5. Insert KOT items
   for (const item of itemsResult.rows) {
     await client.query(
-      `INSERT INTO kot_items (kot_id, item_id, item_name, quantity, serial_number)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [parentKot.kot_id, item.item_id, item.item_name, item.quantity, item.serial_number]
+      `INSERT INTO kot_items (kot_id, item_id, item_name, quantity, serial_number, extras, spice_level)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [parentKot.kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level]
     );
   }
 
@@ -89,9 +89,9 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
 
     for (const item of items) {
       await client.query(
-        `INSERT INTO section_kot_items (section_kot_id, item_id, item_name, quantity, serial_number)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number]
+        `INSERT INTO section_kot_items (section_kot_id, item_id, item_name, quantity, serial_number, extras, spice_level)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level]
       );
     }
     sectionKots.push({

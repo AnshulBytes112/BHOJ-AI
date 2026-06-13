@@ -86,11 +86,13 @@ export function CartProvider({ children, tableId }: { children: ReactNode; table
 
   // Calculations
   const cartItemSubtotal = (item: CartItem) => {
-    let itemPrice = item.selling_price;
+    let itemPrice = Number(item.selling_price);
     if (item.extras) {
-      item.extras.forEach(extra => {
-        if (extra.includes('Cheese')) itemPrice += 40;
-        if (extra.includes('Paneer')) itemPrice += 60;
+      item.extras.forEach(extraName => {
+        const addon = item.addons?.find(a => a.name === extraName);
+        if (addon) {
+          itemPrice += Number(addon.price);
+        }
       });
     }
     return itemPrice * item.quantity;

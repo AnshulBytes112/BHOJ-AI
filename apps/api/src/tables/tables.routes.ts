@@ -855,11 +855,29 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
         if (itemData.rows.length === 0) throw new Error(`Item ${item.id || item.item_id} not found`);
         const dbItem = itemData.rows[0];
 
+        // Fetch active addons for the item
+        const addonsData = await client.query(
+          `SELECT name, price FROM item_addons WHERE item_id = $1 AND is_active = true`,
+          [dbItem.id]
+        );
+        
+        const selectedExtras = Array.isArray(item.extras) ? item.extras : [];
+        const selectedSpiceLevel = item.spiceLevel || item.spice_level || null;
+
+        let addonPriceSum = 0;
+        selectedExtras.forEach((extraName: string) => {
+          const addon = addonsData.rows.find(a => a.name === extraName);
+          if (addon) {
+            addonPriceSum += Number(addon.price);
+          }
+        });
+        const finalPriceAtBilling = Number(dbItem.selling_price) + addonPriceSum;
+
         const itemResult = await client.query(
-          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING order_item_id, item_id, quantity, price_at_billing`,
-          [newOrder.order_id, dbItem.id, item.quantity || 1, dbItem.selling_price, item.gstRate || 5]
+          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing, extras, spice_level)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING order_item_id, item_id, quantity, price_at_billing, extras, spice_level`,
+          [newOrder.order_id, dbItem.id, item.quantity || 1, finalPriceAtBilling, item.gstRate || 5, selectedExtras, selectedSpiceLevel]
         );
         return { ...itemResult.rows[0], item_name: dbItem.name };
       })

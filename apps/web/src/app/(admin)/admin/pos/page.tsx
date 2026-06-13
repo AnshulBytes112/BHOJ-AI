@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/dialog';
 import apiClient from '@/services/apiClient';
 import { ReceiptData, ReceiptPrint } from '@/components/admin/receipt-print';
+import { useAuth } from '@/hooks/use-auth';
 
 type MenuCategory = {
   id: string;
@@ -58,9 +59,15 @@ type MenuItem = {
   gstRate?: number;
   stockType: 'limited' | 'unlimited';
   stockQuantity: number;
+  addons?: Array<{ id?: number; name: string; price: number; is_active?: boolean }>;
 };
 
 type CartItem = MenuItem & { quantity: number };
+
+type AddonForm = {
+  name: string;
+  price: string;
+};
 
 type StockType = 'limited' | 'unlimited';
 type ItemForm = {
@@ -71,6 +78,7 @@ type ItemForm = {
   stock_type: StockType;
   is_active: boolean;
   image_url: string | null;
+  addons: AddonForm[];
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -81,6 +89,7 @@ const EMPTY_FORM: ItemForm = {
   stock_type: 'limited',
   is_active: true,
   image_url: null,
+  addons: [],
 };
 
 const MAX_IMAGE_SIZE_KB = 500;
@@ -129,7 +138,11 @@ function compressImage(file: File): Promise<string> {
 }
 
 export default function POSTerminal() {
+  const { user } = useAuth();
+  const isAdmin = !!user && (user.role === 'admin' || user.role === 'superadmin');
+
   const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -217,6 +230,7 @@ export default function POSTerminal() {
         apiClient.get<Array<{
           id: number; category: string; name: string; selling_price: string;
           stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
+          addons?: any[];
         }>>('/items'),
         apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables'),
       ]);
@@ -245,6 +259,7 @@ export default function POSTerminal() {
         stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
         image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
           ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
+        addons: item.addons || [],
       }));
 
       const tables = tablesResp.data ?? [];
@@ -386,6 +401,7 @@ export default function POSTerminal() {
   }
 
   function openCreateModal() {
+    if (!isAdmin) return;
     setEditingItem(null);
     setForm(EMPTY_FORM);
     setFormErrors({});
@@ -394,6 +410,7 @@ export default function POSTerminal() {
   }
 
   function openEditModal(item: MenuItem) {
+    if (!isAdmin) return;
     const categoryName = categories.find(c => c.id === item.categoryId)?.name || '';
     setEditingItem(item);
     setForm({
@@ -404,6 +421,7 @@ export default function POSTerminal() {
       stock_type: item.stockType,
       is_active: item.isAvailable,
       image_url: item.image || null,
+      addons: (item.addons || []).map(a => ({ name: a.name, price: String(a.price) })),
     });
     setFormErrors({});
     setImagePreview(item.image || null);
@@ -424,6 +442,7 @@ export default function POSTerminal() {
 
   async function handleItemSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!isAdmin) return;
     if (!validateForm()) return;
     setIsSaving(true);
     setErrorMessage(null);
@@ -434,6 +453,7 @@ export default function POSTerminal() {
       stock_quantity: Number(form.stock_quantity),
       stock_type: form.stock_type,
       image_url: form.image_url,
+      addons: form.addons.map(a => ({ name: a.name.trim(), price: Number(a.price) })),
       ...(editingItem ? { is_active: form.is_active } : {}),
     };
     try {
@@ -452,6 +472,7 @@ export default function POSTerminal() {
   }
 
   async function handleCreateCategory() {
+    if (!isAdmin) return;
     const trimmedName = newCategoryName.trim();
     if (!trimmedName) {
       setErrorMessage('Category name is required.');
@@ -822,24 +843,47 @@ export default function POSTerminal() {
               </div>
             </div>
 
+            {isEditMode && (
+              <div className="mx-3 sm:mx-4 md:mx-6 mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg flex items-center gap-2 flex-shrink-0 animate-pulse">
+                <Pencil size={16} className="text-rose-500 shrink-0" />
+                <p className="text-sm font-medium">Edit Mode Active: Click any item to modify its details and configure its addons.</p>
+              </div>
+            )}
+
             {/* Items Grid */}
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-3 sm:p-4 md:p-6">
-           <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
+              <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                   const isInCart = cart.find(cartItem => cartItem.id === item.id);
                   return (
                     <Card 
-                      key={item.id} 
+                      key={item.id}
+                      onClick={() => {
+                        if (isEditMode) {
+                          openEditModal(item);
+                        }
+                      }}
                       className={cn(
                         "bg-white border shadow-sm hover:shadow-lg transition-all group relative",
-                        isInCart && "ring-2 ring-blue-500"
+                        isEditMode ? "border-rose-300 ring-1 ring-rose-200 cursor-pointer hover:border-rose-400 hover:ring-rose-300" : "",
+                        !isEditMode && isInCart ? "ring-2 ring-blue-500" : ""
                       )}
                     >
-                      {isInCart && (
+                      {isInCart && !isEditMode && (
                         <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
                           {isInCart.quantity}
                         </div>
+                      )}
+                      
+                      {isAdmin && !isEditMode && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
+                          className="absolute top-2 left-2 bg-white/90 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-white text-gray-700"
+                          title="Edit Item"
+                        >
+                          <Pencil size={14} />
+                        </button>
                       )}
                       <div className="aspect-square relative bg-gray-100 overflow-hidden">
                         <img 
@@ -853,40 +897,53 @@ export default function POSTerminal() {
                         <p className="text-blue-600 font-bold text-sm">Rs {item.price}</p>
                         <p className="text-xs text-gray-500">GST: {itemGstRate}%</p>
                         
-                        {/* Quantity Controls */}
-                        {isInCart ? (
-                          <div className="flex items-center gap-1 mt-2">
-                            <button 
+                        <div className="mt-2">
+                          {isEditMode ? (
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                updateQuantity(item.id, -1);
+                                openEditModal(item);
                               }}
-                              className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                              className="w-full bg-rose-600 hover:bg-rose-700 text-white text-xs py-1.5 rounded flex items-center justify-center gap-1 font-semibold"
                             >
-                              <Minus size={10} />
+                              <Pencil size={12} /> Edit Item & Addons
                             </button>
-                            <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateQuantity(item.id, 1);
-                              }}
-                              className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                            >
-                              <Plus size={10} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              addToCart(item);
-                            }}
-                            className="w-full mt-2 bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
-                          >
-                            Add to Cart
-                          </button>
-                        )}
+                          ) : (
+                            isInCart ? (
+                              <div className="flex items-center gap-1">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateQuantity(item.id, -1);
+                                  }}
+                                  className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                                >
+                                  <Minus size={10} />
+                                </button>
+                                <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateQuantity(item.id, 1);
+                                  }}
+                                  className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                                >
+                                  <Plus size={10} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addToCart(item);
+                                }}
+                                className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                              >
+                                Add to Cart
+                              </button>
+                            )
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   );
@@ -927,12 +984,26 @@ export default function POSTerminal() {
                 <p className="text-xs md:text-sm text-gray-500">Add or Manage items and categories.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" onClick={openCreateModal} className="gap-1.5 text-xs h-9">
-                  <Plus size={14} /> Add Item
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="gap-1.5 text-xs h-9">
-                  <Plus size={14} /> Add Category
-                </Button>
+                {isAdmin && (
+                  <>
+                    <Button size="sm" onClick={openCreateModal} className="gap-1.5 text-xs h-9">
+                      <Plus size={14} /> Add Item
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="gap-1.5 text-xs h-9">
+                      <Plus size={14} /> Add Category
+                    </Button>
+                    <Button 
+                      onClick={() => setIsEditMode(!isEditMode)}
+                      variant={isEditMode ? "default" : "outline"}
+                      className={cn(
+                        "gap-1.5 text-xs h-9 transition-all",
+                        isEditMode ? "bg-red-600 hover:bg-red-700 text-white shadow-md" : "border-red-200 text-red-600 hover:bg-red-50"
+                      )}
+                    >
+                      <Pencil size={12} /> {isEditMode ? "Exit Edit Menu" : "Edit Menu"}
+                    </Button>
+                  </>
+                )}
                 <div className="text-xs text-gray-500 ml-2">{filteredItems.length} items</div>
               </div>
             </div>
@@ -946,8 +1017,15 @@ export default function POSTerminal() {
               </div>
             )}
 
+            {isEditMode && (
+              <div className="mx-3 sm:mx-4 md:mx-6 mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg flex items-center gap-2 flex-shrink-0 animate-pulse">
+                <Pencil size={16} className="text-rose-500 shrink-0" />
+                <p className="text-sm font-medium">Edit Mode Active: Click any item to modify its details and configure its addons.</p>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-3 sm:p-4 md:p-6">
-           <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
+              <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                   const isInCart = cart.find(cartItem => cartItem.id === item.id);
@@ -956,24 +1034,32 @@ export default function POSTerminal() {
                   return (
                     <Card
                       key={item.id}
+                      onClick={() => {
+                        if (isEditMode) {
+                          openEditModal(item);
+                        }
+                      }}
                       className={cn(
                         "bg-white border shadow-sm hover:shadow-lg transition-all group relative",
-                        isInCart && "ring-2 ring-blue-500"
+                        isEditMode ? "border-rose-300 ring-1 ring-rose-200 cursor-pointer hover:border-rose-400 hover:ring-rose-300" : "",
+                        !isEditMode && isInCart ? "ring-2 ring-blue-500" : ""
                       )}
                     >
-                      {isInCart && (
+                      {isInCart && !isEditMode && (
                         <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
                           {isInCart.quantity}
                         </div>
                       )}
                       
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
-                        className="absolute top-2 left-2 bg-white/90 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-white text-gray-700"
-                        title="Edit Item"
-                      >
-                        <Pencil size={14} />
-                      </button>
+                      {isAdmin && !isEditMode && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
+                          className="absolute top-2 left-2 bg-white/90 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-white text-gray-700"
+                          title="Edit Item"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
 
                       <div className="aspect-square relative bg-gray-100 overflow-hidden">
                         <img
@@ -999,41 +1085,53 @@ export default function POSTerminal() {
                         <p className="text-xs text-gray-500">Stock: {item.stockType === 'limited' ? item.stockQuantity : 'Unlimited'}</p>
 
                         <div className="mt-2">
-                        {item.isAvailable && (
-                          isInCart ? (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateQuantity(item.id, -1);
-                                }}
-                                className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                              >
-                                <Minus size={10} />
-                              </button>
-                              <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateQuantity(item.id, 1);
-                                }}
-                                className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                              >
-                                <Plus size={10} />
-                              </button>
-                            </div>
-                          ) : (
+                          {isEditMode ? (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                addToCart(item);
+                                openEditModal(item);
                               }}
-                              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                              className="w-full bg-rose-600 hover:bg-rose-700 text-white text-xs py-1.5 rounded flex items-center justify-center gap-1 font-semibold"
                             >
-                              Add to Cart
+                              <Pencil size={12} /> Edit Item & Addons
                             </button>
-                          )
-                        )}
+                          ) : (
+                            item.isAvailable && (
+                              isInCart ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateQuantity(item.id, -1);
+                                    }}
+                                    className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                                  >
+                                    <Minus size={10} />
+                                  </button>
+                                  <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateQuantity(item.id, 1);
+                                    }}
+                                    className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                                  >
+                                    <Plus size={10} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    addToCart(item);
+                                  }}
+                                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                                >
+                                  Add to Cart
+                                </button>
+                              )
+                            )
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -1593,18 +1691,26 @@ export default function POSTerminal() {
                   />
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                  <Button size="sm" onClick={openCreateModal} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
-                    <Plus size={14} /> Add Item
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
-                    <Plus size={14} /> Add Category
-                  </Button>
-                  <Button 
-                    onClick={handleNewBill}
-                    className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none bg-orange-500 hover:bg-orange-600 text-white"
-                  >
-                    <Plus size={14} /> New Bill
-                  </Button>
+                  {isAdmin && (
+                    <>
+                      <Button size="sm" onClick={openCreateModal} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
+                        <Plus size={14} /> Add Item
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
+                        <Plus size={14} /> Add Category
+                      </Button>
+                      <Button 
+                        onClick={() => setIsEditMode(!isEditMode)}
+                        variant={isEditMode ? "default" : "outline"}
+                        className={cn(
+                          "h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none transition-all",
+                          isEditMode ? "bg-red-600 hover:bg-red-700 text-white shadow-md" : "border-red-200 text-red-600 hover:bg-red-50"
+                        )}
+                      >
+                        <Pencil size={14} /> {isEditMode ? "Exit Edit Menu" : "Edit Menu"}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1815,6 +1921,69 @@ export default function POSTerminal() {
                     <div className="flex items-center gap-2 pt-8">
                       <input type="checkbox" id="is_active" checked={form.is_active} onChange={(e) => setForm(f => ({ ...f, is_active: e.target.checked }))} className="rounded border-gray-300" />
                       <label htmlFor="is_active" className="text-sm font-medium">Available for Sale</label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-bold text-gray-800">Item Addons (Extras)</label>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setForm(f => ({ ...f, addons: [...f.addons, { name: '', price: '' }] }))}
+                      className="h-8 text-xs gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
+                    >
+                      <Plus size={12} /> Add Addon
+                    </Button>
+                  </div>
+                  
+                  {form.addons.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg border border-dashed">
+                      No addons configured for this item.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                      {form.addons.map((addon, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <Input 
+                            value={addon.name} 
+                            onChange={(e) => {
+                              const newAddons = [...form.addons];
+                              newAddons[index].name = e.target.value;
+                              setForm(f => ({ ...f, addons: newAddons }));
+                            }}
+                            placeholder="Addon name (e.g. Extra Cheese)" 
+                            className="flex-grow text-xs h-9" 
+                          />
+                          <Input 
+                            type="number"
+                            step="0.01"
+                            value={addon.price} 
+                            onChange={(e) => {
+                              const newAddons = [...form.addons];
+                              newAddons[index].price = e.target.value;
+                              setForm(f => ({ ...f, addons: newAddons }));
+                            }}
+                            placeholder="Price (Rs)" 
+                            className="w-24 text-xs h-9" 
+                          />
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => {
+                              const newAddons = [...form.addons];
+                              newAddons.splice(index, 1);
+                              setForm(f => ({ ...f, addons: newAddons }));
+                            }}
+                            className="text-red-500 hover:text-red-600 hover:bg-red-50 h-9 w-9 shrink-0"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

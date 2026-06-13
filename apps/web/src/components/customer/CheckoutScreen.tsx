@@ -30,17 +30,16 @@ export default function CheckoutScreen({
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paymentOption, setPaymentOption] = useState<'Pay at Restaurant' | 'Online Payment'>('Pay at Restaurant');
 
-  const getExtraPrice = (extra: string) => {
-    if (extra.includes('Cheese')) return 40;
-    if (extra.includes('Paneer')) return 60;
-    return 0;
+  const getExtraPrice = (item: CartItem, extraName: string) => {
+    const addon = item.addons?.find(a => a.name === extraName);
+    return addon ? Number(addon.price) : 0;
   };
 
   const cartItemSubtotal = (item: CartItem) => {
-    let itemPrice = item.selling_price;
+    let itemPrice = Number(item.selling_price);
     if (item.extras) {
       item.extras.forEach(extra => {
-        itemPrice += getExtraPrice(extra);
+        itemPrice += getExtraPrice(item, extra);
       });
     }
     return itemPrice * item.quantity;
@@ -48,11 +47,10 @@ export default function CheckoutScreen({
 
   const calculateTaxes = () => {
     return cart.reduce((sum, item) => {
-      let itemPrice = item.selling_price;
+      let itemPrice = Number(item.selling_price);
       if (item.extras) {
         item.extras.forEach(extra => {
-          if (extra.includes('Cheese')) itemPrice += 40;
-          if (extra.includes('Paneer')) itemPrice += 60;
+          itemPrice += getExtraPrice(item, extra);
         });
       }
       const rate = item.gst_rate ?? 5;

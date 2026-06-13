@@ -27,10 +27,11 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
     return '🍽️';
   };
 
-  const getExtraPrice = (extra: string) => {
-    if (extra.includes('Cheese')) return 40;
-    if (extra.includes('Paneer')) return 60;
-    return 0;
+  const addons = item.addons || [];
+
+  const getExtraPrice = (extraName: string) => {
+    const addon = addons.find(a => a.name === extraName);
+    return addon ? Number(addon.price) : 0;
   };
 
   const currentPrice = item.selling_price + selectedExtras.reduce((sum, extra) => sum + getExtraPrice(extra), 0);
@@ -93,43 +94,42 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
         </div>
 
         {/* Add extras options */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-bold text-gray-700">Add Extra</h3>
-          <div className="space-y-2">
-            {[
-              { name: 'Extra Cheese', price: 40 },
-              { name: 'Extra Paneer', price: 60 }
-            ].map((extra) => {
-              const isSelected = selectedExtras.includes(extra.name);
-              return (
-                <label 
-                  key={extra.name}
-                  className={cn(
-                    "flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition-all",
-                    isSelected ? "border-emerald-600 bg-emerald-50/20" : "border-stone-200"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {
-                        if (isSelected) {
-                          setSelectedExtras(selectedExtras.filter(e => e !== extra.name));
-                        } else {
-                          setSelectedExtras([...selectedExtras, extra.name]);
-                        }
-                      }}
-                      className="w-4 h-4 text-emerald-850 accent-emerald-800 rounded border-stone-300"
-                    />
-                    <span className="text-sm font-semibold text-gray-700">{extra.name}</span>
-                  </div>
-                  <span className="text-xs font-bold text-stone-500">+ ₹{extra.price}</span>
-                </label>
-              );
-            })}
+        {addons.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-gray-700">Add Extra</h3>
+            <div className="space-y-2">
+              {addons.map((extra) => {
+                const isSelected = selectedExtras.includes(extra.name);
+                return (
+                  <label 
+                    key={extra.name}
+                    className={cn(
+                      "flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition-all",
+                      isSelected ? "border-emerald-600 bg-emerald-50/20" : "border-stone-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isSelected) {
+                            setSelectedExtras(selectedExtras.filter(e => e !== extra.name));
+                          } else {
+                            setSelectedExtras([...selectedExtras, extra.name]);
+                          }
+                        }}
+                        className="w-4 h-4 text-emerald-850 accent-emerald-800 rounded border-stone-300"
+                      />
+                      <span className="text-sm font-semibold text-gray-700">{extra.name}</span>
+                    </div>
+                    <span className="text-xs font-bold text-stone-500">+ ₹{extra.price}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Bottom Actions */}
