@@ -508,14 +508,13 @@ kotsRouter.post('/items/:itemId/status', async (req, res) => {
     });
 
     // Post-commit: if bill is paid, try to auto-free the table (validated)
-    // This is now handled by the billing workflow.
-    // if ((status === 'served' || status === 'delivered') && tableId) {
-    //   try {
-    //     await tryAutoFreeTable(pool, tableId, `kot_item:${itemId}`);
-    //   } catch (e: any) {
-    //     console.warn('tryAutoFreeTable post-item-update error (non-fatal):', e.message);
-    //   }
-    // }
+    if ((status === 'served' || status === 'delivered' || status === 'cancelled') && tableId) {
+      try {
+        await tryAutoFreeTable(pool, tableId, `kot_item:${itemId}`);
+      } catch (e: any) {
+        console.warn('tryAutoFreeTable post-item-update error (non-fatal):', e.message);
+      }
+    }
   } catch (err: any) {
     await client.query('ROLLBACK');
     console.error('POST /kots/items/:itemId/status error:', err.message);
