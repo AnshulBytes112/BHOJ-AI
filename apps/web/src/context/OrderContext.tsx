@@ -14,7 +14,12 @@ interface OrderContextProps {
   submitting: boolean;
   error: string | null;
   setError: (err: string | null) => void;
-  placeOrder: (cartItems: any[], specialInstructions: string) => Promise<any>;
+  placeOrder: (
+    cartItems: any[],
+    specialInstructions: string,
+    orderType?: string,
+    paymentOption?: string
+  ) => Promise<any>;
   callWaiter: (requestType?: string) => Promise<void>;
   requestBill: () => Promise<void>;
   reloadOrders: () => Promise<void>;
@@ -76,7 +81,12 @@ export function OrderProvider({ children, tableId }: { children: ReactNode; tabl
     }
   };
 
-  const placeOrder = async (cartItems: any[], specialInstructions: string) => {
+  const placeOrder = async (
+    cartItems: any[],
+    specialInstructions: string,
+    orderType?: string,
+    paymentOption?: string
+  ) => {
     if (cartItems.length === 0) return;
     setSubmitting(true);
     setError(null);
@@ -91,7 +101,13 @@ export function OrderProvider({ children, tableId }: { children: ReactNode; tabl
         notes: specialInstructions
       }));
 
-      const res = await orderService.submitOrder(tableId, itemsPayload);
+      const res = await orderService.submitOrder(
+        tableId,
+        itemsPayload,
+        orderType,
+        paymentOption,
+        specialInstructions
+      );
       
       // Reload active orders
       await reloadOrders();

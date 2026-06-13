@@ -46,10 +46,20 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
 
   // 4. Create parent KOT
   const kotResult = await client.query(
-    `INSERT INTO kots (order_id, table_id, table_number, order_phase, kot_number, status, session_id)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6)
+    `INSERT INTO kots (order_id, table_id, table_number, order_phase, kot_number, status, session_id, order_type, payment_option, notes)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9)
      RETURNING *`,
-    [orderId, order.table_id, order.table_number, order.order_phase, kotNumber, order.session_id]
+    [
+      orderId,
+      order.table_id,
+      order.table_number,
+      order.order_phase,
+      kotNumber,
+      order.session_id,
+      order.order_type || 'Dine In',
+      order.payment_option || 'Pay at Restaurant',
+      order.notes || null
+    ]
   );
   const parentKot = kotResult.rows[0];
 

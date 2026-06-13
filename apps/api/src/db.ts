@@ -754,6 +754,20 @@ export async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_session_tables_table_id  ON session_tables(table_id);
   `);
 
+  await pool.query(`
+    ALTER TABLE orders 
+      ADD COLUMN IF NOT EXISTS order_type VARCHAR(50) DEFAULT 'Dine In',
+      ADD COLUMN IF NOT EXISTS payment_option VARCHAR(50) DEFAULT 'Pay at Restaurant',
+      ADD COLUMN IF NOT EXISTS notes TEXT;
+  `);
+
+  await pool.query(`
+    ALTER TABLE kots 
+      ADD COLUMN IF NOT EXISTS order_type VARCHAR(50) DEFAULT 'Dine In',
+      ADD COLUMN IF NOT EXISTS payment_option VARCHAR(50) DEFAULT 'Pay at Restaurant',
+      ADD COLUMN IF NOT EXISTS notes TEXT;
+  `);
+
   console.log('Table management schema migrations complete.');
 }
 

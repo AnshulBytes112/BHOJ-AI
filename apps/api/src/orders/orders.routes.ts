@@ -8,7 +8,8 @@ export const ordersRouter = Router();
 ordersRouter.get('/', async (req, res) => {
   try {
     const ordersResult = await pool.query(
-      `SELECT o.order_id, o.table_id, t.table_number, o.order_phase, o.status, o.created_at
+      `SELECT o.order_id, o.table_id, t.table_number, o.order_phase, o.status, o.created_at,
+              o.order_type, o.payment_option, o.notes
        FROM orders o
        LEFT JOIN tables t ON t.table_id = o.table_id
        ORDER BY o.created_at DESC`
@@ -40,7 +41,8 @@ ordersRouter.get('/:orderId', async (req, res) => {
   const { orderId } = req.params;
   try {
     const orderResult = await pool.query(
-      `SELECT o.order_id, o.table_id, t.table_number, o.order_phase, o.status, o.created_at
+      `SELECT o.order_id, o.table_id, t.table_number, o.order_phase, o.status, o.created_at,
+              o.order_type, o.payment_option, o.notes
        FROM orders o
        LEFT JOIN tables t ON t.table_id = o.table_id
        WHERE o.order_id = $1`,

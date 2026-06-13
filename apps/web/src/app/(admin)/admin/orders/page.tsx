@@ -18,7 +18,7 @@ import apiClient from '@/services/apiClient';
 import { cn } from '@/lib/utils';
 
 type OrderItem = { order_item_id?: string; item_id: string; item_name: string; quantity: number; price_at_billing: number; };
-type Order = { order_id: string; table_id: string; table_number?: string; order_phase: number; status: string; items: OrderItem[]; created_at?: string; };
+type Order = { order_id: string; table_id: string; table_number?: string; order_phase: number; status: string; items: OrderItem[]; created_at?: string; order_type?: string; payment_option?: string; notes?: string; };
 
 // Safe helpers
 const safeItems = (items: any): OrderItem[] => Array.isArray(items) ? items : [];
@@ -522,6 +522,16 @@ export default function OrdersPage() {
                     <div className="text-slate-500">Table</div>
                     <div className="font-semibold text-right text-slate-800">Table {selected.table_number || selected.table_id}</div>
                     
+                    <div className="text-slate-500">Order Type</div>
+                    <div className="font-semibold text-right text-slate-800">
+                      <Badge variant="secondary" className={selected.order_type === 'Take Away' ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}>
+                        {selected.order_type || 'Dine In'}
+                      </Badge>
+                    </div>
+                    
+                    <div className="text-slate-500">Payment Pref</div>
+                    <div className="font-semibold text-right text-slate-800">{selected.payment_option || 'Pay at Restaurant'}</div>
+
                     <div className="text-slate-500">Order Time</div>
                     <div className="font-medium text-right text-slate-600">{fmtDate(selected.created_at)}</div>
                     
@@ -532,6 +542,16 @@ export default function OrdersPage() {
                       </Badge>
                     </div>
                   </div>
+
+                  {/* Special Instructions (Notes) */}
+                  {selected.notes && (
+                    <div className="bg-yellow-50/50 border border-yellow-250 rounded-xl p-4 text-sm">
+                      <div className="font-bold text-yellow-800 mb-1 flex items-center gap-1.5">
+                        <span>⚠️ Special Instructions:</span>
+                      </div>
+                      <p className="text-slate-700 italic font-medium">{selected.notes}</p>
+                    </div>
+                  )}
 
                   {/* Order items list */}
                   <div>
@@ -606,6 +626,7 @@ export default function OrdersPage() {
                 {/* Order info - left aligned */}
                 <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '8px' }}>
                   <div>ORDER NO: #{shortId(kotOrder.order_id)}</div>
+                  <div>TYPE: {(kotOrder.order_type || 'Dine In').toUpperCase()}</div>
                   <div>TABLE: {kotOrder.table_number || kotOrder.table_id}</div>
                   <div style={{ fontWeight: 'normal', fontSize: '12px' }}>DATE & TIME:{fmtDate(kotOrder.created_at)}</div>
                 </div>
@@ -634,6 +655,16 @@ export default function OrdersPage() {
 
                 {/* Dashed separator */}
                 <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+                {/* Special Instructions */}
+                {kotOrder.notes && (
+                  <>
+                    <div style={{ border: '1px solid #000', padding: '6px', marginBottom: '8px', fontSize: '11px', backgroundColor: '#f9f9f9', fontFamily: 'monospace' }}>
+                      <strong>INSTRUCTIONS:</strong> {kotOrder.notes}
+                    </div>
+                    <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+                  </>
+                )}
 
                 {/* Status */}
                 <div style={{ textAlign: 'center', fontSize: '11px', marginBottom: '8px' }}>

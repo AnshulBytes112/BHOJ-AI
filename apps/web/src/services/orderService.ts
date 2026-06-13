@@ -12,10 +12,19 @@ export const orderService = {
     return response.data.orders || [];
   },
 
-  async submitOrder(tableId: string, items: any[]): Promise<any> {
+  async submitOrder(
+    tableId: string,
+    items: any[],
+    orderType?: string,
+    paymentOption?: string,
+    notes?: string
+  ): Promise<any> {
     const response = await publicApiClient.post(`/tables/${tableId}/orders`, {
       items,
-      source_type: 'CUSTOMER_QR'
+      source_type: 'CUSTOMER_QR',
+      order_type: orderType,
+      payment_option: paymentOption,
+      notes
     });
     return response.data;
   },

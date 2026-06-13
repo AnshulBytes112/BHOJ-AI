@@ -117,6 +117,7 @@ kotsRouter.get('/', async (req, res) => {
     const result = await pool.query(
       `SELECT k.kot_id, k.order_id, k.order_phase,
               k.kot_number, k.status, k.generated_at,
+              k.order_type, k.payment_option, k.notes,
               COALESCE(curr_tbl.table_number, k.table_number) as table_number,
               COALESCE(curr_tbl.table_id, k.table_id) as table_id,
               t.is_bill_paid
@@ -234,6 +235,7 @@ kotsRouter.get('/section/:sectionId', async (req, res) => {
               sk.section_kot_number AS kitchen_kot_number,
               COALESCE(curr_tbl.table_number, k.table_number) as table_number,
               k.kot_number, k.kot_number AS parent_kot_number, k.order_phase, k.order_id,
+              k.order_type, k.payment_option, k.notes,
               t.is_bill_paid
        FROM section_kots sk
        LEFT JOIN kots k    ON k.kot_id    = sk.parent_kot_id

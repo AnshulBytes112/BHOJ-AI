@@ -73,6 +73,9 @@ interface SectionKOT {
   order_id: string;
   order_phase: number;
   is_bill_paid: boolean;
+  order_type?: string;
+  payment_option?: string;
+  notes?: string;
   items: KOTItem[];
 }
 
@@ -225,7 +228,15 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
       </div>
       <div className="px-3 py-2 flex-1 flex flex-col justify-between">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">T-{kot.table_number}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-bold text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">T-{kot.table_number}</span>
+            <span className={cn(
+              "text-[8px] font-extrabold px-1 py-0.5 rounded-sm uppercase tracking-wider",
+              kot.order_type === 'Take Away' ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+            )}>
+              {kot.order_type === 'Take Away' ? 'TO GO' : 'DINE'}
+            </span>
+          </div>
           <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-current bg-white', statusPill(kot.status))}>
             {statusLabel(kot.status)}
           </span>
@@ -235,6 +246,14 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
         {kot.is_bill_paid && (
           <div className="mt-1.5 flex items-center gap-1 text-[9px] font-bold text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
             <CreditCard size={8} /> Customer Has Paid
+          </div>
+        )}
+
+        {/* Special Instructions banner */}
+        {kot.notes && (
+          <div className="mt-1.5 text-[8px] leading-tight font-bold text-yellow-900 bg-yellow-50 border border-yellow-250 rounded px-1.5 py-1 flex items-start gap-1">
+            <span className="shrink-0">⚠️</span>
+            <span className="line-clamp-2 italic">{kot.notes}</span>
           </div>
         )}
 
@@ -771,6 +790,16 @@ function KOTPageInner() {
                   </div>
                 </div>
 
+                {/* Special Instructions (Notes) */}
+                {selectedKot.notes && (
+                  <div className="bg-yellow-50/50 border border-yellow-200 rounded-xl p-4 text-sm">
+                    <div className="font-bold text-yellow-800 mb-1 flex items-center gap-1.5">
+                      <span>⚠️ Special Instructions:</span>
+                    </div>
+                    <p className="text-slate-700 italic font-medium">{selectedKot.notes}</p>
+                  </div>
+                )}
+
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-3">
                   <div className="flex items-center justify-between text-[10px] text-gray-400 uppercase tracking-widest font-black border-b pb-2">
                     <span>Item Name</span>
@@ -850,6 +879,14 @@ function KOTPageInner() {
                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Phase</p>
                     <p className="text-xs font-bold text-gray-600">Phase {selectedKot.order_phase || 1}</p>
                   </div>
+                  <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Order Type</p>
+                    <p className="text-xs font-bold text-gray-600">{selectedKot.order_type || 'Dine In'}</p>
+                  </div>
+                  <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Payment Option</p>
+                    <p className="text-xs font-bold text-gray-600">{selectedKot.payment_option || 'Pay at Restaurant'}</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -869,6 +906,7 @@ function KOTPageInner() {
                   </div>
                   <div className="grid grid-cols-2 gap-y-1">
                     <span>ORDER ID:</span><span className="text-right font-bold">{selectedKot.order_id?.slice(0, 8)}</span>
+                    <span>TYPE:</span><span className="text-right font-bold">{(selectedKot.order_type || 'Dine In').toUpperCase()}</span>
                     <span>KOT NO:</span><span className="text-right font-bold">#{selectedKot.section_kot_number}</span>
                     <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
                     <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>
@@ -881,6 +919,12 @@ function KOTPageInner() {
                       </div>
                     ))}
                   </div>
+                  {selectedKot.notes && (
+                    <div className="border-t border-gray-300 pt-2 text-xs">
+                      <strong>INSTRUCTIONS:</strong>
+                      <p className="italic bg-yellow-50/50 p-2 border border-yellow-200 rounded mt-1 font-mono">{selectedKot.notes}</p>
+                    </div>
+                  )}
                   <div className="border-t pt-2 text-center text-[10px] text-gray-400 italic">
                     Software by RestroManager
                   </div>

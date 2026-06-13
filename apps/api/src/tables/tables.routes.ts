@@ -722,7 +722,11 @@ tablesRouter.get('/:tableId/unbilled-items', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 tablesRouter.post('/:tableId/orders', async (req, res) => {
   const { tableId } = req.params;
-  const { items, assigned_waiter_id, source_type } = req.body;
+  const { items, assigned_waiter_id, source_type, order_type, orderType, payment_option, paymentOption, special_instructions, specialInstructions, notes } = req.body;
+
+  const orderTypeVal = order_type || orderType || 'Dine In';
+  const paymentOptionVal = payment_option || paymentOption || 'Pay at Restaurant';
+  const specialInstructionsVal = special_instructions || specialInstructions || notes || null;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'items array is required and cannot be empty' });
@@ -755,6 +759,7 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     );
 
     let finalSessionId: string;
+    const finalSourceType = source_type ?? 'POS';
 
     if (sessionQuery.rows.length > 0) {
       const activeSession = sessionQuery.rows[0];
@@ -798,7 +803,6 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const randomHex = randomBytes(3).toString('hex').toUpperCase();
       const sessionCode = `SESS-T${tableCheck.rows[0].table_number}-${dateStr}-${randomHex}`;
-      const finalSourceType = source_type ?? 'POS';
 
       const newSessionResult = await client.query(
         `INSERT INTO table_sessions (
@@ -839,10 +843,10 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
 
     // RULE 2: Order belongs to session_id
     const orderResult = await client.query(
-      `INSERT INTO orders (table_id, order_phase, status, session_id)
-       VALUES ($1, $2, 'open', $3)
-       RETURNING order_id, table_id, order_phase, status, created_at, session_id`,
-      [tableId, orderPhase, finalSessionId]
+      `INSERT INTO orders (table_id, order_phase, status, session_id, source_type, order_type, payment_option, notes)
+       VALUES ($1, $2, 'open', $3, $4, $5, $6, $7)
+       RETURNING order_id, table_id, order_phase, status, created_at, session_id, source_type, order_type, payment_option, notes`,
+      [tableId, orderPhase, finalSessionId, finalSourceType, orderTypeVal, paymentOptionVal, specialInstructionsVal]
     );
     const newOrder = orderResult.rows[0];
 

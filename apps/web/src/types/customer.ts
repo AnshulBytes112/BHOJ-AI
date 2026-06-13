@@ -42,6 +42,9 @@ export interface Order {
   order_status: string;
   status: string; // derived KOT/order status (sent_to_kitchen, preparing, ready, completed)
   created_at: string;
+  order_type?: string;
+  payment_option?: string;
+  notes?: string;
   items: OrderItem[];
 }
 

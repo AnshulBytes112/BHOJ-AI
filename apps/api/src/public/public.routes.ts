@@ -96,7 +96,11 @@ publicRouter.get('/items', async (req, res) => {
 // 4. POST /api/public/tables/:tableId/orders — Place customer order
 publicRouter.post('/tables/:tableId/orders', async (req, res) => {
   const { tableId } = req.params;
-  const { items } = req.body;
+  const { items, order_type, orderType, payment_option, paymentOption, special_instructions, specialInstructions, notes } = req.body;
+
+  const orderTypeVal = order_type || orderType || 'Dine In';
+  const paymentOptionVal = payment_option || paymentOption || 'Pay at Restaurant';
+  const specialInstructionsVal = special_instructions || specialInstructions || notes || null;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'items array is required and cannot be empty' });
@@ -187,10 +191,10 @@ publicRouter.post('/tables/:tableId/orders', async (req, res) => {
 
     // Create order
     const orderResult = await client.query(
-      `INSERT INTO orders (table_id, order_phase, status, session_id, source_type)
-       VALUES ($1, $2, 'open', $3, 'CUSTOMER_QR')
-       RETURNING order_id, table_id, order_phase, status, created_at, session_id`,
-      [tableId, orderPhase, finalSessionId]
+      `INSERT INTO orders (table_id, order_phase, status, session_id, source_type, order_type, payment_option, notes)
+       VALUES ($1, $2, 'open', $3, 'CUSTOMER_QR', $4, $5, $6)
+       RETURNING order_id, table_id, order_phase, status, created_at, session_id, order_type, payment_option, notes`,
+      [tableId, orderPhase, finalSessionId, orderTypeVal, paymentOptionVal, specialInstructionsVal]
     );
     const newOrder = orderResult.rows[0];
 

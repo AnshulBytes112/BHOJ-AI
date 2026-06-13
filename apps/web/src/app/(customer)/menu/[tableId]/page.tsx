@@ -213,9 +213,9 @@ function CustomerMenuContent() {
             tableNumber={tableDetails?.table_number || '8'}
             onBack={() => navigateToView('cart')}
             isSubmitting={submitting}
-            onPlaceOrder={async (instructions) => {
+            onPlaceOrder={async (instructions, orderType, paymentOption) => {
               try {
-                const res = await placeOrder(cart, instructions);
+                const res = await placeOrder(cart, instructions, orderType, paymentOption);
                 setPlacedOrderId(res.order_id);
                 clearCart();
                 navigateToView('order-confirmation', true);

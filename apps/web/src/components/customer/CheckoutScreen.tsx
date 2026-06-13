@@ -12,7 +12,11 @@ interface CheckoutScreenProps {
   promoApplied: boolean;
   tableNumber: string;
   onBack: () => void;
-  onPlaceOrder: (specialInstructions: string) => void;
+  onPlaceOrder: (
+    specialInstructions: string,
+    orderType: 'Dine In' | 'Take Away',
+    paymentOption: 'Pay at Restaurant' | 'Online Payment'
+  ) => void;
   isSubmitting: boolean;
 }
 
@@ -75,7 +79,7 @@ export default function CheckoutScreen({
         <h2 className="text-lg font-black text-gray-900">Checkout</h2>
       </div>
 
-      <div className="flex-1 p-5 space-y-6 overflow-y-auto max-h-[calc(100vh-160px)]">
+      <div className="flex-grow p-5 space-y-6 overflow-y-auto max-h-[calc(100vh-160px)]">
         {/* Order Summary */}
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Order Summary</h3>
@@ -182,7 +186,7 @@ export default function CheckoutScreen({
       {/* Bottom Place Order */}
       <div className="border-t border-stone-100 p-4 bg-white sticky bottom-0">
         <button
-          onClick={() => onPlaceOrder(specialInstructions)}
+          onClick={() => onPlaceOrder(specialInstructions, orderType, paymentOption)}
           disabled={isSubmitting}
           className="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-bold py-3.5 rounded-xl shadow flex items-center justify-between px-4 transition-all disabled:bg-stone-300"
         >
