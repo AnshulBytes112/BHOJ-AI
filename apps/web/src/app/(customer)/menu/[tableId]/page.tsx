@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Utensils, ShoppingCart, Clock, Bell } from 'lucide-react';
 import { CartProvider } from '@/context/CartContext';
 import { OrderProvider } from '@/context/OrderContext';
@@ -27,6 +27,9 @@ import BillSummary from '@/components/customer/BillSummary';
 function CustomerMenuContent() {
   const params = useParams();
   const tableId = params?.tableId as string;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // View state switcher
   const [activeView, setActiveView] = useState<
@@ -44,44 +47,38 @@ function CustomerMenuContent() {
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
 
-  // Sync hash state helper
+  // Sync query parameter state helper
   const navigateToView = (view: typeof activeView, replace = false) => {
-    const targetHash = view === 'landing' ? '' : `#${view}`;
-    if (window.location.hash !== targetHash) {
-      if (replace) {
-        const url = new URL(window.location.href);
-        url.hash = view === 'landing' ? '' : view;
-        window.history.replaceState(null, '', url.toString());
-        setActiveView(view);
-      } else {
-        window.location.hash = view === 'landing' ? '' : view;
-      }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (view === 'landing') {
+      nextParams.delete('view');
+    } else {
+      nextParams.set('view', view);
+    }
+    const queryString = nextParams.toString();
+    const targetUrl = queryString ? `${pathname}?${queryString}` : pathname;
+    
+    if (replace) {
+      router.replace(targetUrl);
+    } else {
+      router.push(targetUrl);
     }
   };
 
-  // Sync active view with browser URL hash (for system back gestures)
+  // Sync active view with browser URL search param (for native next/navigation back gestures)
+  const currentView = searchParams.get('view') || 'landing';
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      const validViews = [
-        'landing', 'menu', 'item-details', 'cart', 'checkout', 
-        'order-confirmation', 'order-tracking', 'order-details', 
-        'call-waiter', 'request-bill', 'bill-summary'
-      ];
-      if (validViews.includes(hash)) {
-        setActiveView(hash as any);
-      } else if (!hash) {
-        setActiveView('landing');
-      }
-    };
-
-    handleHashChange();
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-    };
-  }, []);
+    const validViews = [
+      'landing', 'menu', 'item-details', 'cart', 'checkout', 
+      'order-confirmation', 'order-tracking', 'order-details', 
+      'call-waiter', 'request-bill', 'bill-summary'
+    ];
+    if (validViews.includes(currentView)) {
+      setActiveView(currentView as any);
+    } else {
+      setActiveView('landing');
+    }
+  }, [currentView]);
 
   // Automatically reset auxiliary states when shifting views
   useEffect(() => {
