@@ -98,9 +98,17 @@ publicRouter.post('/tables/:tableId/orders', async (req, res) => {
   const { tableId } = req.params;
   const { items, order_type, orderType, payment_option, paymentOption, special_instructions, specialInstructions, notes } = req.body;
 
+  // DEBUG LOG — remove after confirming fix
+  console.log('[ORDER] Received body keys:', Object.keys(req.body));
+  console.log('[ORDER] order_type:', order_type, '| orderType:', orderType);
+  console.log('[ORDER] payment_option:', payment_option, '| paymentOption:', paymentOption);
+  console.log('[ORDER] notes:', notes, '| specialInstructions:', specialInstructions);
+
   const orderTypeVal = order_type || orderType || 'Dine In';
   const paymentOptionVal = payment_option || paymentOption || 'Pay at Restaurant';
   const specialInstructionsVal = special_instructions || specialInstructions || notes || null;
+
+  console.log('[ORDER] Resolved → orderTypeVal:', orderTypeVal, '| paymentOptionVal:', paymentOptionVal, '| notes:', specialInstructionsVal);
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'items array is required and cannot be empty' });
