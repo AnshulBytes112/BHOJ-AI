@@ -33,7 +33,7 @@ export interface MenuItem {
 
 export interface CartItem extends MenuItem {
   quantity: number;
-  spiceLevel?: 'Mild' | 'Medium' | 'Hot';
+  spiceLevel?: string | null;
   extras?: string[];
   notes?: string;
 }

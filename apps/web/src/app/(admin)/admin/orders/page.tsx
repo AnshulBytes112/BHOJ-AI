@@ -188,7 +188,8 @@ export default function OrdersPage() {
         // Find all KOTs for this order
         const orderKots = allKots.filter((k: any) => k.order_id === o.order_id);
         
-        if (orderKots.length > 0) {
+        // Only override status based on KOTs if the order is not in a terminal state (billed, completed, cancelled)
+        if (orderKots.length > 0 && !['billed', 'completed', 'cancelled'].includes(o.status)) {
           if (orderKots.every((k: any) => k.status === 'completed')) {
             currentStatus = 'completed';
           } else if (orderKots.some((k: any) => k.status === 'acknowledged')) {

@@ -237,8 +237,24 @@ export default function POSTerminal() {
 
   // Item configuration states
   const [configuringItem, setConfiguringItem] = useState<MenuItem | null>(null);
-  const [itemSpiceLevel, setItemSpiceLevel] = useState<'Mild' | 'Medium' | 'Hot'>('Medium');
+  const [itemSpiceLevel, setItemSpiceLevel] = useState<string | null>(null);
   const [itemSelectedExtras, setItemSelectedExtras] = useState<string[]>([]);
+
+  const handleSpiceSelect = (level: string) => {
+    setItemSpiceLevel(level);
+    if (configuringItem) {
+      const spiceGroup = configuringItem.customizable_options?.find(
+        (g: any) => g.name.toLowerCase().includes('spice')
+      );
+      if (spiceGroup) {
+        const spiceChoiceNames = spiceGroup.choices.map((c: any) => c.name);
+        setItemSelectedExtras(prev => {
+          const filtered = prev.filter(e => !spiceChoiceNames.includes(e));
+          return [...filtered, level];
+        });
+      }
+    }
+  };
 
   // Catalog CRUD states
   const [isSaving, setIsSaving] = useState(false);
@@ -619,7 +635,7 @@ export default function POSTerminal() {
     console.log('Final filtered items:', result);
   }, [activeCategory, searchQuery, items, categories, isEditMode]);
 
-  const addToCart = (item: MenuItem, spiceLevel: string = 'Medium', selectedExtras: string[] = []) => {
+  const addToCart = (item: MenuItem, spiceLevel: string | null = null, selectedExtras: string[] = []) => {
     if (item.stockType === 'limited') {
       const existingQty = cart.filter((i) => i.id === item.id).reduce((sum, i) => sum + i.quantity, 0);
       if (existingQty >= item.stockQuantity) {
@@ -1073,15 +1089,29 @@ export default function POSTerminal() {
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setItemSpiceLevel('Medium');
+                                  let initialSpiceLevel: string | null = null;
                                   const defaultExtras: string[] = [];
                                   if (item.customizable_options) {
+                                    const spiceGroup = item.customizable_options.find(
+                                      (g: any) => g.name.toLowerCase().includes('spice')
+                                    );
+                                    if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+                                      const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
+                                      initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
+                                    }
+
                                     item.customizable_options.forEach(group => {
-                                      if (group.required && group.choices && group.choices.length > 0) {
+                                      const isSpice = group.name.toLowerCase().includes('spice');
+                                      if (isSpice) {
+                                        if (initialSpiceLevel) {
+                                          defaultExtras.push(initialSpiceLevel);
+                                        }
+                                      } else if (group.required && group.choices && group.choices.length > 0) {
                                         defaultExtras.push(group.choices[0].name);
                                       }
                                     });
                                   }
+                                  setItemSpiceLevel(initialSpiceLevel);
                                   setItemSelectedExtras(defaultExtras);
                                   setConfiguringItem(item);
                                 }}
@@ -1249,15 +1279,29 @@ export default function POSTerminal() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setItemSpiceLevel('Medium');
+                                  let initialSpiceLevel: string | null = null;
                                   const defaultExtras: string[] = [];
                                   if (item.customizable_options) {
+                                    const spiceGroup = item.customizable_options.find(
+                                      (g: any) => g.name.toLowerCase().includes('spice')
+                                    );
+                                    if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+                                      const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
+                                      initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
+                                    }
+
                                     item.customizable_options.forEach(group => {
-                                      if (group.required && group.choices && group.choices.length > 0) {
+                                      const isSpice = group.name.toLowerCase().includes('spice');
+                                      if (isSpice) {
+                                        if (initialSpiceLevel) {
+                                          defaultExtras.push(initialSpiceLevel);
+                                        }
+                                      } else if (group.required && group.choices && group.choices.length > 0) {
                                         defaultExtras.push(group.choices[0].name);
                                       }
                                     });
                                   }
+                                  setItemSpiceLevel(initialSpiceLevel);
                                   setItemSelectedExtras(defaultExtras);
                                   setConfiguringItem(item);
                                 }}
@@ -2525,27 +2569,35 @@ export default function POSTerminal() {
           {configuringItem && (
             <div className="space-y-6 py-4">
               {/* Spice Level Section */}
-              <div className="space-y-2.5">
-                <h4 className="text-sm font-semibold text-gray-900">Spice Level</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['Mild', 'Medium', 'Hot'] as const).map((level) => (
-                    <Button
-                      key={level}
-                      type="button"
-                      variant={itemSpiceLevel === level ? 'default' : 'outline'}
-                      onClick={() => setItemSpiceLevel(level)}
-                      className={cn(
-                        "py-2 h-9 font-bold text-xs rounded-lg transition-all",
-                        itemSpiceLevel === level
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-white text-gray-700 hover:bg-gray-50 border-gray-200"
-                      )}
-                    >
-                      {level}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+              {(() => {
+                const spiceGroup = configuringItem.customizable_options?.find(
+                  (g: any) => g.name.toLowerCase().includes('spice')
+                );
+                if (!spiceGroup || !spiceGroup.choices || spiceGroup.choices.length === 0) return null;
+                return (
+                  <div className="space-y-2.5">
+                    <h4 className="text-sm font-semibold text-gray-900">{spiceGroup.name}</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      {spiceGroup.choices.map((choice) => (
+                        <Button
+                          key={choice.name}
+                          type="button"
+                          variant={itemSpiceLevel === choice.name ? 'default' : 'outline'}
+                          onClick={() => handleSpiceSelect(choice.name)}
+                          className={cn(
+                            "py-2 h-9 font-bold text-xs rounded-lg transition-all",
+                            itemSpiceLevel === choice.name
+                              ? "bg-blue-600 hover:bg-blue-700 text-white"
+                              : "bg-white text-gray-700 hover:bg-gray-50 border-gray-200"
+                          )}
+                        >
+                          {choice.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Extras/Addons Section */}
               {configuringItem.addons && configuringItem.addons.length > 0 && (
@@ -2586,60 +2638,62 @@ export default function POSTerminal() {
               )}
 
               {/* Dynamic Customizable Options */}
-              {configuringItem.customizable_options && configuringItem.customizable_options.map((group) => {
-                if (!group.choices || group.choices.length === 0) return null;
-                return (
-                  <div key={group.name} className="space-y-2.5">
-                    <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                      {group.name}
-                      {group.required && <span className="text-xs text-red-500 font-normal">(Required)</span>}
-                    </h4>
-                    <div className="space-y-2">
-                      {group.choices.map((choice) => {
-                        const isSelected = itemSelectedExtras.includes(choice.name);
-                        return (
-                          <label
-                            key={choice.name}
-                            className={cn(
-                              "flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all hover:bg-gray-50",
-                              isSelected ? "border-purple-500 bg-purple-50/10" : "border-gray-200"
-                            )}
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type={group.type === 'single' ? 'radio' : 'checkbox'}
-                                name={`group-${group.name}`}
-                                checked={isSelected}
-                                onChange={() => {
-                                  if (group.type === 'single') {
-                                    const groupChoices = group.choices.map(c => c.name);
-                                    const filtered = itemSelectedExtras.filter(e => !groupChoices.includes(e));
-                                    setItemSelectedExtras([...filtered, choice.name]);
-                                  } else {
-                                    if (isSelected) {
-                                      setItemSelectedExtras(itemSelectedExtras.filter(e => e !== choice.name));
+              {configuringItem.customizable_options && configuringItem.customizable_options
+                .filter((group: any) => !group.name.toLowerCase().includes('spice'))
+                .map((group) => {
+                  if (!group.choices || group.choices.length === 0) return null;
+                  return (
+                    <div key={group.name} className="space-y-2.5">
+                      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                        {group.name}
+                        {group.required && <span className="text-xs text-red-500 font-normal">(Required)</span>}
+                      </h4>
+                      <div className="space-y-2">
+                        {group.choices.map((choice) => {
+                          const isSelected = itemSelectedExtras.includes(choice.name);
+                          return (
+                            <label
+                              key={choice.name}
+                              className={cn(
+                                "flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all hover:bg-gray-50",
+                                isSelected ? "border-purple-500 bg-purple-50/10" : "border-gray-200"
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type={group.type === 'single' ? 'radio' : 'checkbox'}
+                                  name={`group-${group.name}`}
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    if (group.type === 'single') {
+                                      const groupChoices = group.choices.map(c => c.name);
+                                      const filtered = itemSelectedExtras.filter(e => !groupChoices.includes(e));
+                                      setItemSelectedExtras([...filtered, choice.name]);
                                     } else {
-                                      setItemSelectedExtras([...itemSelectedExtras, choice.name]);
+                                      if (isSelected) {
+                                        setItemSelectedExtras(itemSelectedExtras.filter(e => e !== choice.name));
+                                      } else {
+                                        setItemSelectedExtras([...itemSelectedExtras, choice.name]);
+                                      }
                                     }
-                                  }
-                                }}
-                                className={cn(
-                                  "w-4 h-4 text-purple-600 accent-purple-600 rounded border-gray-300",
-                                  group.type === 'single' ? 'rounded-full' : 'rounded'
-                                )}
-                              />
-                              <span className="text-sm font-medium text-gray-800">{choice.name}</span>
-                            </div>
-                            {Number(choice.price) > 0 && (
-                              <span className="text-xs font-bold text-gray-500">+ Rs {choice.price}</span>
-                            )}
-                          </label>
-                        );
-                      })}
+                                  }}
+                                  className={cn(
+                                    "w-4 h-4 text-purple-600 accent-purple-600 rounded border-gray-300",
+                                    group.type === 'single' ? 'rounded-full' : 'rounded'
+                                  )}
+                                />
+                                <span className="text-sm font-medium text-gray-800">{choice.name}</span>
+                              </div>
+                              {Number(choice.price) > 0 && (
+                                <span className="text-xs font-bold text-gray-500">+ Rs {choice.price}</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
 

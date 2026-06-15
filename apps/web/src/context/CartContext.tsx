@@ -5,7 +5,7 @@ import { MenuItem, CartItem } from '../types/customer';
 
 interface CartContextProps {
   cart: CartItem[];
-  addToCart: (item: MenuItem, quantity: number, spiceLevel?: 'Mild' | 'Medium' | 'Hot', extras?: string[]) => void;
+  addToCart: (item: MenuItem, quantity: number, spiceLevel?: string | null, extras?: string[]) => void;
   updateQuantity: (index: number, change: number) => void;
   clearCart: () => void;
   subtotal: number;
@@ -43,7 +43,7 @@ export function CartProvider({ children, tableId }: { children: ReactNode; table
   const addToCart = (
     item: MenuItem, 
     quantity: number, 
-    spiceLevel: 'Mild' | 'Medium' | 'Hot' = 'Medium', 
+    spiceLevel: string | null = null, 
     extras: string[] = []
   ) => {
     const sortedExtras = [...extras].sort();

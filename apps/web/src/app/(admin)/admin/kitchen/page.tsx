@@ -58,6 +58,8 @@ interface KOTItem {
   delivered_at?: string;
   cancelled_at?: string;
   recook_requested_at?: string;
+  extras?: string[];
+  spice_level?: string | null;
 }
 
 interface SectionKOT {
@@ -818,6 +820,20 @@ function KOTPageInner() {
                             <div className="flex flex-col">
                               <span className="font-bold text-gray-800 text-sm">{item.item_name}</span>
                               <span className="text-[9px] text-gray-300 font-mono">ID: {item.item_id}</span>
+                              {(item.spice_level || (item.extras && item.extras.length > 0)) && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.spice_level && (
+                                    <span className="text-[10px] bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-bold border border-red-100">
+                                      🌶️ {item.spice_level}
+                                    </span>
+                                  )}
+                                  {item.extras && item.extras.map((extra: string) => (
+                                    <span key={extra} className="text-[10px] bg-stone-50 text-stone-600 px-1.5 py-0.5 rounded font-medium border border-stone-200">
+                                      + {extra}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <div className="flex flex-col items-end gap-1">
                               <span className="bg-white border shadow-sm px-2 py-1 rounded font-black text-blue-600 text-xs">
@@ -911,11 +927,21 @@ function KOTPageInner() {
                     <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
                     <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>
                   </div>
-                  <div className="border-t border-gray-300 pt-2">
+                  <div className="border-t border-gray-300 pt-2 space-y-1">
                     {selectedKot.items.map((it, i) => (
-                      <div key={i} className="flex justify-between py-1">
-                        <span>{it.item_name}</span>
-                        <span className="font-bold">x{it.quantity}</span>
+                      <div key={i} className="py-1 border-b border-gray-100 last:border-0">
+                        <div className="flex justify-between">
+                          <span className="font-semibold">{it.item_name}</span>
+                          <span className="font-bold">x{it.quantity}</span>
+                        </div>
+                        {(it.spice_level || (it.extras && it.extras.length > 0)) && (
+                          <div className="text-[10px] text-gray-500 pl-2 space-y-0.5">
+                            {it.spice_level && <div>🌶️ {it.spice_level}</div>}
+                            {it.extras && it.extras.map((ext: string) => (
+                              <div key={ext}>+ {ext}</div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

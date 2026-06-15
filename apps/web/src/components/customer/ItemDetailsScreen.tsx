@@ -8,24 +8,53 @@ import { cn } from '@/lib/utils';
 interface ItemDetailsScreenProps {
   item: MenuItem;
   onBack: () => void;
-  onConfirm: (spiceLevel: 'Mild' | 'Medium' | 'Hot', extras: string[], quantity: number) => void;
+  onConfirm: (spiceLevel: string | null, extras: string[], quantity: number) => void;
 }
 
 export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetailsScreenProps) {
-  const [spiceLevel, setSpiceLevel] = useState<'Mild' | 'Medium' | 'Hot'>('Medium');
+  const [spiceLevel, setSpiceLevel] = useState<string | null>(null);
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
 
+  const handleSpiceSelect = (level: string) => {
+    setSpiceLevel(level);
+    const spiceGroup = item.customizable_options?.find(
+      g => g.name.toLowerCase().includes('spice')
+    );
+    if (spiceGroup) {
+      const spiceChoiceNames = spiceGroup.choices.map(c => c.name);
+      setSelectedExtras(prev => {
+        const filtered = prev.filter(e => !spiceChoiceNames.includes(e));
+        return [...filtered, level];
+      });
+    }
+  };
+
   // Load default required options on mount
   React.useEffect(() => {
+    let initialSpice: string | null = null;
     const defaultExtras: string[] = [];
     if (item.customizable_options) {
+      const spiceGroup = item.customizable_options.find(
+        g => g.name.toLowerCase().includes('spice')
+      );
+      if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+        const mediumChoice = spiceGroup.choices.find(c => c.name.toLowerCase() === 'medium');
+        initialSpice = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
+      }
+
       item.customizable_options.forEach(group => {
-        if (group.required && group.choices && group.choices.length > 0) {
+        const isSpice = group.name.toLowerCase().includes('spice');
+        if (isSpice) {
+          if (initialSpice) {
+            defaultExtras.push(initialSpice);
+          }
+        } else if (group.required && group.choices && group.choices.length > 0) {
           defaultExtras.push(group.choices[0].name);
         }
       });
     }
+    setSpiceLevel(initialSpice);
     setSelectedExtras(defaultExtras);
   }, [item]);
 
@@ -92,25 +121,34 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
         </div>
 
         {/* Spice level options */}
-        <div className="space-y-2">
-          <h3 className="text-sm font-bold text-gray-700">Spice Level</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {(['Mild', 'Medium', 'Hot'] as const).map((level) => (
-              <button
-                key={level}
-                onClick={() => setSpiceLevel(level)}
-                className={cn(
-                  "py-2 rounded-xl text-xs font-bold border transition-all",
-                  spiceLevel === level
-                    ? "bg-emerald-800 text-white border-emerald-800"
-                    : "bg-white text-stone-600 border-stone-200"
-                )}
-              >
-                {level}
-              </button>
-            ))}
-          </div>
-        </div>
+        {(() => {
+          const spiceGroup = item.customizable_options?.find(
+            g => g.name.toLowerCase().includes('spice')
+          );
+          if (!spiceGroup || !spiceGroup.choices || spiceGroup.choices.length === 0) return null;
+          return (
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-gray-700">{spiceGroup.name}</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {spiceGroup.choices.map((choice) => (
+                  <button
+                    key={choice.name}
+                    type="button"
+                    onClick={() => handleSpiceSelect(choice.name)}
+                    className={cn(
+                      "py-2 rounded-xl text-xs font-bold border transition-all",
+                      spiceLevel === choice.name
+                        ? "bg-emerald-800 text-white border-emerald-800"
+                        : "bg-white text-stone-600 border-stone-200"
+                    )}
+                  >
+                    {choice.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Add extras options */}
         {addons.length > 0 && (
@@ -151,7 +189,9 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
         )}
 
         {/* Dynamic Customizable Options */}
-        {item.customizable_options && item.customizable_options.map((group) => {
+        {item.customizable_options && item.customizable_options
+          .filter(group => !group.name.toLowerCase().includes('spice'))
+          .map((group) => {
           if (!group.choices || group.choices.length === 0) return null;
           return (
             <div key={group.name} className="space-y-3">

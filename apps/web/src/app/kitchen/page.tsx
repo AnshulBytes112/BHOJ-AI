@@ -16,6 +16,8 @@ interface KotItem {
   quantity: number;
   status: string;
   serial_number: number | null;
+  extras?: string[];
+  spice_level?: string | null;
 }
 
 interface SectionKot {
@@ -225,6 +227,20 @@ function KotCard({
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-semibold text-gray-900 truncate">{item.item_name}</div>
                           <div className="text-xs text-gray-500">x{item.quantity}</div>
+                          {(item.spice_level || (item.extras && item.extras.length > 0)) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {item.spice_level && (
+                                <span className="text-[10px] bg-red-50 text-red-700 px-1.5 py-0.5 rounded font-bold border border-red-100">
+                                  🌶️ {item.spice_level}
+                                </span>
+                              )}
+                              {item.extras && item.extras.map((extra: string) => (
+                                <span key={extra} className="text-[10px] bg-stone-50 text-stone-600 px-1.5 py-0.5 rounded font-medium border border-stone-200">
+                                  + {extra}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
