@@ -306,9 +306,17 @@ billsRouter.post('/', async (req, res) => {
               oi.price_at_billing, oi.gst_percent_at_billing,
               i.name as item_name
        FROM order_items oi
+       JOIN orders o ON o.order_id = oi.order_id
        JOIN items i ON i.id = oi.item_id
+       LEFT JOIN kots k ON k.order_id = o.order_id
+       LEFT JOIN kot_items ki ON ki.kot_id = k.kot_id AND ki.item_id = oi.item_id
+       LEFT JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+       LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id AND ski.item_id = oi.item_id
        WHERE oi.order_id = ANY($1::uuid[])
-         AND oi.billing_status = 'UNBILLED'`,
+         AND oi.billing_status = 'UNBILLED'
+         AND o.status <> 'cancelled'
+         AND COALESCE(ki.status, '') <> 'cancelled'
+         AND COALESCE(ski.status, '') <> 'cancelled'`,
       [actualOrderIds]
     );
 

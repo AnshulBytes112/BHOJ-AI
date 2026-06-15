@@ -25,6 +25,7 @@ import {
   X,
   ImageIcon,
   UtensilsCrossed,
+  ArrowLeft,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
@@ -116,6 +117,25 @@ const EMPTY_FORM: ItemForm = {
 
 const MAX_IMAGE_SIZE_KB = 500;
 const MAX_IMAGE_DIMENSION = 800;
+const NON_BILLABLE_STATUSES = new Set(['cancelled', 'canceled']);
+
+function isBillableRecord(record: any) {
+  const statusFields = [
+    record?.status,
+    record?.order_status,
+    record?.orderStatus,
+    record?.item_status,
+    record?.itemStatus,
+    record?.kot_item_status,
+    record?.kotItemStatus,
+    record?.section_kot_item_status,
+    record?.sectionKotItemStatus,
+  ];
+
+  return !statusFields.some(status => (
+    typeof status === 'string' && NON_BILLABLE_STATUSES.has(status.toLowerCase())
+  ));
+}
 
 function compressImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -236,6 +256,7 @@ export default function POSTerminal() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const printRef = useRef<HTMLDivElement>(null);
+  const receiptHistoryPushedRef = useRef(false);
 
   const workflowTabs = [
     { id: 'categories', label: 'POS - Categories & Items' },
@@ -252,7 +273,7 @@ export default function POSTerminal() {
     setActiveWorkflow('categories');
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [catsResp, itemsResp, tablesResp, chargesResp] = await Promise.all([
         apiClient.get<Array<{ id: number; name: string }>>('/categories'),
@@ -330,11 +351,21 @@ export default function POSTerminal() {
       console.error('Error loading POS data:', error);
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  const closeReceiptView = useCallback(() => {
+    if (receiptHistoryPushedRef.current) {
+      window.history.back();
+      return;
+    }
+
+    setIsReceiptOpen(false);
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const fetchTableOrders = useCallback(async (tableId: string, silent = false) => {
     if (!silent) setIsLoadingOrders(true);
@@ -644,10 +675,21 @@ export default function POSTerminal() {
   const totals = useMemo(() => {
     // Combine items from unbilled order items and current cart for billing calculation
     const allItemsToBill: Array<{ id: string; price: number; quantity: number; name: string; categoryId: string; gstRate?: number }> = [];
+    const nonBillableOrderIds = new Set(
+      existingOrders
+        .filter(order => !isBillableRecord(order))
+        .map(order => String(order.order_id))
+    );
+    const billableUnbilledItems = Array.isArray(unbilledItems)
+      ? unbilledItems.filter((item: any) => (
+          isBillableRecord(item) &&
+          !nonBillableOrderIds.has(String(item.order_id ?? item.orderId ?? ''))
+        ))
+      : [];
     
     // Add items from unbilled order items
-    if (Array.isArray(unbilledItems)) {
-      unbilledItems.forEach((oi: any) => {
+    if (billableUnbilledItems.length > 0) {
+      billableUnbilledItems.forEach((oi: any) => {
         const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
         if (existing) {
           existing.quantity += oi.quantity;
@@ -733,6 +775,7 @@ export default function POSTerminal() {
     return { 
       subtotal,
       allItemsToBill,
+      billableUnbilledItemsCount: billableUnbilledItems.length,
       discountAmount, 
       totalGst, 
       cgstSGST,
@@ -740,7 +783,7 @@ export default function POSTerminal() {
       gstBreakdown,
       appliedExtraCharges
     };
-  }, [cart, unbilledItems, discountType, discountValue, gstRates, extraCharges]);
+  }, [cart, existingOrders, unbilledItems, discountType, discountValue, gstRates, extraCharges]);
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!selectedTable) {
@@ -815,7 +858,7 @@ export default function POSTerminal() {
 
   const generateBillAndPrint = async () => {
     // Check if there is anything to bill (either in cart or already ordered)
-    if (cart.length === 0 && unbilledItems.length === 0) return;
+    if (totals.allItemsToBill.length === 0) return;
 
     if (tableBilling?.isBillPaid) {
       alert('Bill already generated for this table.');
@@ -825,7 +868,9 @@ export default function POSTerminal() {
     setIsGeneratingBill(true);
     try {
       // Ensure current cart items are saved as an order before billing
-      const orderIds = existingOrders.map(o => o.order_id);
+      const orderIds = existingOrders
+        .filter(isBillableRecord)
+        .map(o => o.order_id);
       if (cart.length > 0) {
         const orderResult = await apiClient.post(`/tables/${selectedTable}/orders`, {
           items: cart.map(item => ({
@@ -881,6 +926,10 @@ export default function POSTerminal() {
 
       setReceiptData(data);
       setOrderId(`BILL-${billData.bill.bill_serial_number}`);
+      if (!receiptHistoryPushedRef.current) {
+        window.history.pushState({ posReceiptOpen: true }, '', window.location.href);
+        receiptHistoryPushedRef.current = true;
+      }
       setIsReceiptOpen(true);
       await fetchTableOrders(selectedTable);
     } catch (error: any) {
@@ -890,6 +939,19 @@ export default function POSTerminal() {
       setIsGeneratingBill(false);
     }
   };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (receiptHistoryPushedRef.current) {
+        setIsReceiptOpen(false);
+        receiptHistoryPushedRef.current = false;
+        loadData();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [loadData]);
 
 
 
@@ -1723,7 +1785,7 @@ export default function POSTerminal() {
               </Button>
               <Button 
                 onClick={() => setIsPreviewOpen(true)}
-                disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable || Boolean(tableBilling?.isBillPaid)}
+                disabled={totals.allItemsToBill.length === 0 || isGeneratingBill || !selectedTable || Boolean(tableBilling?.isBillPaid)}
                 className="w-full h-10 bg-green-500 hover:bg-green-600 text-white font-semibold text-xs"
               >
                 {isGeneratingBill ? 'Generating...' : 'Bill'}
@@ -2385,7 +2447,7 @@ export default function POSTerminal() {
           <div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
             <div className="space-y-2 border-b pb-4">
               <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
-              <div className="text-xs text-gray-500">Consolidating {unbilledItems.length} unbilled items + current cart</div>
+              <div className="text-xs text-gray-500">Consolidating {totals.billableUnbilledItemsCount} billable items + current cart</div>
             </div>
             
             <div className="space-y-2">
@@ -2617,25 +2679,26 @@ export default function POSTerminal() {
       </Dialog>
 
       {isReceiptOpen && receiptData && (
-        <div className="fixed inset-0 z-[100] bg-white flex items-start justify-center overflow-auto p-4 md:p-10 no-print-background">
-          <div className="no-print absolute top-4 right-4 flex gap-2 items-center">
-            <Button onClick={() => window.print()}>Print Bill</Button>
-            <Button variant="outline" onClick={() => window.print()}>
-              Download PDF
-            </Button>
+        <div className="fixed inset-0 z-[100] bg-white overflow-auto no-print-background">
+          <div className="no-print sticky top-0 z-10 flex flex-col gap-3 border-b bg-white/95 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between md:px-6">
             <Button 
-              variant="default" 
-              className="bg-blue-600 hover:bg-blue-700"
-              onClick={() => {
-                setIsReceiptOpen(false);
-                loadData();
-              }}
+              variant="outline"
+              className="w-full justify-center gap-2 sm:w-auto"
+              onClick={closeReceiptView}
             >
-              Back to POS
+              <ArrowLeft size={16} /> Back to POS
             </Button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button onClick={() => window.print()}>Print Bill</Button>
+              <Button variant="outline" onClick={() => window.print()}>
+                Download PDF
+              </Button>
+            </div>
           </div>
-          <div className="print:block">
-            <ReceiptPrint data={receiptData} />
+          <div className="flex items-start justify-center p-4 md:p-10">
+            <div className="print:block">
+              <ReceiptPrint data={receiptData} />
+            </div>
           </div>
         </div>
       )}

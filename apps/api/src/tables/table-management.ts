@@ -123,6 +123,22 @@ export async function canCloseSession(
   const totalBills = parseInt(billsResult.rows[0].total_bills, 10);
   const paidBills = parseInt(billsResult.rows[0].paid_bills, 10);
   const unpaidBillCount = totalBills - paidBills;
+  const unpaidItemsResult = await client.query(
+    `SELECT COUNT(DISTINCT oi.order_item_id) AS billable_item_count
+     FROM order_items oi
+     JOIN orders o ON o.order_id = oi.order_id
+     LEFT JOIN kots k ON k.order_id = o.order_id
+     LEFT JOIN kot_items ki ON ki.kot_id = k.kot_id AND ki.item_id = oi.item_id
+     LEFT JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+     LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id AND ski.item_id = oi.item_id
+     WHERE o.session_id = $1
+       AND oi.billing_status = 'UNBILLED'
+       AND o.status <> 'cancelled'
+       AND COALESCE(ki.status, '') <> 'cancelled'
+       AND COALESCE(ski.status, '') <> 'cancelled'`,
+    [sessionId]
+  );
+  const billableItemCount = parseInt(unpaidItemsResult.rows[0].billable_item_count, 10);
   const billsPaid = totalBills > 0 && totalBills === paidBills;
 
   // 2. Fetch all KOT items for this session
@@ -144,10 +160,12 @@ export async function canCloseSession(
   }
   const allItemsComplete = activeItemCount === 0;
 
-  if (!billsPaid) {
+  if (!billsPaid && billableItemCount > 0) {
     return {
       canClose: false,
-      reason: `${unpaidBillCount} unpaid bill(s) remain for this session.`,
+      reason: totalBills === 0
+        ? 'Billable items remain for this session. Generate and settle the bill before freeing it.'
+        : `${unpaidBillCount} unpaid bill(s) remain for this session.`,
       activeItemCount,
       unpaidBillCount,
       billsPaid: false,
@@ -168,10 +186,12 @@ export async function canCloseSession(
 
   return {
     canClose: true,
-    reason: 'All bills paid and all items complete.',
+    reason: totalBills === 0
+      ? 'Only cancelled or non-billable items remain. Table can be freed.'
+      : 'All bills paid and all items complete.',
     activeItemCount: 0,
     unpaidBillCount: 0,
-    billsPaid: true,
+    billsPaid: billsPaid || billableItemCount === 0,
     allItemsComplete: true,
   };
 }
@@ -240,6 +260,23 @@ export async function canFreeTable(
       [tableId, occupiedSince]
     );
 
+    const legacyBillableItemsResult = await client.query(
+      `SELECT COUNT(DISTINCT oi.order_item_id) AS billable_item_count
+       FROM order_items oi
+       JOIN orders o ON o.order_id = oi.order_id
+       LEFT JOIN kots k ON k.order_id = o.order_id
+       LEFT JOIN kot_items ki ON ki.kot_id = k.kot_id AND ki.item_id = oi.item_id
+       LEFT JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+       LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id AND ski.item_id = oi.item_id
+       WHERE o.table_id = $1
+         AND ($2::timestamp IS NULL OR o.created_at >= $2::timestamp)
+         AND oi.billing_status = 'UNBILLED'
+         AND o.status <> 'cancelled'
+         AND COALESCE(ki.status, '') <> 'cancelled'
+         AND COALESCE(ski.status, '') <> 'cancelled'`,
+      [tableId, occupiedSince]
+    );
+
     const totalBills = parseInt(legacyBillsResult.rows[0].total_bills, 10);
     const paidBills = parseInt(legacyBillsResult.rows[0].paid_bills, 10);
     const pendingCount = parseInt(legacyItemsResult.rows[0].pending_count ?? '0', 10);
@@ -249,10 +286,11 @@ export async function canFreeTable(
     const recookCount = parseInt(legacyItemsResult.rows[0].recook_count ?? '0', 10);
     const activeItemCount = pendingCount + preparingCount + readyCount + packedCount + recookCount;
     const unpaidBillCount = totalBills - paidBills;
+    const billableItemCount = parseInt(legacyBillableItemsResult.rows[0].billable_item_count, 10);
     const billsPaid = totalBills > 0 && unpaidBillCount === 0;
     const allItemsComplete = activeItemCount === 0;
 
-    if (totalBills === 0) {
+    if (totalBills === 0 && billableItemCount > 0) {
       return {
         canFree: false,
         reason: 'No bill has been generated for this table. Generate and settle the bill before freeing it.',
@@ -261,10 +299,10 @@ export async function canFreeTable(
       };
     }
 
-    if (!billsPaid || !allItemsComplete) {
+    if ((!billsPaid && billableItemCount > 0) || !allItemsComplete) {
       return {
         canFree: false,
-        reason: !billsPaid
+        reason: !billsPaid && billableItemCount > 0
           ? `${unpaidBillCount || totalBills || 1} unpaid bill(s) remain for this table.`
           : `Active kitchen items remain: ${activeItemCount} item(s) are still preparing.`,
         pendingCount, preparingCount, readyCount, packedCount, recookCount,
@@ -278,7 +316,7 @@ export async function canFreeTable(
       pendingCount: 0, preparingCount: 0, readyCount: 0, packedCount: 0, recookCount: 0,
       activeItemCount: 0,
       unpaidBillCount: 0,
-      billsPaid: true,
+      billsPaid: billsPaid || billableItemCount === 0,
       allItemsComplete: true,
     };
   }
