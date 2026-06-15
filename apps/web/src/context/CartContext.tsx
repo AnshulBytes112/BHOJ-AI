@@ -92,6 +92,14 @@ export function CartProvider({ children, tableId }: { children: ReactNode; table
         const addon = item.addons?.find(a => a.name === extraName);
         if (addon) {
           itemPrice += Number(addon.price);
+        } else {
+          for (const group of item.customizable_options || []) {
+            const choice = (group.choices || []).find(c => c.name === extraName);
+            if (choice) {
+              itemPrice += Number(choice.price);
+              break;
+            }
+          }
         }
       });
     }

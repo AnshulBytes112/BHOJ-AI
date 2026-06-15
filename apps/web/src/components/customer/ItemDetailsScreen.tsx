@@ -82,7 +82,7 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
     return 0;
   };
 
-  const currentPrice = item.selling_price + selectedExtras.reduce((sum, extra) => sum + getExtraPrice(extra), 0);
+  const currentPrice = Number(item.selling_price) + selectedExtras.reduce((sum, extra) => sum + getExtraPrice(extra), 0);
 
   return (
     <div className="flex-grow flex flex-col bg-white">

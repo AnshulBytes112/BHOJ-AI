@@ -39,7 +39,13 @@ export default function CartScreen({
 
   const getExtraPrice = (item: CartItem, extraName: string) => {
     const addon = item.addons?.find(a => a.name === extraName);
-    return addon ? Number(addon.price) : 0;
+    if (addon) return Number(addon.price);
+
+    for (const group of item.customizable_options || []) {
+      const choice = (group.choices || []).find(c => c.name === extraName);
+      if (choice) return Number(choice.price);
+    }
+    return 0;
   };
 
   const cartItemSubtotal = (item: CartItem) => {
