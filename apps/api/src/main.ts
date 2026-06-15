@@ -14,6 +14,7 @@ import { ordersRouter } from './orders/orders.routes';
 import { kotsRouter } from './kots/kots.routes';
 import { sessionsRouter } from './sessions/sessions.routes';
 import { publicRouter } from './public/public.routes';
+import { extraChargesRouter } from './gst/extra-charges.routes';
 import { initializeWebSocket } from './websocket';
 
 dotenv.config();
@@ -82,6 +83,7 @@ app.use('/api/items', itemsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/bills', billsRouter);
 app.use('/api/gst-config', gstRouter);
+app.use('/api/extra-charges', extraChargesRouter);
 app.use('/api/receipt-layout', receiptRouter);
 app.use('/api/tables', tablesRouter);
 app.use('/api/orders', ordersRouter);

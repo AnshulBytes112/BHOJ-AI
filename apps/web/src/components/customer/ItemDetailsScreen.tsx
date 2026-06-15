@@ -16,6 +16,19 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
 
+  // Load default required options on mount
+  React.useEffect(() => {
+    const defaultExtras: string[] = [];
+    if (item.customizable_options) {
+      item.customizable_options.forEach(group => {
+        if (group.required && group.choices && group.choices.length > 0) {
+          defaultExtras.push(group.choices[0].name);
+        }
+      });
+    }
+    setSelectedExtras(defaultExtras);
+  }, [item]);
+
   const getCategoryEmoji = (catName: string) => {
     const name = catName.toLowerCase();
     if (name.includes('starter')) return '🍢';
@@ -31,7 +44,13 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
 
   const getExtraPrice = (extraName: string) => {
     const addon = addons.find(a => a.name === extraName);
-    return addon ? Number(addon.price) : 0;
+    if (addon) return Number(addon.price);
+
+    for (const group of item.customizable_options || []) {
+      const choice = (group.choices || []).find(c => c.name === extraName);
+      if (choice) return Number(choice.price);
+    }
+    return 0;
   };
 
   const currentPrice = item.selling_price + selectedExtras.reduce((sum, extra) => sum + getExtraPrice(extra), 0);
@@ -55,7 +74,7 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
       </div>
 
       {/* Details Panel */}
-      <div className="flex-1 p-5 space-y-6 overflow-y-auto">
+      <div className="flex-grow p-5 space-y-6 overflow-y-auto">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="w-3.5 h-3.5 border border-emerald-600 flex items-center justify-center shrink-0">
@@ -130,6 +149,62 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
             </div>
           </div>
         )}
+
+        {/* Dynamic Customizable Options */}
+        {item.customizable_options && item.customizable_options.map((group) => {
+          if (!group.choices || group.choices.length === 0) return null;
+          return (
+            <div key={group.name} className="space-y-3">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                {group.name}
+                {group.required && <span className="text-xs text-red-500 font-normal">(Required)</span>}
+              </h3>
+              <div className="space-y-2">
+                {group.choices.map((choice) => {
+                  const isSelected = selectedExtras.includes(choice.name);
+                  return (
+                    <label
+                      key={choice.name}
+                      className={cn(
+                        "flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition-all",
+                        isSelected ? "border-emerald-600 bg-emerald-50/20" : "border-stone-200"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type={group.type === 'single' ? 'radio' : 'checkbox'}
+                          name={`customer-group-${group.name}`}
+                          checked={isSelected}
+                          onChange={() => {
+                            if (group.type === 'single') {
+                              const groupChoices = group.choices.map(c => c.name);
+                              const filtered = selectedExtras.filter(e => !groupChoices.includes(e));
+                              setSelectedExtras([...filtered, choice.name]);
+                            } else {
+                              if (isSelected) {
+                                setSelectedExtras(selectedExtras.filter(e => e !== choice.name));
+                              } else {
+                                setSelectedExtras([...selectedExtras, choice.name]);
+                              }
+                            }
+                          }}
+                          className={cn(
+                            "w-4 h-4 text-emerald-850 accent-emerald-800 border-stone-300",
+                            group.type === 'single' ? 'rounded-full' : 'rounded'
+                          )}
+                        />
+                        <span className="text-sm font-semibold text-gray-700">{choice.name}</span>
+                      </div>
+                      {Number(choice.price) > 0 && (
+                        <span className="text-xs font-bold text-stone-500">+ ₹{choice.price}</span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Bottom Actions */}

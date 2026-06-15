@@ -15,6 +15,7 @@ interface ResponsiveTableProps<T> {
   mobileCardRender?: (row: T) => React.ReactNode;
   className?: string;
   loading?: boolean;
+  onRowClick?: (row: T) => void;
 }
 
 export function ResponsiveTable<T>({
@@ -24,6 +25,7 @@ export function ResponsiveTable<T>({
   mobileCardRender,
   className,
   loading = false,
+  onRowClick,
 }: ResponsiveTableProps<T>) {
   const { isMobile } = useBreakpoint();
 
@@ -85,7 +87,14 @@ export function ResponsiveTable<T>({
         </thead>
         <tbody>
           {data.map((row) => (
-            <tr key={rowKey(row)} className="bg-white border-b hover:bg-slate-50 transition-colors">
+            <tr 
+              key={rowKey(row)} 
+              onClick={() => onRowClick?.(row)}
+              className={cn(
+                "bg-white border-b hover:bg-slate-50 transition-colors",
+                onRowClick && "cursor-pointer"
+              )}
+            >
               {columns.map((col, idx) => {
                 const val = typeof col.accessor === 'function' 
                   ? col.accessor(row) 

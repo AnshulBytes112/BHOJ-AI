@@ -50,6 +50,12 @@ type CreatedBill = {
     grand_total: string;
     status: 'draft' | 'completed' | 'printed';
     created_at: string;
+    extra_charges?: Array<{
+      name: string;
+      charge_type: 'fixed' | 'percentage';
+      value: number;
+      amount: number;
+    }>;
   };
   items: Array<{
     id: number;
@@ -70,6 +76,7 @@ function money(value: number): string {
 export default function BillingPage() {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [gstMap, setGstMap] = useState<Record<string, number>>({});
+  const [extraCharges, setExtraCharges] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [billLines, setBillLines] = useState<BillDraftLine[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,24 +119,45 @@ export default function BillingPage() {
 
     const subtotal = lines.reduce((sum, line) => sum + line.unit_price * line.quantity, 0);
     const gstTotal = lines.reduce((sum, line) => sum + line.gst_amount, 0);
-    const grandTotal = subtotal + gstTotal;
+
+    let extraChargesTotal = 0;
+    const appliedExtraCharges = extraCharges.map((charge) => {
+      const val = Number(charge.value);
+      let amt = 0;
+      if (charge.charge_type === 'percentage') {
+        amt = subtotal * (val / 100);
+      } else {
+        amt = val;
+      }
+      extraChargesTotal += amt;
+      return {
+        name: charge.name,
+        charge_type: charge.charge_type,
+        value: val,
+        amount: amt,
+      };
+    });
+
+    const grandTotal = subtotal + gstTotal + extraChargesTotal;
 
     return {
       lines,
       subtotal,
       gstTotal,
       grandTotal,
+      appliedExtraCharges,
     };
-  }, [billLines, gstMap]);
+  }, [billLines, gstMap, extraCharges]);
 
   async function loadData() {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      const [itemResponse, gstResponse] = await Promise.all([
+      const [itemResponse, gstResponse, chargesResponse] = await Promise.all([
         apiClient.get<CatalogItem[]>('/items', { params: { is_active: 'true' } }),
         apiClient.get<GstConfig[]>('/gst-config'),
+        apiClient.get<any[]>('/extra-charges'),
       ]);
 
       const activeItems = (itemResponse.data ?? []).filter((item) => item.is_active);
@@ -140,6 +168,7 @@ export default function BillingPage() {
         nextGstMap[row.category.toLowerCase()] = Number(row.gst_percentage);
       }
       setGstMap(nextGstMap);
+      setExtraCharges((chargesResponse.data || []).filter((c: any) => c.is_active));
 
       // Load receipt layout
       try {
@@ -280,6 +309,7 @@ export default function BillingPage() {
         subtotal: createdBill.bill.subtotal,
         gst_total: createdBill.bill.gst_total,
         grand_total: createdBill.bill.grand_total,
+        extra_charges: createdBill.bill.extra_charges,
       };
 
       setReceiptData(data);
@@ -447,6 +477,12 @@ export default function BillingPage() {
                     <span className="text-muted-foreground">GST Total</span>
                     <span className="font-medium">{money(billPreview.gstTotal)}</span>
                   </div>
+                  {billPreview.appliedExtraCharges && billPreview.appliedExtraCharges.map((charge, idx) => (
+                    <div key={idx} className="flex justify-between text-sm text-purple-700">
+                      <span className="text-purple-700 font-medium">{charge.name}</span>
+                      <span className="font-medium">{money(charge.amount)}</span>
+                    </div>
+                  ))}
                   <div className="flex justify-between border-t pt-2 text-base font-semibold">
                     <span>Grand Total</span>
                     <span>{money(billPreview.grandTotal)}</span>

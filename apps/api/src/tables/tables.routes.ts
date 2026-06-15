@@ -579,7 +579,8 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
       ordersResult.rows.map(async (order: { order_id: string }) => {
         const itemsResult = await client.query(
           `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
-                  oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
+                  oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing,
+                  oi.extras, oi.spice_level
            FROM order_items oi
            LEFT JOIN items i ON i.id = oi.item_id
            WHERE oi.order_id = $1`,
@@ -625,7 +626,8 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
           legacyOrdersResult.rows.map(async (order: { order_id: string }) => {
             const itemsResult = await client.query(
               `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
-                      oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
+                      oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing,
+                      oi.extras, oi.spice_level
                FROM order_items oi
                LEFT JOIN items i ON i.id = oi.item_id
                WHERE oi.order_id = $1`,

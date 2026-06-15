@@ -43,7 +43,8 @@ export default function MenuScreen({
   const filteredMenuItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesCategory = !activeCategory || item.category === activeCategory;
+    const matchesCategory = !activeCategory || 
+                            (item.category && item.category.toLowerCase() === activeCategory.toLowerCase());
     return matchesSearch && matchesCategory;
   });
 

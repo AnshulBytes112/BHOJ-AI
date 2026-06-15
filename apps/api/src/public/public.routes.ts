@@ -354,6 +354,7 @@ publicRouter.get('/tables/:tableId/orders', async (req, res) => {
         const itemsResult = await client.query(
           `SELECT oi.order_item_id, oi.item_id, i.name as item_name,
                   oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing,
+                  oi.extras, oi.spice_level,
                   COALESCE(ki.status, 'pending') as item_status
            FROM order_items oi
            LEFT JOIN items i ON i.id = oi.item_id

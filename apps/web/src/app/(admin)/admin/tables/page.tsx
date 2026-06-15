@@ -88,8 +88,11 @@ export default function TablesPage() {
 
   const statusBadge = (status: string) => {
     if (status === 'free') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Free</Badge>;
-    if (status === 'occupied') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Occupied</Badge>;
-    return <Badge className="bg-blue-100 text-blue-700 border-blue-200">{status}</Badge>;
+    if (status === 'occupied') return <Badge className="bg-blue-100 text-blue-700 border-blue-200">Occupied</Badge>;
+    if (status === 'billing_done') return <Badge className="bg-purple-100 text-purple-700 border-purple-200">Bill Generated</Badge>;
+    if (status === 'waiting_for_service_completion') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Waiting for Service</Badge>;
+    if (status === 'ready_to_free') return <Badge className="bg-green-100 text-green-700 border-green-200">Ready to Free</Badge>;
+    return <Badge className="bg-slate-100 text-slate-700 border-slate-200">{status}</Badge>;
   };
 
   return (

@@ -4,6 +4,18 @@ import { pool } from '../db';
 
 type StockType = 'limited' | 'unlimited';
 
+type CustomizableOptionChoice = {
+  name: string;
+  price: number;
+};
+
+type CustomizableOptionGroup = {
+  name: string;
+  type: 'single' | 'multiple';
+  required: boolean;
+  choices: CustomizableOptionChoice[];
+};
+
 type ItemRow = {
   id: number;
   serial_number: string;
@@ -14,6 +26,7 @@ type ItemRow = {
   is_active: boolean;
   stock_type: StockType;
   image_url: string | null;
+  customizable_options?: CustomizableOptionGroup[];
   created_at: Date;
   updated_at: Date;
 };
@@ -27,6 +40,7 @@ type ItemPayload = {
   stock_type?: StockType;
   image_url?: string | null;
   addons?: Array<{ name: string; price: number }>;
+  customizable_options?: CustomizableOptionGroup[];
 };
 
 const IMMUTABLE_FIELDS = new Set(['id', 'serial_number', 'created_at', 'updated_at']);
@@ -39,6 +53,7 @@ const ALLOWED_MUTABLE_FIELDS = new Set([
   'stock_type',
   'image_url',
   'addons',
+  'customizable_options',
 ]);
 
 async function ensureCategoryExists(category: string): Promise<void> {
@@ -175,6 +190,51 @@ function parseItemPayload(rawBody: unknown, allowPartial: boolean): ItemPayload 
     });
   }
 
+  if ('customizable_options' in body) {
+    if (!Array.isArray(body.customizable_options)) {
+      throw new Error('customizable_options must be a valid array.');
+    }
+    parsed.customizable_options = body.customizable_options.map((group: any, gi) => {
+      if (!group || typeof group !== 'object') {
+        throw new Error(`Customizable option group at index ${gi} must be an object.`);
+      }
+      if (typeof group.name !== 'string' || group.name.trim().length === 0) {
+        throw new Error(`Customizable option group at index ${gi} must have a non-empty name.`);
+      }
+      if (group.type !== 'single' && group.type !== 'multiple') {
+        throw new Error(`Customizable option group at index ${gi} type must be 'single' or 'multiple'.`);
+      }
+      if (typeof group.required !== 'boolean') {
+        throw new Error(`Customizable option group at index ${gi} required must be a boolean.`);
+      }
+      if (!Array.isArray(group.choices)) {
+        throw new Error(`Customizable option group at index ${gi} must have a choices array.`);
+      }
+      const choices = group.choices.map((c: any, ci) => {
+        if (!c || typeof c !== 'object') {
+          throw new Error(`Choice at index ${ci} in group ${group.name} must be an object.`);
+        }
+        if (typeof c.name !== 'string' || c.name.trim().length === 0) {
+          throw new Error(`Choice at index ${ci} in group ${group.name} must have a non-empty name.`);
+        }
+        const p = Number(c.price);
+        if (!Number.isFinite(p) || p < 0) {
+          throw new Error(`Choice at index ${ci} in group ${group.name} must have a valid non-negative price.`);
+        }
+        return {
+          name: c.name.trim(),
+          price: Number(p.toFixed(2)),
+        };
+      });
+      return {
+        name: group.name.trim(),
+        type: group.type,
+        required: group.required,
+        choices,
+      };
+    });
+  }
+
   if (!allowPartial) {
     if (
       !parsed.name ||
@@ -206,8 +266,8 @@ itemsRouter.post('/', async (req, res) => {
 
     const result = await client.query<ItemRow>(
       `
-      INSERT INTO items (serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, image_url)
-      VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7, $8)
+      INSERT INTO items (serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, image_url, customizable_options)
+      VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7, $8, $9)
       RETURNING *;
       `,
       [
@@ -219,6 +279,7 @@ itemsRouter.post('/', async (req, res) => {
         payload.is_active,
         payload.stock_type,
         payload.image_url ?? null,
+        JSON.stringify(payload.customizable_options ?? []),
       ]
     );
 
@@ -347,7 +408,11 @@ itemsRouter.put('/:id', async (req, res) => {
     for (const [key, value] of allowedEntries) {
       if (key === 'addons') continue;
       updates.push(`${key} = $${values.length + 1}`);
-      values.push(value);
+      if (key === 'customizable_options') {
+        values.push(JSON.stringify(value));
+      } else {
+        values.push(value);
+      }
     }
 
     let updatedItem: any;

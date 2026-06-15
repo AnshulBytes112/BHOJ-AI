@@ -60,6 +60,9 @@ function getTimestampColumnForStatus(status: string): string | null {
 function deriveKotStatusFromItems(itemStatuses: string[]): string {
   if (itemStatuses.length === 0) return 'pending';
   
+  const allCancelled = itemStatuses.every(s => s === 'cancelled');
+  if (allCancelled) return 'cancelled';
+  
   const allTerminal = itemStatuses.every(s => ['served', 'delivered', 'cancelled'].includes(s));
   if (allTerminal) return 'completed';
   
@@ -78,11 +81,14 @@ function deriveKotStatusFromItems(itemStatuses: string[]): string {
 function deriveParentKotStatusFromSections(sectionStatuses: string[]): string {
   if (sectionStatuses.length === 0) return 'pending';
 
-  if (sectionStatuses.every(s => s === 'completed' || s === 'served')) {
+  const allCancelled = sectionStatuses.every(s => s === 'cancelled');
+  if (allCancelled) return 'cancelled';
+
+  if (sectionStatuses.every(s => s === 'completed' || s === 'served' || s === 'cancelled')) {
     return 'completed';
   }
 
-  if (sectionStatuses.every(s => ['ready', 'completed', 'served'].includes(s))) {
+  if (sectionStatuses.every(s => ['ready', 'completed', 'served', 'cancelled'].includes(s))) {
     return 'ready';
   }
 
@@ -96,11 +102,14 @@ function deriveParentKotStatusFromSections(sectionStatuses: string[]): string {
 function deriveOrderStatusFromParentKots(kotStatuses: string[]): string {
   if (kotStatuses.length === 0) return 'sent_to_kitchen';
 
-  if (kotStatuses.every(s => s === 'completed' || s === 'served')) {
+  const allCancelled = kotStatuses.every(s => s === 'cancelled');
+  if (allCancelled) return 'cancelled';
+
+  if (kotStatuses.every(s => s === 'completed' || s === 'served' || s === 'cancelled')) {
     return 'completed';
   }
 
-  if (kotStatuses.every(s => ['ready', 'completed', 'served'].includes(s))) {
+  if (kotStatuses.every(s => ['ready', 'completed', 'served', 'cancelled'].includes(s))) {
     return 'ready';
   }
 
@@ -136,13 +145,9 @@ kotsRouter.get('/', async (req, res) => {
   }
 });
 
-// ⚠️  IMPORTANT: These specific-path routes MUST come before /:kotId/sections
-// to prevent Express from matching "sections" as a kotId parameter.
 
-// GET /kots/sections/list - list all kitchen sections with their active KOTs count
 kotsRouter.get('/sections/list', async (req, res) => {
   try {
-    // First try: get categories and count pending KOTs per category
     try {
       const result = await pool.query(
         `SELECT c.name as section_id, c.name as section_name,

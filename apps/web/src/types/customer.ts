@@ -5,6 +5,18 @@ export interface Addon {
   is_active?: boolean;
 }
 
+export interface CustomizableChoice {
+  name: string;
+  price: number | string;
+}
+
+export interface CustomizableOptionGroup {
+  name: string;
+  type: 'single' | 'multiple';
+  required: boolean;
+  choices: CustomizableChoice[];
+}
+
 export interface MenuItem {
   id: number;
   serial_number: string;
@@ -16,6 +28,7 @@ export interface MenuItem {
   stock_quantity?: number;
   stock_type?: string;
   addons?: Addon[];
+  customizable_options?: CustomizableOptionGroup[];
 }
 
 export interface CartItem extends MenuItem {

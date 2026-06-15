@@ -24,7 +24,9 @@ import {
   Upload,
   X,
   ImageIcon,
-  UtensilsCrossed
+  UtensilsCrossed,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,6 +49,18 @@ type MenuCategory = {
   defaultGst: number;
 };
 
+type CustomizableOptionChoice = {
+  name: string;
+  price: string;
+};
+
+type CustomizableOptionGroup = {
+  name: string;
+  type: 'single' | 'multiple';
+  required: boolean;
+  choices: CustomizableOptionChoice[];
+};
+
 type MenuItem = {
   id: string;
   categoryId: string;
@@ -60,9 +74,15 @@ type MenuItem = {
   stockType: 'limited' | 'unlimited';
   stockQuantity: number;
   addons?: Array<{ id?: number; name: string; price: number; is_active?: boolean }>;
+  customizable_options?: CustomizableOptionGroup[];
 };
 
-type CartItem = MenuItem & { quantity: number };
+type CartItem = MenuItem & { 
+  quantity: number; 
+  extras?: string[]; 
+  spiceLevel?: string | null; 
+  cartKey: string; 
+};
 
 type AddonForm = {
   name: string;
@@ -79,6 +99,7 @@ type ItemForm = {
   is_active: boolean;
   image_url: string | null;
   addons: AddonForm[];
+  customizable_options: CustomizableOptionGroup[];
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -90,6 +111,7 @@ const EMPTY_FORM: ItemForm = {
   is_active: true,
   image_url: null,
   addons: [],
+  customizable_options: [],
 };
 
 const MAX_IMAGE_SIZE_KB = 500;
@@ -161,6 +183,7 @@ export default function POSTerminal() {
   const [selectedTable, setSelectedTable] = useState('');
   const [selectedTableLabel, setSelectedTableLabel] = useState('Select Table');
   const [dbTables, setDbTables] = useState<{ table_id: string; table_number: string; status: string }[]>([]);
+  const [extraCharges, setExtraCharges] = useState<any[]>([]);
   const [existingOrders, setExistingOrders] = useState<any[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [unbilledItems, setUnbilledItems] = useState<any[]>([]);
@@ -190,6 +213,12 @@ export default function POSTerminal() {
   const [isFreeTableDialogOpen, setIsFreeTableDialogOpen] = useState(false);
   const [autoRedirectTimer, setAutoRedirectTimer] = useState<number | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isTableSelectionExpanded, setIsTableSelectionExpanded] = useState(true);
+
+  // Item configuration states
+  const [configuringItem, setConfiguringItem] = useState<MenuItem | null>(null);
+  const [itemSpiceLevel, setItemSpiceLevel] = useState<'Mild' | 'Medium' | 'Hot'>('Medium');
+  const [itemSelectedExtras, setItemSelectedExtras] = useState<string[]>([]);
 
   // Catalog CRUD states
   const [isSaving, setIsSaving] = useState(false);
@@ -225,14 +254,16 @@ export default function POSTerminal() {
 
   const loadData = async () => {
     try {
-      const [catsResp, itemsResp, tablesResp] = await Promise.all([
+      const [catsResp, itemsResp, tablesResp, chargesResp] = await Promise.all([
         apiClient.get<Array<{ id: number; name: string }>>('/categories'),
         apiClient.get<Array<{
           id: number; category: string; name: string; selling_price: string;
           stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
           addons?: any[];
+          customizable_options?: any[];
         }>>('/items'),
         apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables'),
+        apiClient.get<any[]>('/extra-charges'),
       ]);
 
       // Auto-seed tables 1-10 if DB has none
@@ -260,10 +291,12 @@ export default function POSTerminal() {
         image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
           ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
         addons: item.addons || [],
+        customizable_options: item.customizable_options || [],
       }));
 
       const tables = tablesResp.data ?? [];
       setDbTables(tables);
+      setExtraCharges((chargesResp.data || []).filter((c: any) => c.is_active));
       // Auto-select first free table
       const firstFree = tables.find(t => t.status === 'free');
       if (firstFree) {
@@ -422,6 +455,12 @@ export default function POSTerminal() {
       is_active: item.isAvailable,
       image_url: item.image || null,
       addons: (item.addons || []).map(a => ({ name: a.name, price: String(a.price) })),
+      customizable_options: (item.customizable_options || []).map(group => ({
+        name: group.name,
+        type: group.type,
+        required: group.required,
+        choices: (group.choices || []).map(c => ({ name: c.name, price: String(c.price) })),
+      })),
     });
     setFormErrors({});
     setImagePreview(item.image || null);
@@ -454,6 +493,12 @@ export default function POSTerminal() {
       stock_type: form.stock_type,
       image_url: form.image_url,
       addons: form.addons.map(a => ({ name: a.name.trim(), price: Number(a.price) })),
+      customizable_options: form.customizable_options.map(group => ({
+        name: group.name.trim(),
+        type: group.type,
+        required: group.required,
+        choices: group.choices.map(c => ({ name: c.name.trim(), price: Number(c.price) })),
+      })),
       ...(editingItem ? { is_active: form.is_active } : {}),
     };
     try {
@@ -521,10 +566,14 @@ export default function POSTerminal() {
   }
 
   useEffect(() => {
-    console.log('Filtering items - Active Category:', activeCategory, 'Search Query:', searchQuery);
+    console.log('Filtering items - Active Category:', activeCategory, 'Search Query:', searchQuery, 'Edit Mode:', isEditMode);
     console.log('Total items available:', items.length);
     
     let result = items;
+    if (!isEditMode) {
+      result = result.filter(item => item.isAvailable);
+      console.log('Items after active status filter:', result.length);
+    }
     if (activeCategory !== 'all') {
       result = result.filter(item => item.categoryId === activeCategory);
       console.log('Items after category filter:', result.length);
@@ -537,35 +586,53 @@ export default function POSTerminal() {
     }
     setFilteredItems(result);
     console.log('Final filtered items:', result);
-  }, [activeCategory, searchQuery, items, categories]);
+  }, [activeCategory, searchQuery, items, categories, isEditMode]);
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = (item: MenuItem, spiceLevel: string = 'Medium', selectedExtras: string[] = []) => {
     if (item.stockType === 'limited') {
-      const existingQty = cart.find((i) => i.id === item.id)?.quantity ?? 0;
+      const existingQty = cart.filter((i) => i.id === item.id).reduce((sum, i) => sum + i.quantity, 0);
       if (existingQty >= item.stockQuantity) {
         return;
       }
     }
 
-    console.log('Adding item to cart:', item);
-    setCart(prev => {
-      const existing = prev.find(i => i.id === item.id);
-      if (existing) {
-        console.log('Item already exists, updating quantity');
-        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+    const extrasKey = [...selectedExtras].sort().join(',');
+    const cartKey = `${item.id}-${spiceLevel}-${extrasKey}`;
+
+    // Add extra price to item price
+    const extraPriceSum = selectedExtras.reduce((sum, extraName) => {
+      // Look in addons
+      const addon = (item.addons || []).find(a => a.name === extraName);
+      if (addon) return sum + Number(addon.price);
+
+      // Look in customizable_options
+      for (const group of item.customizable_options || []) {
+        const choice = (group.choices || []).find(c => c.name === extraName);
+        if (choice) return sum + Number(choice.price);
       }
-      console.log('Adding new item to cart');
-      return [...prev, { ...item, quantity: 1 }];
+      return sum;
+    }, 0);
+    const finalPrice = item.price + extraPriceSum;
+
+    console.log('Adding item to cart with options:', item.name, spiceLevel, selectedExtras);
+    setCart(prev => {
+      const existing = prev.find(i => i.cartKey === cartKey);
+      if (existing) {
+        console.log('Matching configured item already exists, updating quantity');
+        return prev.map(i => i.cartKey === cartKey ? { ...i, quantity: i.quantity + 1 } : i);
+      }
+      console.log('Adding new configured item to cart');
+      return [...prev, { ...item, price: finalPrice, quantity: 1, spiceLevel, extras: selectedExtras, cartKey }];
     });
   };
 
-  const removeFromCart = (itemId: string) => {
-    setCart(prev => prev.filter(i => i.id !== itemId));
+  const removeFromCart = (cartKey: string) => {
+    setCart(prev => prev.filter(i => i.cartKey !== cartKey));
   };
 
-  const updateQuantity = (itemId: string, delta: number) => {
+  const updateQuantity = (cartKey: string, delta: number) => {
     setCart(prev => prev.map(i => {
-      if (i.id === itemId) {
+      if (i.cartKey === cartKey) {
         const maxQty = i.stockType === 'limited' ? i.stockQuantity : Number.MAX_SAFE_INTEGER;
         const newQty = Math.max(0, Math.min(maxQty, i.quantity + delta));
         return { ...i, quantity: newQty };
@@ -642,8 +709,26 @@ export default function POSTerminal() {
       totalGst += itemGst;
     });
     
+    let extraChargesTotal = 0;
+    const appliedExtraCharges = extraCharges.map((charge) => {
+      const val = Number(charge.value);
+      let amt = 0;
+      if (charge.charge_type === 'percentage') {
+        amt = subtotalAfterDiscount * (val / 100);
+      } else {
+        amt = val;
+      }
+      extraChargesTotal += amt;
+      return {
+        name: charge.name,
+        charge_type: charge.charge_type,
+        value: val,
+        amount: amt,
+      };
+    });
+
     const cgstSGST = totalGst / 2;
-    const total = subtotalAfterDiscount + totalGst;
+    const total = subtotalAfterDiscount + totalGst + extraChargesTotal;
 
     return { 
       subtotal,
@@ -652,9 +737,10 @@ export default function POSTerminal() {
       totalGst, 
       cgstSGST,
       total,
-      gstBreakdown
+      gstBreakdown,
+      appliedExtraCharges
     };
-  }, [cart, unbilledItems, discountType, discountValue, gstRates]);
+  }, [cart, unbilledItems, discountType, discountValue, gstRates, extraCharges]);
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!selectedTable) {
@@ -670,7 +756,12 @@ export default function POSTerminal() {
     try {
       // POST to real DB via API
       const result = await apiClient.post(`/tables/${selectedTable}/orders`, {
-        items: cart.map(item => ({ id: Number(item.id), quantity: item.quantity })),
+        items: cart.map(item => ({
+          id: Number(item.id),
+          quantity: item.quantity,
+          extras: item.extras || [],
+          spiceLevel: item.spiceLevel || null
+        })),
       });
       const newOrderId = result.data.order_id;
       setOrderId(newOrderId);
@@ -737,7 +828,12 @@ export default function POSTerminal() {
       const orderIds = existingOrders.map(o => o.order_id);
       if (cart.length > 0) {
         const orderResult = await apiClient.post(`/tables/${selectedTable}/orders`, {
-          items: cart.map(item => ({ id: Number(item.id), quantity: item.quantity })),
+          items: cart.map(item => ({
+            id: Number(item.id),
+            quantity: item.quantity,
+            extras: item.extras || [],
+            spiceLevel: item.spiceLevel || null
+          })),
         });
         const newOrderId = orderResult.data.order_id;
         orderIds.push(newOrderId);
@@ -779,7 +875,8 @@ export default function POSTerminal() {
         })),
         subtotal: billData.bill.subtotal,
         gst_total: billData.bill.gst_total,
-        grand_total: billData.bill.grand_total
+        grand_total: billData.bill.grand_total,
+        extra_charges: billData.bill.extra_charges
       };
 
       setReceiptData(data);
@@ -855,7 +952,8 @@ export default function POSTerminal() {
               <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
-                  const isInCart = cart.find(cartItem => cartItem.id === item.id);
+                  const inCartQty = cart.filter(cartItem => cartItem.id === item.id).reduce((sum, i) => sum + i.quantity, 0);
+                  const isInCart = inCartQty > 0;
                   return (
                     <Card 
                       key={item.id}
@@ -870,9 +968,9 @@ export default function POSTerminal() {
                         !isEditMode && isInCart ? "ring-2 ring-blue-500" : ""
                       )}
                     >
-                      {isInCart && !isEditMode && (
+                      {inCartQty > 0 && !isEditMode && (
                         <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
-                          {isInCart.quantity}
+                          {inCartQty}
                         </div>
                       )}
                       
@@ -909,33 +1007,21 @@ export default function POSTerminal() {
                               <Pencil size={12} /> Edit Item & Addons
                             </button>
                           ) : (
-                            isInCart ? (
-                              <div className="flex items-center gap-1">
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateQuantity(item.id, -1);
-                                  }}
-                                  className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                                >
-                                  <Minus size={10} />
-                                </button>
-                                <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateQuantity(item.id, 1);
-                                  }}
-                                  className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                                >
-                                  <Plus size={10} />
-                                </button>
-                              </div>
-                            ) : (
+                            item.isAvailable && (
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  addToCart(item);
+                                  setItemSpiceLevel('Medium');
+                                  const defaultExtras: string[] = [];
+                                  if (item.customizable_options) {
+                                    item.customizable_options.forEach(group => {
+                                      if (group.required && group.choices && group.choices.length > 0) {
+                                        defaultExtras.push(group.choices[0].name);
+                                      }
+                                    });
+                                  }
+                                  setItemSelectedExtras(defaultExtras);
+                                  setConfiguringItem(item);
                                 }}
                                 className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
                               >
@@ -1028,7 +1114,8 @@ export default function POSTerminal() {
               <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
-                  const isInCart = cart.find(cartItem => cartItem.id === item.id);
+                  const inCartQty = cart.filter(cartItem => cartItem.id === item.id).reduce((sum, i) => sum + i.quantity, 0);
+                  const isInCart = inCartQty > 0;
                   const categoryLabel = categories.find(cat => cat.id === item.categoryId)?.name ?? 'Uncategorized';
 
                   return (
@@ -1045,9 +1132,9 @@ export default function POSTerminal() {
                         !isEditMode && isInCart ? "ring-2 ring-blue-500" : ""
                       )}
                     >
-                      {isInCart && !isEditMode && (
+                      {inCartQty > 0 && !isEditMode && (
                         <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
-                          {isInCart.quantity}
+                          {inCartQty}
                         </div>
                       )}
                       
@@ -1097,39 +1184,25 @@ export default function POSTerminal() {
                             </button>
                           ) : (
                             item.isAvailable && (
-                              isInCart ? (
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateQuantity(item.id, -1);
-                                    }}
-                                    className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                                  >
-                                    <Minus size={10} />
-                                  </button>
-                                  <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateQuantity(item.id, 1);
-                                    }}
-                                    className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
-                                  >
-                                    <Plus size={10} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    addToCart(item);
-                                  }}
-                                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
-                                >
-                                  Add to Cart
-                                </button>
-                              )
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setItemSpiceLevel('Medium');
+                                  const defaultExtras: string[] = [];
+                                  if (item.customizable_options) {
+                                    item.customizable_options.forEach(group => {
+                                      if (group.required && group.choices && group.choices.length > 0) {
+                                        defaultExtras.push(group.choices[0].name);
+                                      }
+                                    });
+                                  }
+                                  setItemSelectedExtras(defaultExtras);
+                                  setConfiguringItem(item);
+                                }}
+                                className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                              >
+                                Add to Cart
+                              </button>
                             )
                           )}
                         </div>
@@ -1145,8 +1218,8 @@ export default function POSTerminal() {
         return (
           <div className="flex flex-col gap-4 h-full">
             {/* Selected Items with Bill Layout */}
-            <Card className="border shadow-sm flex-1">
-              <CardHeader className="pb-3">
+            <Card className="border shadow-sm flex-1 flex flex-col min-h-0">
+              <CardHeader className="pb-3 shrink-0">
                 <div className="flex justify-between items-center">
                   <CardTitle className="text-lg">Current Bill</CardTitle>
                   <Button variant="outline" size="sm" onClick={() => setActiveWorkflow('categories')} className="gap-2">
@@ -1154,7 +1227,7 @@ export default function POSTerminal() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 flex-1 overflow-y-auto pr-1 scrollbar-thin">
                 {/* Table Header */}
                 <div className="grid grid-cols-12 text-sm font-medium text-gray-600 pb-2 border-b">
                   <div className="col-span-6">Item</div>
@@ -1169,16 +1242,20 @@ export default function POSTerminal() {
                     const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                     const itemSubtotal = item.price * item.quantity;
                     return (
-                      <div key={item.id} className="grid grid-cols-12 items-center py-2 border-b">
+                      <div key={item.cartKey} className="grid grid-cols-12 items-center py-2 border-b">
                         <div className="col-span-6">
                           <h4 className="font-medium text-sm">{item.name}</h4>
+                          <p className="text-xs text-gray-500">
+                            {item.spiceLevel ? `Spice: ${item.spiceLevel}` : ''}
+                            {item.extras && item.extras.length > 0 ? ` | Extras: ${item.extras.join(', ')}` : ''}
+                          </p>
                           <p className="text-xs text-gray-500">GST: {itemGstRate}%</p>
                         </div>
                         <div className="col-span-2 text-center text-sm">{item.quantity}</div>
                         <div className="col-span-2 text-right text-sm">Rs {item.price}</div>
                         <div className="col-span-2 text-right flex items-center justify-between">
                           <span className="font-semibold text-sm">Rs {itemSubtotal.toFixed(2)}</span>
-                          <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700 ml-2">
+                          <button onClick={() => removeFromCart(item.cartKey)} className="text-red-500 hover:text-red-700 ml-2">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -1298,9 +1375,17 @@ export default function POSTerminal() {
 
               <div className="space-y-2 mb-4">
                 {cart.map(item => (
-                  <div key={item.id} className="flex justify-between text-sm">
-                    <span>{item.name} x {item.quantity}</span>
-                    <span>Rs {(item.price * item.quantity).toFixed(2)}</span>
+                  <div key={item.cartKey} className="text-sm">
+                    <div className="flex justify-between">
+                      <span>{item.name} x {item.quantity}</span>
+                      <span>Rs {(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                    {(item.spiceLevel || (item.extras && item.extras.length > 0)) && (
+                      <div className="text-[10px] text-gray-500 pl-2">
+                        {item.spiceLevel ? `Spice: ${item.spiceLevel}` : ''}
+                        {item.extras && item.extras.length > 0 ? ` | Extras: ${item.extras.join(', ')}` : ''}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1325,6 +1410,12 @@ export default function POSTerminal() {
                   <span>SGST</span>
                   <span>Rs {totals.cgstSGST.toFixed(2)}</span>
                 </div>
+                {totals.appliedExtraCharges && totals.appliedExtraCharges.map((charge: any, idx: number) => (
+                  <div key={idx} className="flex justify-between text-gray-700">
+                    <span>{charge.name}</span>
+                    <span>Rs {charge.amount.toFixed(2)}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
                   <span>TOTAL</span>
                   <span className="text-primary">Rs {totals.total.toFixed(2)}</span>
@@ -1364,14 +1455,18 @@ export default function POSTerminal() {
   const renderSidebar = () => {
     if (activeWorkflow === 'categories' || activeWorkflow === 'catalog' || activeWorkflow === 'summary') {
       return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col min-h-full">
           {/* Table Management Section - Based on Workflow Diagram */}
-          <div className="border-b bg-white p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold flex items-center gap-2">
+          <div className="border-b bg-white p-3">
+            <div className="flex items-center justify-between mb-2">
+              <button 
+                onClick={() => setIsTableSelectionExpanded(!isTableSelectionExpanded)}
+                className="text-sm font-bold flex items-center gap-2 text-gray-800 hover:text-blue-600 transition-colors"
+              >
                 <UtensilsCrossed size={14} className="text-blue-500" />
                 Table Selection
-              </h3>
+                {isTableSelectionExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
               <Button 
                 variant="ghost" 
                 size="icon" 
@@ -1382,71 +1477,84 @@ export default function POSTerminal() {
               </Button>
             </div>
             
-            <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-1 scrollbar-thin">
-              {dbTables.map((t) => {
-                let tableColorClass = "bg-white text-gray-600 border-gray-200 hover:border-blue-300";
-                let dotColorClass = "bg-emerald-500";
-                
-                if (selectedTable === t.table_id) {
-                  tableColorClass = "bg-blue-500 text-white border-blue-600 shadow-sm scale-95";
-                  dotColorClass = "bg-white";
-                } else if (t.status === 'billing_done') {
-                  tableColorClass = "bg-purple-50 text-purple-600 border-purple-200";
-                  dotColorClass = "bg-purple-500";
-                } else if (t.status !== 'free') {
-                  tableColorClass = "bg-amber-50 text-amber-600 border-amber-200";
-                  dotColorClass = "bg-amber-500";
-                }
+            {isTableSelectionExpanded && (
+              <>
+                <div className="grid grid-cols-4 gap-1.5 max-h-24 overflow-y-auto pr-1 scrollbar-thin">
+                  {dbTables.map((t) => {
+                    let tableColorClass = "bg-white text-gray-600 border-gray-200 hover:border-blue-300";
+                    let dotColorClass = "bg-emerald-500";
+                    
+                    if (selectedTable === t.table_id) {
+                      tableColorClass = "bg-blue-500 text-white border-blue-600 shadow-sm scale-95";
+                      dotColorClass = "bg-white";
+                    } else if (t.status === 'billing_done') {
+                      tableColorClass = "bg-purple-50 text-purple-600 border-purple-200";
+                      dotColorClass = "bg-purple-500";
+                    } else if (t.status === 'ready_to_free') {
+                      tableColorClass = "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100";
+                      dotColorClass = "bg-emerald-500";
+                    } else if (t.status === 'waiting_for_service_completion') {
+                      tableColorClass = "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100";
+                      dotColorClass = "bg-blue-500";
+                    } else if (t.status === 'occupied') {
+                      tableColorClass = "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100";
+                      dotColorClass = "bg-amber-500";
+                    } else if (t.status !== 'free') {
+                      tableColorClass = "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100";
+                      dotColorClass = "bg-amber-500";
+                    }
 
-                return (
-                  <button
-                    key={t.table_id}
-                    onClick={() => {
-                      setSelectedTable(t.table_id);
-                      setSelectedTableLabel(`Table ${t.table_number}`);
-                    }}
-                    className={cn(
-                      "flex flex-col items-center justify-center py-2 rounded-md border transition-all text-[10px] font-bold",
-                      tableColorClass
-                    )}
-                  >
-                    <span className="text-xs">T{t.table_number}</span>
-                    <div className={cn("w-1.5 h-1.5 rounded-full mt-1", dotColorClass)} />
-                  </button>
-                );
-              })}
-            </div>
+                    return (
+                      <button
+                        key={t.table_id}
+                        onClick={() => {
+                          setSelectedTable(t.table_id);
+                          setSelectedTableLabel(`Table ${t.table_number}`);
+                        }}
+                        className={cn(
+                          "flex flex-col items-center justify-center py-1.5 rounded-md border transition-all text-[10px] font-bold",
+                          tableColorClass
+                        )}
+                      >
+                        <span className="text-xs">T{t.table_number}</span>
+                        <div className={cn("w-1.5 h-1.5 rounded-full mt-0.5", dotColorClass)} />
+                      </button>
+                    );
+                  })}
+                </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Order Type</label>
-                <select 
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
-                  value={orderType}
-                  onChange={(e) => setOrderType(e.target.value)}
-                >
-                  <option>Dine In</option>
-                  <option>Take Away</option>
-                  <option>Delivery</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Waiter</label>
-                <select 
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
-                  value={selectedWaiter}
-                  onChange={(e) => setSelectedWaiter(e.target.value)}
-                >
-                  <option>John Paul</option>
-                  <option>Sarah Doe</option>
-                </select>
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Order Type</label>
+                    <select 
+                      className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
+                      value={orderType}
+                      onChange={(e) => setOrderType(e.target.value)}
+                    >
+                      <option>Dine In</option>
+                      <option>Take Away</option>
+                      <option>Delivery</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Waiter</label>
+                    <select 
+                      className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
+                      value={selectedWaiter}
+                      onChange={(e) => setSelectedWaiter(e.target.value)}
+                    >
+                      <option>John Paul</option>
+                      <option>Sarah Doe</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Order Summary Section with Items */}
           <div className="flex-1 border-b bg-white flex flex-col min-h-0">
-            <div className="p-4 border-b flex items-center justify-between">
+            <div className="p-4 border-b flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold flex items-center gap-2">
                 <ShoppingCart size={14} className="text-blue-500" />
                 Current Order
@@ -1460,7 +1568,7 @@ export default function POSTerminal() {
             
             {/* Running Orders for Occupied Table */}
             {existingOrders.length > 0 && (
-              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 max-h-40 overflow-y-auto">
+              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 max-h-40 overflow-y-auto shrink-0">
                 <h4 className="text-[10px] font-bold text-amber-800 uppercase mb-2 flex items-center justify-between">
                   Running Orders
                   <span className="bg-amber-200 text-amber-800 px-1.5 rounded-full">{existingOrders.length}</span>
@@ -1486,7 +1594,7 @@ export default function POSTerminal() {
               </div>
             )}
             {isLoadingOrders && (
-              <div className="p-4 text-center">
+              <div className="p-4 text-center shrink-0">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mx-auto" />
                 <p className="text-[10px] text-gray-400 mt-1">Loading running orders...</p>
               </div>
@@ -1501,31 +1609,35 @@ export default function POSTerminal() {
                   const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
                   const itemSubtotal = item.price * item.quantity;
                   return (
-                    <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 bg-gray-50 rounded gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium truncate">{item.name}</h4>
-                        <p className="text-xs text-gray-500">Rs {item.price}</p>
+                    <div key={item.cartKey} className="flex flex-col p-2.5 bg-gray-50 rounded gap-2">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-semibold text-gray-900 leading-snug">{item.name}</h4>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          {item.spiceLevel ? `Spice: ${item.spiceLevel}` : ''}
+                          {item.extras && item.extras.length > 0 ? ` | Extras: ${item.extras.join(', ')}` : ''}
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">Rs {item.price}</p>
                       </div>
-                      <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 mt-1 sm:mt-0 border-gray-200/60">
+                      <div className="flex items-center justify-between gap-3 border-t pt-2 border-gray-200/60">
                         <div className="flex items-center gap-1 bg-white border rounded p-0.5">
                           <button 
-                            onClick={() => updateQuantity(item.id, -1)}
+                            onClick={() => updateQuantity(item.cartKey, -1)}
                             className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
                           >
                             <Minus size={12} />
                           </button>
                           <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
                           <button 
-                            onClick={() => updateQuantity(item.id, 1)}
+                            onClick={() => updateQuantity(item.cartKey, 1)}
                             className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
                           >
                             <Plus size={12} />
                           </button>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-gray-900 min-w-[70px] text-right">Rs {itemSubtotal.toFixed(2)}</span>
+                          <span className="text-sm font-bold text-gray-900">Rs {itemSubtotal.toFixed(2)}</span>
                           <button 
-                            onClick={() => removeFromCart(item.id)}
+                            onClick={() => removeFromCart(item.cartKey)}
                             className="text-red-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"
                           >
                             <Trash2 size={14} />
@@ -1540,82 +1652,104 @@ export default function POSTerminal() {
           </div>
 
           {/* Place Order Section */}
-          <div className="bg-white p-4 border-t space-y-3">
+          <div className="bg-white p-3 border-t space-y-2">
             {/* Totals moved here */}
-            <div className="space-y-2 mb-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal</span>
+            <div className="space-y-1.5 mb-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Subtotal</span>
                 <span className="font-medium">Rs {totals.subtotal.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">GST</span>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">GST</span>
                 <span className="font-medium">Rs {totals.totalGst.toFixed(2)}</span>
               </div>
               {discountValue > 0 && (
-                <div className="flex justify-between text-sm text-green-600">
+                <div className="flex justify-between text-xs text-green-600">
                   <span>Discount</span>
                   <span className="font-medium">-Rs {totals.discountAmount.toFixed(2)}</span>
                 </div>
               )}
+              {totals.appliedExtraCharges && totals.appliedExtraCharges.map((charge: any, idx: number) => (
+                <div key={idx} className="flex justify-between text-xs text-purple-700">
+                  <span>{charge.name}</span>
+                  <span className="font-medium">Rs {charge.amount.toFixed(2)}</span>
+                </div>
+              ))}
               
-              <div className="pt-2 border-t">
+              <div className="pt-1.5 border-t">
                 <div className="flex justify-between font-bold">
-                  <span>Total</span>
-                  <span className="text-blue-600 text-lg">Rs {totals.total.toFixed(2)}</span>
+                  <span className="text-sm">Total</span>
+                  <span className="text-blue-600 text-base">Rs {totals.total.toFixed(2)}</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-2">
+              <div className="grid grid-cols-2 gap-2 pt-1.5">
                 <Button 
                   variant="outline" 
-                  className="w-full justify-center gap-2 h-8 text-[10px]"
+                  className="w-full justify-center gap-1.5 h-7 text-[10px]"
                   onClick={() => setShowWipDialog(true)}
                 >
-                  <CheckCircle2 size={12} /> View Details
+                  <CheckCircle2 size={11} /> View Details
                 </Button>
                 <Button 
                   variant="outline" 
-                  className="w-full justify-center gap-2 h-8 text-[10px]"
+                  className="w-full justify-center gap-1.5 h-7 text-[10px]"
                   onClick={() => setShowWipDialog(true)}
                 >
-                  <Percent size={12} /> GST Rates
+                  <Percent size={11} /> GST Rates
                 </Button>
               </div>
             </div>
 
             {orderError && (
-              <p className="text-xs text-red-500 text-center">{orderError}</p>
+              <p className="text-[11px] text-red-500 text-center">{orderError}</p>
             )}
-            <Button 
-              onClick={handlePlaceOrder}
-              disabled={cart.length === 0 || isPlacingOrder || !selectedTable || Boolean(tableBilling?.isBillPaid)}
-              className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white font-semibold"
-            >
-              {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
-            </Button>
-            <Button 
-              onClick={() => setIsPreviewOpen(true)}
-              disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable || Boolean(tableBilling?.isBillPaid)}
-              className="w-full h-12 bg-green-500 hover:bg-green-600 text-white font-semibold"
-            >
-              {isGeneratingBill ? 'Generating...' : 'Bill'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setIsReopenDialogOpen(true)}
-              disabled={!selectedTable || !tableBilling?.isBillPaid}
-              className="w-full h-12"
-            >
-              Reopen Session
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setIsFreeTableDialogOpen(true)}
-              disabled={!selectedTable}
-              className="w-full h-12"
-            >
-              Free Table
-            </Button>
+
+            {dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free' && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] rounded-md p-2 mb-2 text-center font-medium animate-pulse">
+                Customer service completed.
+                <br />
+                Release the table once guests have left.
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button 
+                onClick={handlePlaceOrder}
+                disabled={cart.length === 0 || isPlacingOrder || !selectedTable || Boolean(tableBilling?.isBillPaid)}
+                className="w-full h-10 bg-blue-500 hover:bg-blue-600 text-white font-semibold text-xs"
+              >
+                {isPlacingOrder ? 'Placing...' : 'Place Order'}
+              </Button>
+              <Button 
+                onClick={() => setIsPreviewOpen(true)}
+                disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable || Boolean(tableBilling?.isBillPaid)}
+                className="w-full h-10 bg-green-500 hover:bg-green-600 text-white font-semibold text-xs"
+              >
+                {isGeneratingBill ? 'Generating...' : 'Bill'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsReopenDialogOpen(true)}
+                disabled={!selectedTable || !tableBilling?.isBillPaid}
+                className="w-full h-10 text-xs"
+              >
+                Reopen Session
+              </Button>
+              <Button
+                variant={dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free' ? 'default' : 'outline'}
+                onClick={() => setIsFreeTableDialogOpen(true)}
+                disabled={!selectedTable}
+                className={cn(
+                  "w-full h-10 text-xs transition-colors",
+                  dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free' 
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold border-none shadow-sm"
+                    : ""
+                )}
+              >
+                Free Table
+              </Button>
+            </div>
           </div>
         </div>
       );
@@ -1652,6 +1786,12 @@ export default function POSTerminal() {
                 <span>SGST (Total)</span>
                 <span>Rs {totals.cgstSGST.toFixed(2)}</span>
               </div>
+              {totals.appliedExtraCharges && totals.appliedExtraCharges.map((charge: any, idx: number) => (
+                <div key={idx} className="flex justify-between text-sm text-purple-700">
+                  <span>{charge.name}</span>
+                  <span>Rs {charge.amount.toFixed(2)}</span>
+                </div>
+              ))}
               <div className="pt-3 border-t flex justify-between font-bold text-lg">
                 <span>Grand Total</span>
                 <span className="text-primary">Rs {totals.total.toFixed(2)}</span>
@@ -1785,7 +1925,9 @@ export default function POSTerminal() {
               <DialogHeader>
                 <DialogTitle>Free Table?</DialogTitle>
                 <DialogDescription>
-                  This will attempt to free the table if all billing and service conditions are met.
+                  {dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free'
+                    ? "All bills are paid and all kitchen items are served. Freeing the table will make it available for new guests."
+                    : "This will attempt to free the table. Note: All bills must be paid and all kitchen items must be served."}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -1988,6 +2130,165 @@ export default function POSTerminal() {
                   )}
                 </div>
 
+                {/* Custom Options / Features Builder */}
+                <div className="space-y-3 pt-3 border-t">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700">Custom Options / Features</h4>
+                      <p className="text-[11px] text-gray-500">Define custom options like Spice Level, Sugar level, or Add-ons.</p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setForm(f => ({ 
+                        ...f, 
+                        customizable_options: [
+                          ...f.customizable_options, 
+                          { name: '', type: 'single', required: false, choices: [{ name: '', price: '0' }] }
+                        ] 
+                      }))}
+                      className="h-8 text-xs gap-1 border-purple-200 text-purple-600 hover:bg-purple-50"
+                    >
+                      <Plus size={12} /> Add Option Group
+                    </Button>
+                  </div>
+                  
+                  {form.customizable_options.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg border border-dashed">
+                      No custom option groups configured.
+                    </p>
+                  ) : (
+                    <div className="space-y-4 max-h-[260px] overflow-y-auto pr-1">
+                      {form.customizable_options.map((group, gIndex) => (
+                        <div key={gIndex} className="p-3 bg-purple-50/40 rounded-xl border border-purple-100 space-y-3 relative">
+                          <Button 
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              const newGroups = [...form.customizable_options];
+                              newGroups.splice(gIndex, 1);
+                              setForm(f => ({ ...f, customizable_options: newGroups }));
+                            }}
+                            className="absolute top-2 right-2 text-red-500 hover:text-red-600 hover:bg-red-50 h-7 w-7"
+                          >
+                            <Trash2 size={13} />
+                          </Button>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block mb-1">Group Name</label>
+                              <Input 
+                                value={group.name}
+                                onChange={(e) => {
+                                  const newGroups = [...form.customizable_options];
+                                  newGroups[gIndex].name = e.target.value;
+                                  setForm(f => ({ ...f, customizable_options: newGroups }));
+                                }}
+                                placeholder="e.g. Spice Level"
+                                className="text-xs h-8 bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block mb-1">Selection Type</label>
+                              <select
+                                value={group.type}
+                                onChange={(e) => {
+                                  const newGroups = [...form.customizable_options];
+                                  newGroups[gIndex].type = e.target.value as 'single' | 'multiple';
+                                  setForm(f => ({ ...f, customizable_options: newGroups }));
+                                }}
+                                className="w-full text-xs h-8 bg-white border rounded-md px-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              >
+                                <option value="single">Single Select (Radio)</option>
+                                <option value="multiple">Multi Select (Checkbox)</option>
+                              </select>
+                            </div>
+                            <div className="flex items-center pt-5">
+                              <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer select-none">
+                                <input 
+                                  type="checkbox"
+                                  checked={group.required}
+                                  onChange={(e) => {
+                                    const newGroups = [...form.customizable_options];
+                                    newGroups[gIndex].required = e.target.checked;
+                                    setForm(f => ({ ...f, customizable_options: newGroups }));
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                />
+                                Required Option
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Choices sublist */}
+                          <div className="space-y-2 pl-4 border-l-2 border-purple-200">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[11px] font-semibold text-purple-700">Choices / Values</span>
+                              <Button 
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  const newGroups = [...form.customizable_options];
+                                  newGroups[gIndex].choices.push({ name: '', price: '0' });
+                                  setForm(f => ({ ...f, customizable_options: newGroups }));
+                                }}
+                                className="h-6 text-[10px] text-purple-600 hover:bg-purple-100/50 p-1 px-2"
+                              >
+                                <Plus size={10} className="mr-1" /> Add Choice
+                              </Button>
+                            </div>
+
+                            {group.choices.map((choice, cIndex) => (
+                              <div key={cIndex} className="flex gap-2 items-center">
+                                <Input 
+                                  value={choice.name}
+                                  onChange={(e) => {
+                                    const newGroups = [...form.customizable_options];
+                                    newGroups[gIndex].choices[cIndex].name = e.target.value;
+                                    setForm(f => ({ ...f, customizable_options: newGroups }));
+                                  }}
+                                  placeholder="Choice (e.g. Mild / Extra Sugar)"
+                                  className="flex-grow text-xs h-7 bg-white"
+                                />
+                                <Input 
+                                  type="number"
+                                  step="0.01"
+                                  value={choice.price}
+                                  onChange={(e) => {
+                                    const newGroups = [...form.customizable_options];
+                                    newGroups[gIndex].choices[cIndex].price = e.target.value;
+                                    setForm(f => ({ ...f, customizable_options: newGroups }));
+                                  }}
+                                  placeholder="Extra Price (Rs)"
+                                  className="w-24 text-xs h-7 bg-white"
+                                />
+                                {group.choices.length > 1 && (
+                                  <Button 
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      const newGroups = [...form.customizable_options];
+                                      newGroups[gIndex].choices.splice(cIndex, 1);
+                                      setForm(f => ({ ...f, customizable_options: newGroups }));
+                                    }}
+                                    className="text-red-400 hover:text-red-500 hover:bg-red-50 h-7 w-7"
+                                  >
+                                    <Trash2 size={12} />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <DialogFooter className="pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
                   <Button type="submit" disabled={isSaving || isUploadingImage}>
@@ -2030,7 +2331,7 @@ export default function POSTerminal() {
                 </div>
                 
                 {/* Right Sidebar - Visible on Desktop only */}
-                <div className="hidden lg:block w-80 bg-white border-l overflow-hidden flex-shrink-0">
+                <div className="hidden lg:block w-80 bg-white border-l overflow-y-auto flex-shrink-0 scrollbar-thin">
                   {renderSidebar()}
                 </div>
 
@@ -2042,7 +2343,7 @@ export default function POSTerminal() {
                   size="md"
                   disablePadding
                 >
-                  <div className="h-full flex flex-col min-h-0 bg-white">
+                  <div className="h-full flex flex-col min-h-0 bg-white overflow-y-auto scrollbar-thin">
                     {renderSidebar()}
                   </div>
                 </MobileDrawer>
@@ -2119,6 +2420,12 @@ export default function POSTerminal() {
                   <span>-₹{totals.discountAmount.toFixed(2)}</span>
                 </div>
               )}
+              {totals.appliedExtraCharges && totals.appliedExtraCharges.map((charge: any, idx: number) => (
+                <div key={idx} className="flex justify-between text-sm text-purple-700">
+                  <span>{charge.name}</span>
+                  <span>₹{charge.amount.toFixed(2)}</span>
+                </div>
+              ))}
               <div className="flex justify-between text-lg font-bold border-t pt-2 text-blue-600">
                 <span>Grand Total</span>
                 <span>₹{totals.total.toFixed(2)}</span>
@@ -2138,6 +2445,172 @@ export default function POSTerminal() {
               disabled={isGeneratingBill}
             >
               {isGeneratingBill ? 'Processing...' : 'Confirm & Generate Bill'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Customize/Configure Item Dialog */}
+      <Dialog open={configuringItem !== null} onOpenChange={(open) => { if (!open) setConfiguringItem(null); }}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Configure {configuringItem?.name}</DialogTitle>
+            <DialogDescription>
+              Select spice level and any extras/addons for this item.
+            </DialogDescription>
+          </DialogHeader>
+
+          {configuringItem && (
+            <div className="space-y-6 py-4">
+              {/* Spice Level Section */}
+              <div className="space-y-2.5">
+                <h4 className="text-sm font-semibold text-gray-900">Spice Level</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['Mild', 'Medium', 'Hot'] as const).map((level) => (
+                    <Button
+                      key={level}
+                      type="button"
+                      variant={itemSpiceLevel === level ? 'default' : 'outline'}
+                      onClick={() => setItemSpiceLevel(level)}
+                      className={cn(
+                        "py-2 h-9 font-bold text-xs rounded-lg transition-all",
+                        itemSpiceLevel === level
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-white text-gray-700 hover:bg-gray-50 border-gray-200"
+                      )}
+                    >
+                      {level}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Extras/Addons Section */}
+              {configuringItem.addons && configuringItem.addons.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">Add Extras</h4>
+                  <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                    {configuringItem.addons.map((extra) => {
+                      const isSelected = itemSelectedExtras.includes(extra.name);
+                      return (
+                        <label
+                          key={extra.name}
+                          className={cn(
+                            "flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all hover:bg-gray-50",
+                            isSelected ? "border-blue-500 bg-blue-50/20" : "border-gray-200"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected) {
+                                  setItemSelectedExtras(itemSelectedExtras.filter(e => e !== extra.name));
+                                } else {
+                                  setItemSelectedExtras([...itemSelectedExtras, extra.name]);
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 accent-blue-600 rounded border-gray-300"
+                            />
+                            <span className="text-sm font-medium text-gray-800">{extra.name}</span>
+                          </div>
+                          <span className="text-xs font-bold text-gray-500">+ Rs {extra.price}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Customizable Options */}
+              {configuringItem.customizable_options && configuringItem.customizable_options.map((group) => {
+                if (!group.choices || group.choices.length === 0) return null;
+                return (
+                  <div key={group.name} className="space-y-2.5">
+                    <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                      {group.name}
+                      {group.required && <span className="text-xs text-red-500 font-normal">(Required)</span>}
+                    </h4>
+                    <div className="space-y-2">
+                      {group.choices.map((choice) => {
+                        const isSelected = itemSelectedExtras.includes(choice.name);
+                        return (
+                          <label
+                            key={choice.name}
+                            className={cn(
+                              "flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all hover:bg-gray-50",
+                              isSelected ? "border-purple-500 bg-purple-50/10" : "border-gray-200"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type={group.type === 'single' ? 'radio' : 'checkbox'}
+                                name={`group-${group.name}`}
+                                checked={isSelected}
+                                onChange={() => {
+                                  if (group.type === 'single') {
+                                    const groupChoices = group.choices.map(c => c.name);
+                                    const filtered = itemSelectedExtras.filter(e => !groupChoices.includes(e));
+                                    setItemSelectedExtras([...filtered, choice.name]);
+                                  } else {
+                                    if (isSelected) {
+                                      setItemSelectedExtras(itemSelectedExtras.filter(e => e !== choice.name));
+                                    } else {
+                                      setItemSelectedExtras([...itemSelectedExtras, choice.name]);
+                                    }
+                                  }
+                                }}
+                                className={cn(
+                                  "w-4 h-4 text-purple-600 accent-purple-600 rounded border-gray-300",
+                                  group.type === 'single' ? 'rounded-full' : 'rounded'
+                                )}
+                              />
+                              <span className="text-sm font-medium text-gray-800">{choice.name}</span>
+                            </div>
+                            {Number(choice.price) > 0 && (
+                              <span className="text-xs font-bold text-gray-500">+ Rs {choice.price}</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+            <Button variant="outline" onClick={() => setConfiguringItem(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => {
+                if (configuringItem) {
+                  addToCart(configuringItem, itemSpiceLevel, itemSelectedExtras);
+                  setConfiguringItem(null);
+                }
+              }}
+            >
+              Add to Order (Rs {
+                configuringItem
+                  ? (
+                      configuringItem.price +
+                      itemSelectedExtras.reduce((sum, extraName) => {
+                        const addon = (configuringItem.addons || []).find(a => a.name === extraName);
+                        if (addon) return sum + Number(addon.price);
+
+                        for (const group of configuringItem.customizable_options || []) {
+                          const choice = (group.choices || []).find(c => c.name === extraName);
+                          if (choice) return sum + Number(choice.price);
+                        }
+                        return sum;
+                      }, 0)
+                    )
+                  : 0
+              })
             </Button>
           </DialogFooter>
         </DialogContent>

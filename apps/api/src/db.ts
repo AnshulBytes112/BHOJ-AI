@@ -282,6 +282,13 @@ export async function initializeDatabase(): Promise<void> {
   }
 
   try {
+    await pool.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'cancelled'`);
+    console.log('order_status_enum: cancelled value ensured');
+  } catch (e: any) {
+    console.warn('order_status_enum cancelled ALTER skipped:', e.message);
+  }
+
+  try {
     await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'completed'`);
     console.log('kot_status: completed value ensured');
   } catch (e: any) {
@@ -300,6 +307,13 @@ export async function initializeDatabase(): Promise<void> {
     console.log('kot_status: served value ensured');
   } catch (e: any) {
     console.warn('kot_status served ALTER skipped:', e.message);
+  }
+
+  try {
+    await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'cancelled'`);
+    console.log('kot_status: cancelled value ensured');
+  } catch (e: any) {
+    console.warn('kot_status cancelled ALTER skipped:', e.message);
   }
 
   await pool.query(`
@@ -341,7 +355,7 @@ export async function initializeDatabase(): Promise<void> {
     DO $$ 
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kot_status') THEN
-        CREATE TYPE kot_status AS ENUM ('pending', 'acknowledged', 'completed', 'ready', 'served');
+        CREATE TYPE kot_status AS ENUM ('pending', 'acknowledged', 'completed', 'ready', 'served', 'cancelled');
       END IF;
     END $$;
 
@@ -766,6 +780,29 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS order_type VARCHAR(50) DEFAULT 'Dine In',
       ADD COLUMN IF NOT EXISTS payment_option VARCHAR(50) DEFAULT 'Pay at Restaurant',
       ADD COLUMN IF NOT EXISTS notes TEXT;
+  `);
+
+  // ── CUSTOM OPTIONS AND EXTRA CHARGES MIGRATIONS ──
+  await pool.query(`
+    ALTER TABLE items 
+      ADD COLUMN IF NOT EXISTS customizable_options JSONB DEFAULT '[]'::jsonb;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS extra_charges (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR NOT NULL,
+      charge_type VARCHAR NOT NULL CHECK (charge_type IN ('percentage', 'fixed')),
+      value NUMERIC(10,2) NOT NULL CHECK (value >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE bills 
+      ADD COLUMN IF NOT EXISTS extra_charges JSONB DEFAULT '[]'::jsonb;
   `);
 
   console.log('Table management schema migrations complete.');

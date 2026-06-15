@@ -470,8 +470,9 @@ export async function tryAutoFreeTable(
     const validation = await canFreeTable(client, tableId, tableRow.rows[0].occupied_since);
 
     let newStatus: string = tableRow.rows[0].status;
+    const isManualTrigger = triggeredBy.startsWith('user:');
 
-    if (validation.canFree) {
+    if (validation.canFree && isManualTrigger) {
       const sessionsToClose = await client.query(
         `SELECT ts.session_id
          FROM table_sessions ts
@@ -515,13 +516,16 @@ export async function tryAutoFreeTable(
       );
       newStatus = 'free';
 
-      await auditLog(client, 'TABLE_AUTO_FREED', {
+      await auditLog(client, 'TABLE_FREED', {
         entityType: 'table',
         entityId: tableId,
         tableId,
-        reason: `Auto-freed by ${triggeredBy}`,
+        reason: `Manual free by ${triggeredBy}`,
         metadata: { validation },
       });
+      
+      await client.query('COMMIT');
+      return { freed: true, newStatus: 'free', validation };
     } else {
       // Derive and persist the correct intermediate status
       const hasAnyBill = validation.unpaidBillCount > 0 || validation.billsPaid === true;
@@ -531,18 +535,22 @@ export async function tryAutoFreeTable(
         hasAnyBill
       );
 
+      // System trigger or not ready to free:
+      // If validation.canFree is true, it is ready to free but hasn't been manually freed.
+      const statusToSet = (validation.canFree && !isManualTrigger) ? 'ready_to_free' : derived;
+
       await client.query(
         `UPDATE tables
          SET status = $1,
              active_item_count = $2
          WHERE table_id = $3`,
-        [derived, validation.activeItemCount, tableId]
+        [statusToSet, validation.activeItemCount, tableId]
       );
-      newStatus = derived;
+      newStatus = statusToSet;
     }
 
     await client.query('COMMIT');
-    return { freed: validation.canFree, newStatus, validation };
+    return { freed: false, newStatus, validation };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

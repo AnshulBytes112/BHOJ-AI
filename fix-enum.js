@@ -4,8 +4,8 @@ const client = new Client({ connectionString: process.env.DATABASE_URL });
 async function fix() {
   await client.connect();
   try {
-    await client.query("ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'completed'");
-    console.log("Added completed");
+    await client.query("ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'cancelled'");
+    console.log("Added cancelled to order_status_enum");
   } catch (e) { console.error(e.message); }
   
   try {

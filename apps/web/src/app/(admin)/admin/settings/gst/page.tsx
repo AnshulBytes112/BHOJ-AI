@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Pencil, Power, PowerOff, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Power, PowerOff, AlertTriangle, Trash2 } from 'lucide-react';
 import apiClient from '@/services/apiClient';
 import { formatDate } from '@/lib/utils';
 
@@ -49,32 +49,66 @@ type GstForm = {
   is_active: boolean;
 };
 
-const EMPTY_FORM: GstForm = {
+const EMPTY_GST_FORM: GstForm = {
   label: '',
   category: '',
   gst_percentage: '',
   is_active: true,
 };
 
-export default function AdminGstPage() {
+type ExtraCharge = {
+  id: number;
+  name: string;
+  charge_type: 'fixed' | 'percentage';
+  value: string;
+  is_active: boolean;
+  updated_at: string;
+};
+
+type ChargeForm = {
+  name: string;
+  charge_type: 'fixed' | 'percentage';
+  value: string;
+  is_active: boolean;
+};
+
+const EMPTY_CHARGE_FORM: ChargeForm = {
+  name: '',
+  charge_type: 'percentage',
+  value: '',
+  is_active: true,
+};
+
+export default function AdminSettingsPage() {
+  const [activeTab, setActiveTab] = useState<'gst' | 'charges'>('gst');
+
+  // GST State
   const [slabs, setSlabs] = useState<GstSlab[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isGstLoading, setIsGstLoading] = useState(true);
+  const [isGstSaving, setIsGstSaving] = useState(false);
+  const [gstFormOpen, setGstFormOpen] = useState(false);
   const [editingSlab, setEditingSlab] = useState<GstSlab | null>(null);
-  const [form, setForm] = useState<GstForm>(EMPTY_FORM);
-  const [formErrors, setFormErrors] = useState<Partial<Record<keyof GstForm, string>>>({});
-
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [gstForm, setGstForm] = useState<GstForm>(EMPTY_GST_FORM);
+  const [gstErrors, setGstErrors] = useState<Partial<Record<keyof GstForm, string>>>({});
+  const [gstConfirmOpen, setGstConfirmOpen] = useState(false);
   const [pendingDeactivateSlab, setPendingDeactivateSlab] = useState<GstSlab | null>(null);
 
-  async function loadData() {
-    setIsLoading(true);
-    setErrorMessage(null);
+  // Extra Charges State
+  const [charges, setCharges] = useState<ExtraCharge[]>([]);
+  const [isChargesLoading, setIsChargesLoading] = useState(true);
+  const [isChargesSaving, setIsChargesSaving] = useState(false);
+  const [chargeFormOpen, setChargeFormOpen] = useState(false);
+  const [editingCharge, setEditingCharge] = useState<ExtraCharge | null>(null);
+  const [chargeForm, setChargeForm] = useState<ChargeForm>(EMPTY_CHARGE_FORM);
+  const [chargeErrors, setChargeErrors] = useState<Partial<Record<keyof ChargeForm, string>>>({});
+  const [chargeConfirmOpen, setChargeConfirmOpen] = useState(false);
+  const [pendingDeleteCharge, setPendingDeleteCharge] = useState<ExtraCharge | null>(null);
 
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  async function loadGstData() {
+    setIsGstLoading(true);
     try {
       const [slabsRes, categoriesRes] = await Promise.all([
         apiClient.get<GstSlab[]>('/gst-config'),
@@ -85,12 +119,25 @@ export default function AdminGstPage() {
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to load GST data.');
     } finally {
-      setIsLoading(false);
+      setIsGstLoading(false);
+    }
+  }
+
+  async function loadChargesData() {
+    setIsChargesLoading(true);
+    try {
+      const res = await apiClient.get<ExtraCharge[]>('/extra-charges');
+      setCharges(res.data ?? []);
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to load charges data.');
+    } finally {
+      setIsChargesLoading(false);
     }
   }
 
   useEffect(() => {
-    loadData();
+    loadGstData();
+    loadChargesData();
   }, []);
 
   const missingGstCategories = useMemo(() => {
@@ -102,98 +149,166 @@ export default function AdminGstPage() {
       .map((c) => c.name);
   }, [slabs, categories]);
 
-  function openCreateModal() {
+  // GST Handlers
+  function openCreateGstModal() {
     setEditingSlab(null);
-    setForm(EMPTY_FORM);
-    setFormErrors({});
-    setIsFormOpen(true);
+    setGstForm(EMPTY_GST_FORM);
+    setGstErrors({});
+    setGstFormOpen(true);
   }
 
-  function openEditModal(slab: GstSlab) {
+  function openEditGstModal(slab: GstSlab) {
     setEditingSlab(slab);
-    setForm({
+    setGstForm({
       label: slab.label,
       category: slab.category,
       gst_percentage: slab.gst_percentage,
       is_active: slab.is_active,
     });
-    setFormErrors({});
-    setIsFormOpen(true);
+    setGstErrors({});
+    setGstFormOpen(true);
   }
 
-  function validateForm(): boolean {
+  function validateGstForm(): boolean {
     const nextErrors: Partial<Record<keyof GstForm, string>> = {};
-
-    if (!form.label.trim()) {
-      nextErrors.label = 'Label is required.';
-    }
-
-    if (!form.category) {
-      nextErrors.category = 'Category is required.';
-    }
-
-    const percentage = Number(form.gst_percentage);
-    if (form.gst_percentage === '' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
+    if (!gstForm.label.trim()) nextErrors.label = 'Label is required.';
+    if (!gstForm.category) nextErrors.category = 'Category is required.';
+    const percentage = Number(gstForm.gst_percentage);
+    if (gstForm.gst_percentage === '' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
       nextErrors.gst_percentage = 'GST Percentage must be between 0 and 100.';
     }
-
-    setFormErrors(nextErrors);
+    setGstErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleGstSubmit(e: React.FormEvent) {
     e.preventDefault();
-
-    if (!validateForm()) return;
-
-    setIsSaving(true);
+    if (!validateGstForm()) return;
+    setIsGstSaving(true);
     setErrorMessage(null);
-
     const payload = {
-      ...form,
-      gst_percentage: Number(form.gst_percentage),
+      ...gstForm,
+      gst_percentage: Number(gstForm.gst_percentage),
     };
-
     try {
       if (editingSlab) {
         await apiClient.put(`/gst-config/${editingSlab.id}`, payload);
       } else {
         await apiClient.post('/gst-config', payload);
       }
-
-      setIsFormOpen(false);
-      await loadData();
+      setGstFormOpen(false);
+      await loadGstData();
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to save GST slab.');
     } finally {
-      setIsSaving(false);
+      setIsGstSaving(false);
     }
   }
 
-  function requestDeactivate(slab: GstSlab) {
+  function requestDeactivateGst(slab: GstSlab) {
     setPendingDeactivateSlab(slab);
-    setConfirmOpen(true);
+    setGstConfirmOpen(true);
   }
 
-  async function handleDeactivateConfirmed() {
+  async function handleGstDeactivateConfirmed() {
     if (!pendingDeactivateSlab) return;
-
     try {
       await apiClient.delete(`/gst-config/${pendingDeactivateSlab.id}`);
-      setConfirmOpen(false);
+      setGstConfirmOpen(false);
       setPendingDeactivateSlab(null);
-      await loadData();
+      await loadGstData();
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to deactivate GST slab.');
     }
   }
 
-  async function handleActivate(slab: GstSlab) {
+  async function handleActivateGst(slab: GstSlab) {
     try {
       await apiClient.put(`/gst-config/${slab.id}`, { ...slab, is_active: true });
-      await loadData();
+      await loadGstData();
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to activate GST slab.');
+    }
+  }
+
+  // Extra Charges Handlers
+  function openCreateChargeModal() {
+    setEditingCharge(null);
+    setChargeForm(EMPTY_CHARGE_FORM);
+    setChargeErrors({});
+    setChargeFormOpen(true);
+  }
+
+  function openEditChargeModal(charge: ExtraCharge) {
+    setEditingCharge(charge);
+    setChargeForm({
+      name: charge.name,
+      charge_type: charge.charge_type,
+      value: charge.value,
+      is_active: charge.is_active,
+    });
+    setChargeErrors({});
+    setChargeFormOpen(true);
+  }
+
+  function validateChargeForm(): boolean {
+    const nextErrors: Partial<Record<keyof ChargeForm, string>> = {};
+    if (!chargeForm.name.trim()) nextErrors.name = 'Charge name is required.';
+    const val = Number(chargeForm.value);
+    if (chargeForm.value === '' || !Number.isFinite(val) || val <= 0) {
+      nextErrors.value = 'Value must be greater than 0.';
+    }
+    setChargeErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  async function handleChargeSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validateChargeForm()) return;
+    setIsChargesSaving(true);
+    setErrorMessage(null);
+    const payload = {
+      ...chargeForm,
+      value: Number(chargeForm.value),
+    };
+    try {
+      if (editingCharge) {
+        await apiClient.put(`/extra-charges/${editingCharge.id}`, payload);
+      } else {
+        await apiClient.post('/extra-charges', payload);
+      }
+      setChargeFormOpen(false);
+      await loadChargesData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to save charge.');
+    } finally {
+      setIsChargesSaving(false);
+    }
+  }
+
+  function requestDeleteCharge(charge: ExtraCharge) {
+    setPendingDeleteCharge(charge);
+    setChargeConfirmOpen(true);
+  }
+
+  async function handleChargeDeleteConfirmed() {
+    if (!pendingDeleteCharge) return;
+    try {
+      await apiClient.delete(`/extra-charges/${pendingDeleteCharge.id}`);
+      setChargeConfirmOpen(false);
+      setPendingDeleteCharge(null);
+      await loadChargesData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to delete charge.');
+    }
+  }
+
+  async function handleToggleChargeStatus(charge: ExtraCharge) {
+    try {
+      await apiClient.put(`/extra-charges/${charge.id}`, { ...charge, is_active: !charge.is_active });
+      await loadChargesData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to update charge status.');
     }
   }
 
@@ -201,125 +316,253 @@ export default function AdminGstPage() {
     <RoleGuard allowedRoles={['superadmin', 'admin']}>
       <DashboardLayout>
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">GST Configuration</h1>
-              <p className="text-sm text-muted-foreground">Manage GST slabs for different item categories.</p>
+              <h1 className="text-2xl font-bold text-foreground">Taxes & Settings</h1>
+              <p className="text-sm text-muted-foreground">Manage GST rates, Service Charges, and Custom Packaging/Delivery fees.</p>
             </div>
-            <Button onClick={openCreateModal} className="gap-2 rounded-xl">
-              <Plus size={16} />
-              Add GST Slab
-            </Button>
+            <div>
+              {activeTab === 'gst' ? (
+                <Button onClick={openCreateGstModal} className="gap-2 rounded-xl">
+                  <Plus size={16} /> Add GST Slab
+                </Button>
+              ) : (
+                <Button onClick={openCreateChargeModal} className="gap-2 rounded-xl bg-purple-600 hover:bg-purple-700">
+                  <Plus size={16} /> Add Extra Charge
+                </Button>
+              )}
+            </div>
           </div>
 
-          {missingGstCategories.length > 0 && (
-            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                <div>
-                  <h3 className="text-sm font-medium text-yellow-800">Missing GST Configuration</h3>
-                  <p className="mt-1 text-sm text-yellow-700">
-                    The following categories do not have an active GST slab: {missingGstCategories.join(', ')}. 
-                    Bills with items from these categories may have incorrect GST calculations.
-                  </p>
-                </div>
-              </div>
+          {/* Navigation Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-6">
+              <button
+                onClick={() => { setActiveTab('gst'); setErrorMessage(null); }}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-all ${
+                  activeTab === 'gst'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                GST Configurations
+              </button>
+              <button
+                onClick={() => { setActiveTab('charges'); setErrorMessage(null); }}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-semibold text-sm transition-all ${
+                  activeTab === 'charges'
+                    ? 'border-purple-600 text-purple-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Extra Taxes & Charges
+              </button>
+            </nav>
+          </div>
+
+          {errorMessage && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {errorMessage}
             </div>
           )}
 
-          <Card className="border bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg">GST Slabs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {errorMessage && (
-                <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {errorMessage}
+          {activeTab === 'gst' ? (
+            <div className="space-y-6">
+              {missingGstCategories.length > 0 && (
+                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                    <div>
+                      <h3 className="text-sm font-medium text-yellow-800">Missing GST Configuration</h3>
+                      <p className="mt-1 text-sm text-yellow-700">
+                        The following categories do not have an active GST slab: {missingGstCategories.join(', ')}. 
+                        Bills with items from these categories may have incorrect GST calculations.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Label</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>GST %</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
+              <Card className="border bg-white shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg">GST Slabs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Label</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>GST %</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Last Updated</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isGstLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
+                            Loading GST configuration...
+                          </TableCell>
+                        </TableRow>
+                      ) : slabs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
+                            No GST slabs found.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        slabs.map((slab) => (
+                          <TableRow key={slab.id}>
+                            <TableCell className="font-medium">{slab.label}</TableCell>
+                            <TableCell>{slab.category}</TableCell>
+                            <TableCell>{Number(slab.gst_percentage).toFixed(2)}%</TableCell>
+                            <TableCell>
+                              <Badge variant={slab.is_active ? 'default' : 'secondary'}>
+                                {slab.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {formatDate(slab.updated_at)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1 h-8"
+                                  onClick={() => openEditGstModal(slab)}
+                                >
+                                  <Pencil size={13} />
+                                  Edit
+                                </Button>
+                                {slab.is_active ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1 h-8 text-destructive hover:text-destructive"
+                                    onClick={() => requestDeactivateGst(slab)}
+                                  >
+                                    <PowerOff size={13} />
+                                    Deactivate
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1 h-8 text-primary hover:text-primary"
+                                    onClick={() => handleActivateGst(slab)}
+                                  >
+                                    <Power size={13} />
+                                    Activate
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <Card className="border bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Extra Taxes & Charges</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
-                        Loading GST configuration...
-                      </TableCell>
+                      <TableHead>Charge Name</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Updated</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ) : slabs.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
-                        No GST slabs found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    slabs.map((slab) => (
-                      <TableRow key={slab.id}>
-                        <TableCell className="font-medium">{slab.label}</TableCell>
-                        <TableCell>{slab.category}</TableCell>
-                        <TableCell>{Number(slab.gst_percentage).toFixed(2)}%</TableCell>
-                        <TableCell>
-                          <Badge variant={slab.is_active ? 'default' : 'secondary'}>
-                            {slab.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {formatDate(slab.updated_at)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                              onClick={() => openEditModal(slab)}
-                            >
-                              <Pencil size={14} />
-                              Edit
-                            </Button>
-                            {slab.is_active ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1 text-destructive hover:text-destructive"
-                                onClick={() => requestDeactivate(slab)}
-                              >
-                                <PowerOff size={14} />
-                                Deactivate
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1 text-primary hover:text-primary"
-                                onClick={() => handleActivate(slab)}
-                              >
-                                <Power size={14} />
-                                Activate
-                              </Button>
-                            )}
-                          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {isChargesLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
+                          Loading charges...
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                    ) : charges.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
+                          No custom extra charges configured yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      charges.map((charge) => (
+                        <TableRow key={charge.id}>
+                          <TableCell className="font-semibold">{charge.name}</TableCell>
+                          <TableCell className="capitalize">{charge.charge_type}</TableCell>
+                          <TableCell>
+                            {charge.charge_type === 'percentage'
+                              ? `${Number(charge.value).toFixed(2)}%`
+                              : `Rs ${Number(charge.value).toFixed(2)}`}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={charge.is_active ? 'default' : 'secondary'}>
+                              {charge.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {formatDate(charge.updated_at)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1 h-8 border-purple-200 text-purple-600 hover:bg-purple-50"
+                                onClick={() => openEditChargeModal(charge)}
+                              >
+                                <Pencil size={13} />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={`gap-1 h-8 ${
+                                  charge.is_active 
+                                    ? 'text-amber-600 border-amber-200 hover:bg-amber-50'
+                                    : 'text-green-600 border-green-200 hover:bg-green-50'
+                                }`}
+                                onClick={() => handleToggleChargeStatus(charge)}
+                              >
+                                {charge.is_active ? <PowerOff size={13} /> : <Power size={13} />}
+                                {charge.is_active ? 'Disable' : 'Enable'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1 h-8 text-destructive border-red-200 hover:bg-red-50"
+                                onClick={() => requestDeleteCharge(charge)}
+                              >
+                                <Trash2 size={13} />
+                                Delete
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+        {/* GST Form Dialog */}
+        <Dialog open={gstFormOpen} onOpenChange={setGstFormOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingSlab ? 'Edit GST Slab' : 'Add GST Slab'}</DialogTitle>
@@ -328,23 +571,23 @@ export default function AdminGstPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="space-y-4" onSubmit={handleGstSubmit}>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Label</label>
                 <Input
-                  value={form.label}
-                  onChange={(e) => setForm({ ...form, label: e.target.value })}
+                  value={gstForm.label}
+                  onChange={(e) => setGstForm({ ...gstForm, label: e.target.value })}
                   placeholder="e.g. Food & Beverages"
                 />
-                {formErrors.label && <p className="text-xs text-destructive">{formErrors.label}</p>}
+                {gstErrors.label && <p className="text-xs text-destructive">{gstErrors.label}</p>}
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Category</label>
                 <select
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  value={gstForm.category}
+                  onChange={(e) => setGstForm({ ...gstForm, category: e.target.value })}
                 >
                   <option value="">Select category</option>
                   {categories.map((cat) => (
@@ -353,7 +596,7 @@ export default function AdminGstPage() {
                     </option>
                   ))}
                 </select>
-                {formErrors.category && <p className="text-xs text-destructive">{formErrors.category}</p>}
+                {gstErrors.category && <p className="text-xs text-destructive">{gstErrors.category}</p>}
               </div>
 
               <div className="space-y-2">
@@ -363,11 +606,11 @@ export default function AdminGstPage() {
                   step="0.01"
                   min="0"
                   max="100"
-                  value={form.gst_percentage}
-                  onChange={(e) => setForm({ ...form, gst_percentage: e.target.value })}
+                  value={gstForm.gst_percentage}
+                  onChange={(e) => setGstForm({ ...gstForm, gst_percentage: e.target.value })}
                   placeholder="0.00"
                 />
-                {formErrors.gst_percentage && <p className="text-xs text-destructive">{formErrors.gst_percentage}</p>}
+                {gstErrors.gst_percentage && <p className="text-xs text-destructive">{gstErrors.gst_percentage}</p>}
               </div>
 
               <div className="flex items-center justify-between rounded-md border p-3">
@@ -375,27 +618,28 @@ export default function AdminGstPage() {
                 <button
                   type="button"
                   className={`rounded-md px-3 py-1 text-xs font-medium ${
-                    form.is_active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                    gstForm.is_active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   }`}
-                  onClick={() => setForm({ ...form, is_active: !form.is_active })}
+                  onClick={() => setGstForm({ ...gstForm, is_active: !gstForm.is_active })}
                 >
-                  {form.is_active ? 'Yes' : 'No'}
+                  {gstForm.is_active ? 'Yes' : 'No'}
                 </button>
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setGstFormOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : editingSlab ? 'Update Slab' : 'Create Slab'}
+                <Button type="submit" disabled={isGstSaving}>
+                  {isGstSaving ? 'Saving...' : editingSlab ? 'Update Slab' : 'Create Slab'}
                 </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        {/* GST Confirm Dialog */}
+        <Dialog open={gstConfirmOpen} onOpenChange={setGstConfirmOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Deactivate GST Slab</DialogTitle>
@@ -404,8 +648,95 @@ export default function AdminGstPage() {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDeactivateConfirmed}>Confirm Deactivate</Button>
+              <Button variant="outline" onClick={() => setGstConfirmOpen(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleGstDeactivateConfirmed}>Confirm Deactivate</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Extra Charge Form Dialog */}
+        <Dialog open={chargeFormOpen} onOpenChange={setChargeFormOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingCharge ? 'Edit Extra Charge' : 'Add Extra Charge'}</DialogTitle>
+              <DialogDescription>
+                Create custom charge rates like packaging fees, service taxes, or delivery charges.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form className="space-y-4" onSubmit={handleChargeSubmit}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Charge Name</label>
+                <Input
+                  value={chargeForm.name}
+                  onChange={(e) => setChargeForm({ ...chargeForm, name: e.target.value })}
+                  placeholder="e.g. Service Charge / Packaging Fee"
+                />
+                {chargeErrors.name && <p className="text-xs text-destructive">{chargeErrors.name}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Charge Type</label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={chargeForm.charge_type}
+                  onChange={(e) => setChargeForm({ ...chargeForm, charge_type: e.target.value as 'fixed' | 'percentage' })}
+                >
+                  <option value="percentage">Percentage (%)</option>
+                  <option value="fixed">Fixed (Rs)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Value</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={chargeForm.value}
+                  onChange={(e) => setChargeForm({ ...chargeForm, value: e.target.value })}
+                  placeholder="e.g. 5.00"
+                />
+                {chargeErrors.value && <p className="text-xs text-destructive">{chargeErrors.value}</p>}
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <span className="text-sm font-medium">Active</span>
+                <button
+                  type="button"
+                  className={`rounded-md px-3 py-1 text-xs font-medium ${
+                    chargeForm.is_active ? 'bg-purple-600 text-white' : 'bg-muted text-muted-foreground'
+                  }`}
+                  onClick={() => setChargeForm({ ...chargeForm, is_active: !chargeForm.is_active })}
+                >
+                  {chargeForm.is_active ? 'Yes' : 'No'}
+                </button>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setChargeFormOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isChargesSaving} className="bg-purple-600 hover:bg-purple-700 text-white">
+                  {isChargesSaving ? 'Saving...' : editingCharge ? 'Update Charge' : 'Create Charge'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Charge Confirm Delete Dialog */}
+        <Dialog open={chargeConfirmOpen} onOpenChange={setChargeConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Extra Charge</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this custom charge? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setChargeConfirmOpen(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleChargeDeleteConfirmed}>Delete Charge</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

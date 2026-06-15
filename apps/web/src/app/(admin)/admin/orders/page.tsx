@@ -63,11 +63,12 @@ export default function OrdersPage() {
     },
     {
       header: 'Payment',
-      accessor: (row: Order) => (
-        row.status === 'billed' || row.status === 'completed'
+      accessor: (row: Order) => {
+        if (row.status === 'cancelled') return null;
+        return row.status === 'billed' || row.status === 'completed'
           ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">✓ Paid</Badge>
-          : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">⏳ Unpaid</Badge>
-      ),
+          : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">⏳ Unpaid</Badge>;
+      },
     },
     {
       header: 'Actions',
@@ -92,9 +93,11 @@ export default function OrdersPage() {
         <span className="font-bold text-primary uppercase text-sm">#{shortId(order.order_id)}</span>
         <div className="flex gap-2">
           {statusBadge(order.status)}
-          {order.status === 'billed' || order.status === 'completed'
-            ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Paid</Badge>
-            : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">Unpaid</Badge>}
+          {order.status !== 'cancelled' && (
+            order.status === 'billed' || order.status === 'completed'
+              ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Paid</Badge>
+              : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">Unpaid</Badge>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
@@ -201,10 +204,10 @@ export default function OrdersPage() {
       });
       
       setOrders(data);
-      // Update selected order if it exists, otherwise set to first
+      // Update selected order if it exists, but don't auto-select/open if it is closed
       if (data.length > 0) {
         setSelected(prev => {
-          if (!prev) return data[0];
+          if (!prev) return null;
           const updated = data.find(o => o.order_id === prev.order_id);
           return updated || prev;
         });
@@ -238,6 +241,7 @@ export default function OrdersPage() {
     if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">New</Badge>;
     if (s === 'sent_to_kitchen') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Pending</Badge>;
     if (s === 'in_progress') return <Badge className="bg-blue-100 text-blue-700 border-blue-200">In Progress</Badge>;
+    if (s === 'ready') return <Badge className="bg-teal-100 text-teal-700 border-teal-200">Ready</Badge>;
     if (s === 'completed') return <Badge className="bg-green-100 text-green-700 border-green-200">Completed</Badge>;
     if (s === 'billed') return <Badge className="bg-purple-100 text-purple-700 border-purple-200">Billed</Badge>;
     if (s === 'cancelled') return <Badge className="bg-red-100 text-red-700 border-red-200">Cancelled</Badge>;
@@ -248,12 +252,12 @@ export default function OrdersPage() {
 
   const filtered = useMemo(() => {
     let list = orders;
-    if (activeTab === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen' || o.status === 'in_progress');
+    if (activeTab === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen' || o.status === 'in_progress' || o.status === 'ready');
     else if (activeTab === 'completed') list = list.filter(o => o.status === 'completed' || o.status === 'billed');
     else if (activeTab === 'cancelled') list = list.filter(o => o.status === 'cancelled');
     if (applied.table !== 'all') list = list.filter(o => (o.table_number || o.table_id) === applied.table);
     if (applied.status !== 'all') {
-      if (applied.status === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen' || o.status === 'in_progress');
+      if (applied.status === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen' || o.status === 'in_progress' || o.status === 'ready');
       else if (applied.status === 'completed') list = list.filter(o => o.status === 'completed' || o.status === 'billed');
       else if (applied.status === 'cancelled') list = list.filter(o => o.status === 'cancelled');
     }
@@ -398,6 +402,7 @@ export default function OrdersPage() {
                 rowKey={(row: Order) => row.order_id}
                 mobileCardRender={mobileCardRender}
                 loading={isLoading}
+                onRowClick={setSelected}
               />
 
               {/* Pagination */}
@@ -424,13 +429,24 @@ export default function OrdersPage() {
               size="lg"
               footer={selected && (
                 <div className="flex gap-3 w-full">
-                  <Button variant="outline" className="flex-1 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10 h-11"
-                    disabled={isSending || selected.status === 'in_progress'} onClick={() => sendToKitchen(selected)}>
+                   <Button variant="outline" className="flex-1 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10 h-11"
+                    disabled={
+                      isSending || 
+                      selected.status === 'in_progress' || 
+                      selected.status === 'ready' || 
+                      selected.status === 'completed' || 
+                      selected.status === 'billed' || 
+                      selected.status === 'cancelled'
+                    } 
+                    onClick={() => sendToKitchen(selected)}
+                  >
                     <Printer className="w-4 h-4 mr-2" />
                     {isSending ? 'Sending...' : 
                      selected.status === 'open' ? 'Send to Kitchen' : 
                      selected.status === 'in_progress' ? 'Preparing in Kitchen' :
-                     selected.status === 'completed' ? 'KOT Printed' : 'Print KOT'}
+                     selected.status === 'ready' ? 'Food Ready' :
+                     selected.status === 'completed' ? 'KOT Printed' : 
+                     selected.status === 'billed' ? 'Order Billed' : 'Print KOT'}
                   </Button>
                   <Button className="flex-1 bg-primary hover:bg-primary/90 text-white h-11"
                     disabled={selected.status === 'billed'} onClick={() => openBill(selected)}>
@@ -537,9 +553,13 @@ export default function OrdersPage() {
                     
                     <div className="text-slate-500">Payment Status</div>
                     <div className="text-right">
-                      <Badge variant="outline" className={selected.status === 'billed' || selected.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}>
-                        {selected.status === 'billed' || selected.status === 'completed' ? 'Paid' : 'Unpaid'}
-                      </Badge>
+                      {selected.status === 'cancelled' ? (
+                        <span className="text-slate-400">—</span>
+                      ) : (
+                        <Badge variant="outline" className={selected.status === 'billed' || selected.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}>
+                          {selected.status === 'billed' || selected.status === 'completed' ? 'Paid' : 'Unpaid'}
+                        </Badge>
+                      )}
                     </div>
                   </div>
 

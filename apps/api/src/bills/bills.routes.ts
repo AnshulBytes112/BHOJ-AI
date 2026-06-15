@@ -18,6 +18,12 @@ type BillRow = {
   table_id: string | null;
   session_id: string | null;
   created_at: Date;
+  extra_charges?: Array<{
+    name: string;
+    charge_type: 'fixed' | 'percentage';
+    value: number;
+    amount: number;
+  }>;
 };
 
 type BillListRow = BillRow & {
@@ -347,7 +353,30 @@ billsRouter.post('/', async (req, res) => {
       });
     }
 
-    const grandTotal = roundMoney(subtotal + gstTotal);
+    // Fetch all active extra charges
+    const activeChargesResult = await client.query(
+      `SELECT name, charge_type, value FROM extra_charges WHERE is_active = true`
+    );
+
+    let extraChargesTotal = 0;
+    const extraChargesBreakdown = activeChargesResult.rows.map((charge: any) => {
+      const val = Number(charge.value);
+      let amt = 0;
+      if (charge.charge_type === 'percentage') {
+        amt = roundMoney(subtotal * (val / 100));
+      } else {
+        amt = roundMoney(val);
+      }
+      extraChargesTotal = roundMoney(extraChargesTotal + amt);
+      return {
+        name: charge.name,
+        charge_type: charge.charge_type,
+        value: val,
+        amount: amt,
+      };
+    });
+
+    const grandTotal = roundMoney(subtotal + gstTotal + extraChargesTotal);
 
     // ── CORE FIX: payment is treated as successful by default until payment module exists.
     // The table is NEVER freed here — that is handled by tryAutoFreeTable.
@@ -356,11 +385,20 @@ billsRouter.post('/', async (req, res) => {
 
     const billResult = await client.query<BillRow>(
       `
-      INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id, session_id)
-      VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7)
+      INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id, session_id, extra_charges)
+      VALUES (Rs10, Rs20, Rs30, Rs40, 'completed', Rs50, Rs60, Rs70, Rs80)
       RETURNING *;
       `,
-      [cashierId, subtotal, gstTotal, grandTotal, paymentStatus, tableId ?? null, activeSessionId]
+      [
+        cashierId,
+        subtotal,
+        gstTotal,
+        grandTotal,
+        paymentStatus,
+        tableId ?? null,
+        activeSessionId,
+        JSON.stringify(extraChargesBreakdown),
+      ]
     );
 
     const bill = billResult.rows[0];
@@ -715,7 +753,8 @@ billsRouter.get('/:id/receipt', async (req, res) => {
       })),
       subtotal: bill.subtotal,
       gst_total: bill.gst_total,
-      grand_total: bill.grand_total
+      grand_total: bill.grand_total,
+      extra_charges: bill.extra_charges
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch receipt data.';

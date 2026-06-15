@@ -20,6 +20,12 @@ export type ReceiptData = {
   subtotal: string;
   gst_total: string;
   grand_total: string;
+  extra_charges?: Array<{
+    name: string;
+    charge_type: 'fixed' | 'percentage';
+    value: number;
+    amount: number;
+  }>;
 };
 
 export function ReceiptPrint({ data }: { data: ReceiptData }) {
@@ -138,6 +144,12 @@ export function ReceiptPrint({ data }: { data: ReceiptData }) {
           <span>GST Total</span>
           <span>Rs {Number(data.gst_total).toFixed(2)}</span>
         </div>
+        {data.extra_charges && Array.isArray(data.extra_charges) && data.extra_charges.map((charge, idx) => (
+          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <span>{charge.name}</span>
+            <span>Rs {Number(charge.amount).toFixed(2)}</span>
+          </div>
+        ))}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',

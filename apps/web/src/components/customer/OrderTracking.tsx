@@ -66,9 +66,14 @@ export default function OrderTracking({
               return (
                 <div key={order.order_id} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-4">
                   {/* Status banner */}
-                  <div className="bg-emerald-950 text-white rounded-xl p-3 flex justify-between items-center shadow-inner">
+                  <div className={cn(
+                    "rounded-xl p-3 flex justify-between items-center shadow-inner text-white",
+                    order.status === 'cancelled' ? "bg-red-950" : "bg-emerald-950"
+                  )}>
                     <div>
-                      <p className="text-[10px] opacity-75 uppercase font-bold tracking-wider">Order ID</p>
+                      <p className="text-[10px] opacity-75 uppercase font-bold tracking-wider">
+                        {order.status === 'cancelled' ? 'Order Cancelled' : 'Order ID'}
+                      </p>
                       <p className="text-xs font-bold truncate tracking-wide">#{order.order_id.slice(0, 8).toUpperCase()}</p>
                     </div>
                     <button
@@ -79,64 +84,76 @@ export default function OrderTracking({
                     </button>
                   </div>
 
-                  {/* Vertical Stepper */}
-                  <div className="relative pl-6 space-y-6 border-l border-stone-200 ml-3 py-2">
-                    {/* Step 1: Received */}
-                    <div className="relative">
-                      <div className={cn(
-                        "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
-                        isReceived ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
-                      )}>
-                        {isReceived && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                  {order.status === 'cancelled' ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-red-650 mb-3 border border-red-100">
+                        <span className="text-red-650 font-black text-xl">✕</span>
                       </div>
-                      <div className={cn(isReceived ? "opacity-100" : "opacity-50")}>
-                        <h4 className="text-xs font-black text-gray-800">Order Received</h4>
-                        <p className="text-[10px] text-stone-500 mt-0.5">Your order has been received by staff</p>
-                      </div>
+                      <h4 className="text-xs font-black text-gray-800">This order was cancelled</h4>
+                      <p className="text-[10px] text-stone-500 max-w-xs mt-1">
+                        If you did not request this, please notify our staff.
+                      </p>
                     </div>
+                  ) : (
+                    /* Vertical Stepper */
+                    <div className="relative pl-6 space-y-6 border-l border-stone-200 ml-3 py-2">
+                      {/* Step 1: Received */}
+                      <div className="relative">
+                        <div className={cn(
+                          "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
+                          isReceived ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
+                        )}>
+                          {isReceived && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                        <div className={cn(isReceived ? "opacity-100" : "opacity-50")}>
+                          <h4 className="text-xs font-black text-gray-800">Order Received</h4>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Your order has been received by staff</p>
+                        </div>
+                      </div>
 
-                    {/* Step 2: Preparing */}
-                    <div className="relative">
-                      <div className={cn(
-                        "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
-                        isPreparing ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
-                      )}>
-                        {isPreparing && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                      {/* Step 2: Preparing */}
+                      <div className="relative">
+                        <div className={cn(
+                          "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
+                          isPreparing ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
+                        )}>
+                          {isPreparing && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                        <div className={cn(isPreparing ? "opacity-100" : "opacity-50")}>
+                          <h4 className="text-xs font-black text-gray-800">Preparing</h4>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Our chef is preparing your meal</p>
+                        </div>
                       </div>
-                      <div className={cn(isPreparing ? "opacity-100" : "opacity-50")}>
-                        <h4 className="text-xs font-black text-gray-800">Preparing</h4>
-                        <p className="text-[10px] text-stone-500 mt-0.5">Our chef is preparing your meal</p>
-                      </div>
-                    </div>
 
-                    {/* Step 3: Ready */}
-                    <div className="relative">
-                      <div className={cn(
-                        "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
-                        isReady ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
-                      )}>
-                        {isReady && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                      {/* Step 3: Ready */}
+                      <div className="relative">
+                        <div className={cn(
+                          "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
+                          isReady ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
+                        )}>
+                          {isReady && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                        <div className={cn(isReady ? "opacity-100" : "opacity-50")}>
+                          <h4 className="text-xs font-black text-gray-800">Ready to Serve</h4>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Your order is ready to be served</p>
+                        </div>
                       </div>
-                      <div className={cn(isReady ? "opacity-100" : "opacity-50")}>
-                        <h4 className="text-xs font-black text-gray-800">Ready to Serve</h4>
-                        <p className="text-[10px] text-stone-500 mt-0.5">Your order is ready to be served</p>
-                      </div>
-                    </div>
 
-                    {/* Step 4: Served */}
-                    <div className="relative">
-                      <div className={cn(
-                        "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
-                        isServed ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
-                      )}>
-                        {isServed && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
-                      </div>
-                      <div className={cn(isServed ? "opacity-100" : "opacity-50")}>
-                        <h4 className="text-xs font-black text-gray-800">Served</h4>
-                        <p className="text-[10px] text-stone-500 mt-0.5">Enjoy your delicious food</p>
+                      {/* Step 4: Served */}
+                      <div className="relative">
+                        <div className={cn(
+                          "absolute -left-[30px] top-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center",
+                          isServed ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-stone-300"
+                        )}>
+                          {isServed && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                        <div className={cn(isServed ? "opacity-100" : "opacity-50")}>
+                          <h4 className="text-xs font-black text-gray-800">Served</h4>
+                          <p className="text-[10px] text-stone-500 mt-0.5">Enjoy your delicious food</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}

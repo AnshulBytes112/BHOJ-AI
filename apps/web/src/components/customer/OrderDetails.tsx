@@ -42,7 +42,7 @@ export default function OrderDetails({ order, onBack, onCancelOrder }: OrderDeta
               <p className="text-sm font-black text-gray-800 mt-1">#{order.order_id.slice(0, 8).toUpperCase()}</p>
               <p className="text-[9px] text-stone-400 mt-0.5">Placed on {new Date(order.created_at).toLocaleTimeString()}</p>
             </div>
-            <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full shadow-inner">
+            <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full shadow-inner ${order.status === 'cancelled' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
               {order.status || 'Preparing'}
             </span>
           </div>
