@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, X, Minus, Plus } from 'lucide-react';
 import { CartItem } from '../../types/customer';
+import { cn } from '@/lib/utils';
 
 interface CartScreenProps {
   cart: CartItem[];
@@ -130,9 +131,10 @@ export default function CartScreen({
                 {/* Name & custom tags */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 border border-emerald-600 flex items-center justify-center shrink-0">
-                      <span className="w-1.2 h-1.2 bg-emerald-600 rounded-full" />
-                    </span>
+                    <span className={cn(
+                      "w-2.5 h-2.5 rounded-full shrink-0",
+                      item.is_veg ? "bg-emerald-600" : "bg-rose-600"
+                    )} />
                     <h4 className="font-extrabold text-sm text-gray-800 truncate">{item.name}</h4>
                   </div>
                   <p className="text-[10px] text-stone-400 mt-0.5">

@@ -49,9 +49,7 @@ export default function LandingScreen({ tableNumber, onStart }: LandingScreenPro
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 border border-emerald-600 flex items-center justify-center shrink-0">
-                <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full" />
-              </span>
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-600" />
               <h4 className="font-bold text-gray-800 text-sm truncate">Paneer Tikka</h4>
             </div>
             <p className="text-xs text-stone-500 truncate mt-0.5">Cottage cheese marinated in spices & grilled.</p>
