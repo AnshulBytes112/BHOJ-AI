@@ -39,6 +39,7 @@ type Item = {
   is_active: boolean;
   stock_type: StockType;
   image_url: string | null;
+  is_veg: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -57,6 +58,7 @@ type ItemForm = {
   stock_type: StockType;
   is_active: boolean;
   image_url: string | null;
+  is_veg: boolean | null;
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -67,6 +69,7 @@ const EMPTY_FORM: ItemForm = {
   stock_type: 'limited',
   is_active: true,
   image_url: null,
+  is_veg: null,
 };
 
 const MAX_IMAGE_SIZE_KB = 500;
@@ -250,6 +253,7 @@ export default function AdminCatalogPage() {
       stock_type: item.stock_type,
       is_active: item.is_active,
       image_url: item.image_url,
+      is_veg: item.is_veg,
     });
     setFormErrors({});
     setImagePreview(item.image_url);
@@ -277,6 +281,10 @@ export default function AdminCatalogPage() {
       nextErrors.stock_quantity = 'Stock quantity must be an integer >= 0.';
     }
 
+    if (form.is_veg === null) {
+      nextErrors.is_veg = 'Food type (Veg/Non-Veg) is required.';
+    }
+
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
@@ -298,6 +306,7 @@ export default function AdminCatalogPage() {
       stock_quantity: Number(form.stock_quantity),
       stock_type: form.stock_type,
       image_url: form.image_url,
+      is_veg: form.is_veg,
       ...(editingItem ? { is_active: form.is_active } : {}),
     };
 
@@ -482,6 +491,7 @@ export default function AdminCatalogPage() {
                     <TableHead>Serial No</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Category</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-right">Stock Qty</TableHead>
                     <TableHead>Stock Type</TableHead>
@@ -492,13 +502,13 @@ export default function AdminCatalogPage() {
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-20 text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="h-20 text-center text-muted-foreground">
                         Loading catalog...
                       </TableCell>
                     </TableRow>
                   ) : filteredItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-20 text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="h-20 text-center text-muted-foreground">
                         No items found.
                       </TableCell>
                     </TableRow>
@@ -521,6 +531,16 @@ export default function AdminCatalogPage() {
                         <TableCell className="font-mono text-xs text-muted-foreground">{item.serial_number}</TableCell>
                         <TableCell className="font-medium">{item.name}</TableCell>
                         <TableCell>{item.category}</TableCell>
+                        <TableCell>
+                          <Badge 
+                            className={item.is_veg 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50" 
+                              : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-50"}
+                            variant="outline"
+                          >
+                            {item.is_veg ? 'Veg' : 'Non-Veg'}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-right">Rs {Number(item.selling_price).toFixed(2)}</TableCell>
                         <TableCell className="text-right">{item.stock_quantity}</TableCell>
                         <TableCell className="capitalize">{item.stock_type}</TableCell>
@@ -637,6 +657,33 @@ export default function AdminCatalogPage() {
                   ))}
                 </select>
                 {formErrors.category && <p className="text-xs text-destructive">{formErrors.category}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Food Type</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                    <input
+                      type="radio"
+                      name="is_veg"
+                      checked={form.is_veg === true}
+                      onChange={() => setForm((prev) => ({ ...prev, is_veg: true }))}
+                      className="h-4 w-4 border-gray-300 text-emerald-800 focus:ring-emerald-700"
+                    />
+                    Veg
+                  </label>
+                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                    <input
+                      type="radio"
+                      name="is_veg"
+                      checked={form.is_veg === false}
+                      onChange={() => setForm((prev) => ({ ...prev, is_veg: false }))}
+                      className="h-4 w-4 border-gray-300 text-rose-800 focus:ring-rose-700"
+                    />
+                    Non-Veg
+                  </label>
+                </div>
+                {formErrors.is_veg && <p className="text-xs text-destructive">{formErrors.is_veg}</p>}
               </div>
 
               <div className="space-y-2">

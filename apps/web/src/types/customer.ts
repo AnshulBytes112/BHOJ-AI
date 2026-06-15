@@ -29,6 +29,7 @@ export interface MenuItem {
   stock_type?: string;
   addons?: Addon[];
   customizable_options?: CustomizableOptionGroup[];
+  is_veg?: boolean;
 }
 
 export interface CartItem extends MenuItem {

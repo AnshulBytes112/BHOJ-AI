@@ -27,6 +27,7 @@ type ItemRow = {
   stock_type: StockType;
   image_url: string | null;
   customizable_options?: CustomizableOptionGroup[];
+  is_veg: boolean;
   created_at: Date;
   updated_at: Date;
 };
@@ -41,6 +42,7 @@ type ItemPayload = {
   image_url?: string | null;
   addons?: Array<{ name: string; price: number }>;
   customizable_options?: CustomizableOptionGroup[];
+  is_veg?: boolean;
 };
 
 const IMMUTABLE_FIELDS = new Set(['id', 'serial_number', 'created_at', 'updated_at']);
@@ -54,6 +56,7 @@ const ALLOWED_MUTABLE_FIELDS = new Set([
   'image_url',
   'addons',
   'customizable_options',
+  'is_veg',
 ]);
 
 async function ensureCategoryExists(category: string): Promise<void> {
@@ -168,6 +171,15 @@ function parseItemPayload(rawBody: unknown, allowPartial: boolean): ItemPayload 
     parsed.image_url = body.image_url as string | null;
   }
 
+  if ('is_veg' in body) {
+    if (typeof body.is_veg !== 'boolean') {
+      throw new Error('is_veg must be a boolean.');
+    }
+    parsed.is_veg = body.is_veg;
+  } else if (!allowPartial) {
+    throw new Error('is_veg is required.');
+  }
+
   if ('addons' in body) {
     if (!Array.isArray(body.addons)) {
       throw new Error('addons must be a valid array.');
@@ -266,8 +278,8 @@ itemsRouter.post('/', async (req, res) => {
 
     const result = await client.query<ItemRow>(
       `
-      INSERT INTO items (serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, image_url, customizable_options)
-      VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7, $8, $9)
+      INSERT INTO items (serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, image_url, customizable_options, is_veg)
+      VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7, $8, $9, $10)
       RETURNING *;
       `,
       [
@@ -280,6 +292,7 @@ itemsRouter.post('/', async (req, res) => {
         payload.stock_type,
         payload.image_url ?? null,
         JSON.stringify(payload.customizable_options ?? []),
+        payload.is_veg,
       ]
     );
 

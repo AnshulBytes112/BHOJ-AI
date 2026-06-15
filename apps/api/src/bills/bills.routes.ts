@@ -308,15 +308,26 @@ billsRouter.post('/', async (req, res) => {
        FROM order_items oi
        JOIN orders o ON o.order_id = oi.order_id
        JOIN items i ON i.id = oi.item_id
-       LEFT JOIN kots k ON k.order_id = o.order_id
-       LEFT JOIN kot_items ki ON ki.kot_id = k.kot_id AND ki.item_id = oi.item_id
-       LEFT JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
-       LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id AND ski.item_id = oi.item_id
        WHERE oi.order_id = ANY($1::uuid[])
          AND oi.billing_status = 'UNBILLED'
          AND o.status <> 'cancelled'
-         AND COALESCE(ki.status, '') <> 'cancelled'
-         AND COALESCE(ski.status, '') <> 'cancelled'`,
+         AND NOT EXISTS (
+           SELECT 1 
+           FROM kots k
+           JOIN kot_items ki ON ki.kot_id = k.kot_id
+           WHERE k.order_id = o.order_id
+             AND ki.item_id = oi.item_id
+             AND ki.status = 'cancelled'
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM kots k
+           JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+           JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id
+           WHERE k.order_id = o.order_id
+             AND ski.item_id = oi.item_id
+             AND ski.status = 'cancelled'
+         )`,
       [actualOrderIds]
     );
 

@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Utensils, ShoppingCart, Search, Plus, ChevronRight, HelpCircle } from 'lucide-react';
+import { Utensils, ShoppingCart, Search, Plus, Minus, ChevronRight, HelpCircle } from 'lucide-react';
 import { MenuItem, CartItem } from '../../types/customer';
 import { cn } from '@/lib/utils';
+import { useCart } from '@/hooks/useCart';
 
 interface MenuScreenProps {
   tableNumber: string;
@@ -26,8 +27,10 @@ export default function MenuScreen({
   subtotal,
   totalCartQuantity
 }: MenuScreenProps) {
+  const { addToCart, updateQuantity } = useCart();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [vegFilter, setVegFilter] = useState<'all' | 'veg' | 'nonveg'>('all');
 
   const getCategoryEmoji = (catName: string) => {
     const name = catName.toLowerCase();
@@ -40,12 +43,50 @@ export default function MenuScreen({
     return '🍽️';
   };
 
+  const getItemQuantity = (itemId: number) => {
+    return cart
+      .filter((cartItem) => cartItem.id === itemId)
+      .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+  };
+
+  const handleAddClick = (e: React.MouseEvent, item: MenuItem) => {
+    e.stopPropagation();
+    const hasOptions = (item.customizable_options && item.customizable_options.length > 0) || (item.addons && item.addons.length > 0);
+    if (hasOptions) {
+      onSelectItem(item);
+    } else {
+      addToCart(item, 1, null, []);
+    }
+  };
+
+  const handleIncrement = (e: React.MouseEvent, item: MenuItem) => {
+    e.stopPropagation();
+    const idx = cart.findIndex((cartItem) => cartItem.id === item.id);
+    if (idx > -1) {
+      updateQuantity(idx, 1);
+    } else {
+      addToCart(item, 1, null, []);
+    }
+  };
+
+  const handleDecrement = (e: React.MouseEvent, item: MenuItem) => {
+    e.stopPropagation();
+    const idx = [...cart].reverse().findIndex((cartItem) => cartItem.id === item.id);
+    if (idx > -1) {
+      const actualIndex = cart.length - 1 - idx;
+      updateQuantity(actualIndex, -1);
+    }
+  };
+
   const filteredMenuItems = menuItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = !activeCategory || 
                             (item.category && item.category.toLowerCase() === activeCategory.toLowerCase());
-    return matchesSearch && matchesCategory;
+    const matchesVeg = vegFilter === 'all' ||
+                       (vegFilter === 'veg' && item.is_veg) ||
+                       (vegFilter === 'nonveg' && !item.is_veg);
+    return matchesSearch && matchesCategory && matchesVeg;
   });
 
   return (
@@ -91,6 +132,45 @@ export default function MenuScreen({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-stone-50 border border-stone-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-700"
           />
+        </div>
+
+        {/* Veg/Non-Veg Filter */}
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => setVegFilter('all')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1",
+              vegFilter === 'all'
+                ? "bg-stone-800 text-white border-stone-800"
+                : "bg-stone-50 text-stone-600 border-stone-200"
+            )}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setVegFilter('veg')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5",
+              vegFilter === 'veg'
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                : "bg-stone-50 text-stone-600 border-stone-200"
+            )}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-600" />
+            Veg
+          </button>
+          <button
+            onClick={() => setVegFilter('nonveg')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5",
+              vegFilter === 'nonveg'
+                ? "bg-rose-50 text-rose-800 border-rose-300"
+                : "bg-stone-50 text-stone-600 border-stone-200"
+            )}
+          >
+            <span className="w-2 h-2 rounded-full bg-rose-600" />
+            Non-Veg
+          </button>
         </div>
 
         {/* Category selector */}
@@ -146,9 +226,10 @@ export default function MenuScreen({
                 <div className="flex-1 min-w-0 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="w-3.5 h-3.5 border border-emerald-600 flex items-center justify-center shrink-0">
-                        <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full" />
-                      </span>
+                      <span className={cn(
+                        "w-2.5 h-2.5 rounded-full shrink-0",
+                        item.is_veg ? "bg-emerald-600" : "bg-rose-600"
+                      )} />
                       <span className="text-xs text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold">Popular</span>
                     </div>
                     <h3 className="font-extrabold text-gray-800 text-base leading-tight truncate">{item.name}</h3>
@@ -158,15 +239,32 @@ export default function MenuScreen({
                   </div>
                   <div className="flex items-center justify-between mt-3">
                     <span className="font-black text-gray-900 text-lg">₹{item.selling_price}</span>
-                    <button 
-                      className="bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 rounded-xl px-3 py-1 text-xs font-black flex items-center gap-1 shadow-sm transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectItem(item);
-                      }}
-                    >
-                      <Plus size={14} /> Add
-                    </button>
+                    {getItemQuantity(item.id) === 0 ? (
+                      <button 
+                        className="bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 rounded-xl px-3 py-1.5 text-xs font-black flex items-center gap-1 shadow-sm transition-all active:scale-[0.97]"
+                        onClick={(e) => handleAddClick(e, item)}
+                      >
+                        <Plus size={14} /> Add
+                      </button>
+                    ) : (
+                      <div className="flex items-center bg-emerald-800 text-white rounded-xl shadow-sm border border-emerald-800 overflow-hidden">
+                        <button
+                          className="px-2.5 py-1.5 text-xs font-black hover:bg-emerald-900 transition-colors active:scale-95"
+                          onClick={(e) => handleDecrement(e, item)}
+                        >
+                          -
+                        </button>
+                        <span className="px-2 text-xs font-black min-w-[16px] text-center">
+                          {getItemQuantity(item.id)}
+                        </span>
+                        <button
+                          className="px-2.5 py-1.5 text-xs font-black hover:bg-emerald-900 transition-colors active:scale-95"
+                          onClick={(e) => handleIncrement(e, item)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 

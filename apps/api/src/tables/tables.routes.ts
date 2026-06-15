@@ -685,20 +685,31 @@ tablesRouter.get('/:tableId/unbilled-items', async (req, res) => {
       `SELECT oi.order_item_id, oi.order_id, oi.item_id, i.name as item_name,
               oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing,
               o.status AS order_status,
-              ki.status AS kot_item_status,
-              ski.status AS section_kot_item_status
+              NULL AS kot_item_status,
+              NULL AS section_kot_item_status
        FROM order_items oi
        JOIN orders o ON o.order_id = oi.order_id
        JOIN items i ON i.id = oi.item_id
-       LEFT JOIN kots k ON k.order_id = o.order_id
-       LEFT JOIN kot_items ki ON ki.kot_id = k.kot_id AND ki.item_id = oi.item_id
-       LEFT JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
-       LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id AND ski.item_id = oi.item_id
        WHERE o.session_id = $1
          AND oi.billing_status = 'UNBILLED'
          AND o.status <> 'cancelled'
-         AND COALESCE(ki.status, '') <> 'cancelled'
-         AND COALESCE(ski.status, '') <> 'cancelled'
+         AND NOT EXISTS (
+           SELECT 1 
+           FROM kots k
+           JOIN kot_items ki ON ki.kot_id = k.kot_id
+           WHERE k.order_id = o.order_id
+             AND ki.item_id = oi.item_id
+             AND ki.status = 'cancelled'
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM kots k
+           JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+           JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id
+           WHERE k.order_id = o.order_id
+             AND ski.item_id = oi.item_id
+             AND ski.status = 'cancelled'
+         )
        ORDER BY o.order_phase, oi.created_at`,
       [activeSessionId]
     );
@@ -708,21 +719,32 @@ tablesRouter.get('/:tableId/unbilled-items', async (req, res) => {
         `SELECT oi.order_item_id, oi.order_id, oi.item_id, i.name as item_name,
                 oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing,
                 o.status AS order_status,
-                ki.status AS kot_item_status,
-                ski.status AS section_kot_item_status
+                NULL AS kot_item_status,
+                NULL AS section_kot_item_status
          FROM order_items oi
          JOIN orders o ON o.order_id = oi.order_id
          JOIN items i ON i.id = oi.item_id
-         LEFT JOIN kots k ON k.order_id = o.order_id
-         LEFT JOIN kot_items ki ON ki.kot_id = k.kot_id AND ki.item_id = oi.item_id
-         LEFT JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
-         LEFT JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id AND ski.item_id = oi.item_id
          WHERE o.table_id = $1
            AND ($2::timestamp IS NULL OR o.created_at >= $2::timestamp)
            AND oi.billing_status = 'UNBILLED'
            AND o.status <> 'cancelled'
-           AND COALESCE(ki.status, '') <> 'cancelled'
-           AND COALESCE(ski.status, '') <> 'cancelled'
+           AND NOT EXISTS (
+             SELECT 1 
+             FROM kots k
+             JOIN kot_items ki ON ki.kot_id = k.kot_id
+             WHERE k.order_id = o.order_id
+               AND ki.item_id = oi.item_id
+               AND ki.status = 'cancelled'
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM kots k
+             JOIN section_kots sk ON sk.parent_kot_id = k.kot_id
+             JOIN section_kot_items ski ON ski.section_kot_id = sk.section_kot_id
+             WHERE k.order_id = o.order_id
+               AND ski.item_id = oi.item_id
+               AND ski.status = 'cancelled'
+           )
          ORDER BY o.order_phase, oi.created_at`,
         [tableId, occupiedSince]
       );

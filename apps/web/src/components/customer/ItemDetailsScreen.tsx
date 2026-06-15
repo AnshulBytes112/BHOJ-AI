@@ -106,9 +106,10 @@ export default function ItemDetailsScreen({ item, onBack, onConfirm }: ItemDetai
       <div className="flex-grow p-5 space-y-6 overflow-y-auto">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-3.5 h-3.5 border border-emerald-600 flex items-center justify-center shrink-0">
-              <span className="w-1.5 h-1.5 bg-emerald-600 rounded-full" />
-            </span>
+            <span className={cn(
+              "w-2.5 h-2.5 rounded-full shrink-0",
+              item.is_veg ? "bg-emerald-600" : "bg-rose-600"
+            )} />
             <span className="text-xs text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold">Popular</span>
           </div>
           <div className="flex justify-between items-start mt-2">

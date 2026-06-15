@@ -72,7 +72,7 @@ publicRouter.get('/items', async (req, res) => {
     const result = await pool.query(
       `SELECT i.id, i.serial_number, i.name, i.selling_price, i.category,
               i.stock_quantity, i.is_active, i.stock_type, i.image_url,
-              i.customizable_options,
+              i.customizable_options, i.is_veg,
               gc.gst_percentage as gst_rate,
               COALESCE(
                 (

@@ -805,6 +805,30 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS extra_charges JSONB DEFAULT '[]'::jsonb;
   `);
 
+  // ── VEG / NON-VEG MIGRATIONS ──
+  await pool.query(`
+    ALTER TABLE items 
+      ADD COLUMN IF NOT EXISTS is_veg BOOLEAN NOT NULL DEFAULT true;
+  `);
+
+  // Categorize existing items based on their names
+  await pool.query(`
+    UPDATE items 
+    SET is_veg = false 
+    WHERE LOWER(name) LIKE '%chicken%'
+       OR LOWER(name) LIKE '%mutton%'
+       OR LOWER(name) LIKE '%egg%'
+       OR LOWER(name) LIKE '%fish%'
+       OR LOWER(name) LIKE '%wing%'
+       OR LOWER(name) LIKE '%pork%'
+       OR LOWER(name) LIKE '%beef%'
+       OR LOWER(name) LIKE '%meat%'
+       OR LOWER(name) LIKE '%prawn%'
+       OR LOWER(name) LIKE '%crab%'
+       OR LOWER(name) LIKE '%tikka masala%'  -- Chicken tikka masala
+       OR LOWER(name) LIKE '%kebab%';
+  `);
+
   console.log('Table management schema migrations complete.');
 }
 

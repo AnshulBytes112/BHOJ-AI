@@ -101,6 +101,7 @@ type ItemForm = {
   image_url: string | null;
   addons: AddonForm[];
   customizable_options: CustomizableOptionGroup[];
+  is_veg: boolean | null;
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -113,6 +114,7 @@ const EMPTY_FORM: ItemForm = {
   image_url: null,
   addons: [],
   customizable_options: [],
+  is_veg: null,
 };
 
 const MAX_IMAGE_SIZE_KB = 500;
@@ -190,6 +192,7 @@ export default function POSTerminal() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [vegFilter, setVegFilter] = useState<'all' | 'veg' | 'nonveg'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isOrderPlaced, setIsOrderPlaced] = useState(false);
   const [orderId, setOrderId] = useState('');
@@ -296,6 +299,7 @@ export default function POSTerminal() {
         apiClient.get<Array<{
           id: number; category: string; name: string; selling_price: string;
           stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
+          is_veg?: boolean;
           addons?: any[];
           customizable_options?: any[];
         }>>('/items'),
@@ -323,7 +327,7 @@ export default function POSTerminal() {
         id: String(item.id),
         categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
         name: item.name, price: Number(item.selling_price), description: '',
-        isVegetarian: true, isAvailable: item.is_active, gstRate: 0,
+        isVegetarian: !!item.is_veg, isAvailable: item.is_active, gstRate: 0,
         stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
         image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
           ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
@@ -501,6 +505,7 @@ export default function POSTerminal() {
       stock_type: item.stockType,
       is_active: item.isAvailable,
       image_url: item.image || null,
+      is_veg: item.isVegetarian,
       addons: (item.addons || []).map(a => ({ name: a.name, price: String(a.price) })),
       customizable_options: (item.customizable_options || []).map(group => ({
         name: group.name,
@@ -522,6 +527,7 @@ export default function POSTerminal() {
     if (!form.category.trim()) nextErrors.category = 'Category is required.';
     const qty = Number(form.stock_quantity);
     if (!Number.isInteger(qty) || qty < 0) nextErrors.stock_quantity = 'Stock quantity must be >= 0.';
+    if (form.is_veg === null) nextErrors.is_veg = 'Food type (Veg/Non-Veg) is required.';
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
@@ -539,6 +545,7 @@ export default function POSTerminal() {
       stock_quantity: Number(form.stock_quantity),
       stock_type: form.stock_type,
       image_url: form.image_url,
+      is_veg: form.is_veg,
       addons: form.addons.map(a => ({ name: a.name.trim(), price: Number(a.price) })),
       customizable_options: form.customizable_options.map(group => ({
         name: group.name.trim(),
@@ -631,9 +638,15 @@ export default function POSTerminal() {
       );
       console.log('Items after search filter:', result.length);
     }
+    if (vegFilter !== 'all') {
+      result = result.filter(item => 
+        vegFilter === 'veg' ? item.isVegetarian : !item.isVegetarian
+      );
+      console.log('Items after veg filter:', result.length);
+    }
     setFilteredItems(result);
     console.log('Final filtered items:', result);
-  }, [activeCategory, searchQuery, items, categories, isEditMode]);
+  }, [activeCategory, searchQuery, vegFilter, items, categories, isEditMode]);
 
   const addToCart = (item: MenuItem, spiceLevel: string | null = null, selectedExtras: string[] = []) => {
     if (item.stockType === 'limited') {
@@ -996,8 +1009,8 @@ export default function POSTerminal() {
         return (
           <div className="flex flex-col h-full">
             {/* Categories Bar */}
-            <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0">
-              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mb-1 whitespace-nowrap">
+            <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 whitespace-nowrap">
                 <Button 
                   variant={activeCategory === 'all' ? 'default' : 'outline'}
                   className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === 'all' && "bg-blue-500 text-white")}
@@ -1015,6 +1028,36 @@ export default function POSTerminal() {
                     {cat.name}
                   </Button>
                 ))}
+              </div>
+              
+              {/* Veg/Non-Veg Filter */}
+              <div className="flex gap-2 shrink-0 border-t md:border-t-0 pt-2 md:pt-0">
+                <Button
+                  size="sm"
+                  variant={vegFilter === 'all' ? 'default' : 'outline'}
+                  className={cn("rounded-lg px-3 h-8 text-xs", vegFilter === 'all' && "bg-gray-800 text-white hover:bg-gray-900")}
+                  onClick={() => setVegFilter('all')}
+                >
+                  All
+                </Button>
+                <Button
+                  size="sm"
+                  variant={vegFilter === 'veg' ? 'default' : 'outline'}
+                  className={cn("rounded-lg px-3 h-8 text-xs flex items-center gap-1.5", vegFilter === 'veg' && "bg-emerald-600 text-white hover:bg-emerald-700")}
+                  onClick={() => setVegFilter('veg')}
+                >
+                  <span className={cn("w-1.5 h-1.5 rounded-full", vegFilter === 'veg' ? "bg-white" : "bg-emerald-600")} />
+                  Veg
+                </Button>
+                <Button
+                  size="sm"
+                  variant={vegFilter === 'nonveg' ? 'default' : 'outline'}
+                  className={cn("rounded-lg px-3 h-8 text-xs flex items-center gap-1.5", vegFilter === 'nonveg' && "bg-rose-600 text-white hover:bg-rose-700")}
+                  onClick={() => setVegFilter('nonveg')}
+                >
+                  <span className={cn("w-1.5 h-1.5 rounded-full", vegFilter === 'nonveg' ? "bg-white" : "bg-rose-600")} />
+                  Non-Veg
+                </Button>
               </div>
             </div>
 
@@ -1069,7 +1112,13 @@ export default function POSTerminal() {
                         />
                       </div>
                       <CardContent className="p-3">
-                        <h3 className="font-semibold text-sm truncate">{item.name}</h3>
+                        <h3 className="font-semibold text-sm truncate flex items-center gap-1.5">
+                          <span className={cn(
+                            "w-2 h-2 rounded-full shrink-0",
+                            item.isVegetarian ? "bg-emerald-600" : "bg-rose-600"
+                          )} />
+                          {item.name}
+                        </h3>
                         <p className="text-blue-600 font-bold text-sm">Rs {item.price}</p>
                         <p className="text-xs text-gray-500">GST: {itemGstRate}%</p>
                         
@@ -2145,6 +2194,32 @@ export default function POSTerminal() {
                       {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                     </select>
                     {formErrors.category && <p className="text-[10px] text-destructive">{formErrors.category}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Food Type*</label>
+                    <div className="flex gap-4 h-10 items-center">
+                      <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                        <input
+                          type="radio"
+                          name="pos_is_veg"
+                          checked={form.is_veg === true}
+                          onChange={() => setForm((prev) => ({ ...prev, is_veg: true }))}
+                          className="h-4 w-4 border-gray-300 text-emerald-800 focus:ring-emerald-700"
+                        />
+                        Veg
+                      </label>
+                      <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                        <input
+                          type="radio"
+                          name="pos_is_veg"
+                          checked={form.is_veg === false}
+                          onChange={() => setForm((prev) => ({ ...prev, is_veg: false }))}
+                          className="h-4 w-4 border-gray-300 text-rose-800 focus:ring-rose-700"
+                        />
+                        Non-Veg
+                      </label>
+                    </div>
+                    {formErrors.is_veg && <p className="text-[10px] text-destructive">{formErrors.is_veg}</p>}
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Selling Price (Rs)*</label>
