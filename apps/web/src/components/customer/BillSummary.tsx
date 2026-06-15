@@ -10,10 +10,13 @@ interface BillSummaryProps {
 }
 
 export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
-  // Combine all items from all orders in the current session
+  // Combine all items from all non-cancelled orders in the current session
   const allItems: { name: string; qty: number; price: number; gstRate: number }[] = [];
-  
-  orders.forEach(order => {
+
+  // Filter out cancelled orders — their items must NOT appear on the bill
+  const billableOrders = orders.filter(order => order.status !== 'cancelled');
+
+  billableOrders.forEach(order => {
     order.items.forEach(item => {
       const rate = parseFloat((item as any).gst_percent_at_billing ?? 5);
       const match = allItems.find(i => i.name === item.item_name);
@@ -42,10 +45,10 @@ export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
       </div>
 
       {/* Receipt list */}
-      {orders.length === 0 ? (
+      {billableOrders.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-stone-400">
           <Receipt size={48} className="mx-auto mb-2 opacity-50" />
-          <p>No orders placed yet. Cannot generate bill.</p>
+          <p>No billable orders found. All orders may have been cancelled.</p>
         </div>
       ) : (
         <div className="flex-1 flex flex-col justify-between">

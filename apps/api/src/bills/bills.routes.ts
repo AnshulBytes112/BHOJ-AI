@@ -386,7 +386,7 @@ billsRouter.post('/', async (req, res) => {
     const billResult = await client.query<BillRow>(
       `
       INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id, session_id, extra_charges)
-      VALUES (Rs10, Rs20, Rs30, Rs40, 'completed', Rs50, Rs60, Rs70, Rs80)
+      VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8)
       RETURNING *;
       `,
       [
