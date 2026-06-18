@@ -18,6 +18,7 @@ import { UI_CONTENT } from '@/lib/content';
 import { mockDb, DashboardMetrics } from '@/lib/mock-api';
 import { PageContainer } from '@/components/common/page-container';
 import { ResponsiveGrid } from '@/components/common/responsive-grid';
+import apiClient from '@/services/apiClient';
 
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -32,8 +33,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      const data = await mockDb.getDashboardMetrics();
-      setMetrics(data);
+      try {
+        const response = await apiClient.get('/analytics/dashboard');
+        setMetrics(response.data);
+      } catch (e) {
+        console.error('Failed to fetch dashboard metrics:', e);
+        // Fallback to mock data if API fails or backend is not ready
+        const data = await mockDb.getDashboardMetrics();
+        setMetrics(data);
+      }
       setIsLoading(false);
     };
 
@@ -70,21 +78,9 @@ export default function AdminDashboard() {
               <p className="text-muted-foreground text-sm">{admin.welcomeSubtitle}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="bg-white px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-medium text-muted-foreground shadow-sm h-11 shrink-0">
-                <Clock size={14} className="text-primary" />
-                {currentTime}
-              </div>
-              <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
-                <Zap size={14} className="text-primary fill-primary" />
-                <span className="hidden sm:inline">{actionsContent.liveSync}</span>
-              </Button>
-              <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
-                <Users size={14} className="text-primary" />
-                <span className="hidden sm:inline">{actionsContent.waiterDesk}</span>
-              </Button>
-              <Button variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
+              <Button onClick={() => window.location.reload()} variant="outline" size="sm" className="bg-white rounded-xl gap-2 text-xs font-medium border shadow-sm h-11 px-4">
                 <RefreshCcw size={14} />
-                <span className="hidden sm:inline">{actionsContent.refresh}</span>
+                <span className="hidden sm:inline">{actionsContent.refresh || 'Refresh Data'}</span>
               </Button>
             </div>
           </div>

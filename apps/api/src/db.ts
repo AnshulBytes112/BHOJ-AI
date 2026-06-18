@@ -87,14 +87,25 @@ export async function initializeDatabase(): Promise<void> {
       username VARCHAR NOT NULL UNIQUE,
       display_name VARCHAR NOT NULL,
       role VARCHAR NOT NULL DEFAULT 'ADMIN',
+      pin VARCHAR(10) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`
-    INSERT INTO users (username, display_name, role)
-    VALUES ('system_admin', 'System Admin', 'ADMIN')
-    ON CONFLICT (username) DO NOTHING;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS pin VARCHAR(10) NULL;
+  `);
+
+  await pool.query(`
+    INSERT INTO users (username, display_name, role, pin)
+    VALUES ('system_admin', 'System Admin', 'ADMIN', '0000')
+    ON CONFLICT (username) DO UPDATE SET pin = '0000', role = 'ADMIN';
+  `);
+
+  await pool.query(`
+    INSERT INTO users (username, display_name, role, pin)
+    VALUES ('waiter1', 'John Waiter', 'STAFF', '1234')
+    ON CONFLICT (username) DO UPDATE SET pin = '1234', role = 'STAFF';
   `);
 
   await pool.query(`

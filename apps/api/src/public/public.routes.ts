@@ -162,6 +162,39 @@ publicRouter.post('/login', async (req, res) => {
   res.status(401).json({ message: 'Invalid credentials' });
 });
 
+publicRouter.post('/login/pin', async (req, res) => {
+  const { pin } = req.body;
+  if (!pin) {
+    return res.status(400).json({ message: 'PIN is required' });
+  }
+
+  try {
+    const userResult = await pool.query(
+      `SELECT u.id, u.username, u.display_name, u.role, r.name as restaurant_name
+       FROM users u
+       LEFT JOIN restaurants r ON r.id = u.restaurant_id
+       WHERE u.pin = $1`,
+      [pin]
+    );
+    if (userResult.rows.length > 0) {
+      const userObj = userResult.rows[0];
+      return res.json({
+        success: true,
+        user: {
+          id: userObj.id,
+          name: userObj.display_name,
+          role: userObj.role.toLowerCase(),
+          email: userObj.username, // Using username as a fallback
+          restaurantName: userObj.restaurant_name || 'BhojAI'
+        }
+      });
+    }
+  } catch (e) {
+    console.error('PIN Login database query error:', e);
+  }
+  res.status(401).json({ message: 'Invalid PIN' });
+});
+
 // Helper to audit/log session events
 async function logSessionEvent(client: any, sessionId: string, eventType: string, metadata: any, channel: string) {
   await client.query(

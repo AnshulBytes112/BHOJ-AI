@@ -7,8 +7,12 @@ import { useRouter } from 'next/navigation';
 export default function LoginPage() {
   const router = useRouter();
 
-  const handleLoginSuccess = () => {
-    router.push('/admin/dashboard');
+  const handleLoginSuccess = (role: string) => {
+    if (role === 'staff') {
+      router.push('/admin/pos');
+    } else {
+      router.push('/admin/dashboard');
+    }
   };
 
   return <LoginForm onSuccess={handleLoginSuccess} />;

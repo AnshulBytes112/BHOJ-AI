@@ -43,7 +43,7 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed = false }: SidebarProps) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, isStaff } = useAuth();
 
   const [restaurantName, setRestaurantName] = React.useState('BhojAI');
   React.useEffect(() => {
@@ -58,25 +58,21 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     }
   }, [user]);
 
-  const userRole = user?.role?.toUpperCase() || 'STAFF';
   const filteredMenuItems = MENU_ITEMS.filter((item) => {
-    if (userRole === 'ADMIN' || userRole === 'SUPERADMIN') return true;
-    if (userRole === 'MANAGER') {
-      const restricted = ['/admin/settings/gst', '/admin/settings/receipt-layout', '/admin/users'];
-      return !restricted.includes(item.href);
+    if (isStaff) {
+      // Waiters should only see operational modules
+      return ['POS', 'Orders', 'KOT', 'Table', 'Catalogue'].includes(item.label);
     }
-    if (userRole === 'STAFF') {
-      const allowed = ['/admin/pos', '/admin/orders', '/admin/kitchen', '/admin/tables', '/admin/reservations', '/admin/bills'];
-      return allowed.includes(item.href);
-    }
-    return false;
+    return true; // Admins and Superadmins see all options
   });
 
   return (
-    <aside className={cn(
-      "bg-background border-r flex flex-col h-screen sticky top-0 transition-all duration-300",
-      collapsed ? "w-20" : "w-64"
-    )}>
+    <aside
+      className={cn(
+        "h-full bg-card border-r border-border flex flex-col transition-all duration-300 shadow-sm print:hidden",
+        collapsed ? "w-[80px]" : "w-[260px]"
+      )}
+    >
       {/* Brand */}
       <div className={cn("p-6 flex items-center", collapsed ? "justify-center" : "gap-3")}>
         <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-primary-foreground font-bold text-xl shadow-lg shadow-primary/20 shrink-0">

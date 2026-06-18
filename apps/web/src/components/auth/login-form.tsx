@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/use-auth';
 
 interface LoginFormProps {
   className?: string;
-  onSuccess?: () => void;
+  onSuccess?: (role: string) => void;
 }
 
 export function LoginForm({ className, onSuccess }: LoginFormProps) {
@@ -20,7 +20,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
   const [activeTab, setActiveTab] = useState<'password' | 'pin'>('password');
 
   const { login: loginContent } = UI_CONTENT.auth;
-  const { login: loginAction } = useAuth();
+  const { login: loginAction, loginWithPin } = useAuth();
 
   async function onSubmit(event: React.SyntheticEvent) {
     event.preventDefault();
@@ -28,9 +28,9 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
     setError(null);
 
     try {
-      const success = await loginAction(email, password);
-      if (success) {
-        if (onSuccess) onSuccess();
+      const user = await loginAction(email, password);
+      if (user) {
+        if (onSuccess) onSuccess(user.role);
       } else {
         setError('Invalid credentials. Please try again.');
       }
@@ -40,6 +40,49 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
       setIsLoading(false);
     }
   }
+
+  const onSubmitPin = React.useCallback(async () => {
+    if (pin.length < 4) {
+      setError('PIN must be 4 digits.');
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const user = await loginWithPin(pin);
+      if (user) {
+        if (onSuccess) onSuccess(user.role);
+      } else {
+        setError('Invalid PIN. Please try again.');
+        setPin(''); // Reset PIN on failure
+      }
+    } catch (err) {
+      setError('Invalid PIN. Please try again.');
+      setPin('');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pin, loginWithPin, onSuccess]);
+  React.useEffect(() => {
+    if (activeTab !== 'pin' || isLoading) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') {
+        setPin((p) => (p.length < 4 ? p + e.key : p));
+      } else if (e.key === 'Backspace') {
+        setPin((p) => p.slice(0, -1));
+      } else if (e.key === 'Enter') {
+        if (pin.length === 4) {
+          onSubmitPin();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, isLoading, pin, onSubmitPin]);
 
   return (
     <div className={cn('flex flex-col h-full p-8 gap-6', className)}>
@@ -273,22 +316,29 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             ))}
           </div>
 
-          {/* Coming soon note */}
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-2 mt-auto">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-              <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
-            </svg>
-            <p className="text-xs text-amber-700 font-medium">Quick PIN login coming soon. Use Password Login for now.</p>
-          </div>
+          {error && (
+            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 mt-auto">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+              </svg>
+              <p className="text-sm font-medium text-red-600">{error}</p>
+            </div>
+          )}
 
-          {/* Disabled submit */}
+          {/* Submit button */}
           <button
             type="button"
-            disabled
-            className="w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center opacity-50 cursor-not-allowed"
-            style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)' }}
+            onClick={onSubmitPin}
+            disabled={isLoading || pin.length < 4}
+            className="w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed mt-auto"
+            style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 4px 20px rgba(245,158,11,0.35)' }}
           >
-            Sign In with PIN
+            {isLoading ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Signing in…
+              </>
+            ) : 'Sign In with PIN'}
           </button>
         </div>
       )}

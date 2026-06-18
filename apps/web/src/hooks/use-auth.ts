@@ -47,10 +47,29 @@ export function useAuth() {
           localStorage.setItem('token', String(userObj.id));
           localStorage.setItem('restaurant_name', userObj.restaurantName);
         }
-        return true;
+        return userObj;
       }
     } catch (e) {
       console.error('Login failed:', e);
+    }
+    return false;
+  };
+
+  const loginWithPin = async (pin: string) => {
+    try {
+      const response = await apiClient.post('/public/login/pin', { pin });
+      if (response.data?.success) {
+        const userObj = response.data.user;
+        setUser(userObj);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('user', JSON.stringify(userObj));
+          localStorage.setItem('token', String(userObj.id));
+          localStorage.setItem('restaurant_name', userObj.restaurantName);
+        }
+        return userObj;
+      }
+    } catch (e) {
+      console.error('PIN Login failed:', e);
     }
     return false;
   };
@@ -66,6 +85,7 @@ export function useAuth() {
     user,
     isLoading,
     login,
+    loginWithPin,
     logout,
     isSuperAdmin: user?.role === 'superadmin',
     isAdmin: user?.role === 'admin',
