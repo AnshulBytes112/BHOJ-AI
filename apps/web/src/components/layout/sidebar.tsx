@@ -61,7 +61,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const filteredMenuItems = MENU_ITEMS.filter((item) => {
     if (isStaff) {
       // Waiters should only see operational modules
-      return ['POS', 'Orders', 'KOT', 'Table', 'Catalogue'].includes(item.label);
+      return ['POS', 'Orders', 'KOT', 'Table'].includes(item.label);
     }
     return true; // Admins and Superadmins see all options
   });
