@@ -46,7 +46,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
       setError('PIN must be 4 digits.');
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
 
@@ -91,7 +91,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+            <path d="M3 11l19-9-9 19-2-8-8-2z" />
           </svg>
         </div>
         <div>
@@ -140,7 +140,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
                 </svg>
               </span>
               <input
@@ -169,7 +169,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
               </span>
               <input
@@ -195,33 +195,18 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
               >
                 {showPassword ? (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>
+                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" /><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" /><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" /><line x1="2" x2="22" y1="2" y2="22" />
                   </svg>
                 ) : (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
                   </svg>
                 )}
               </button>
             </div>
           </div>
 
-          {/* Hint */}
-          <div className="bg-amber-50 rounded-lg p-3 text-[11px] text-amber-800 leading-relaxed border border-amber-100">
-            <span className="font-bold uppercase tracking-wider block mb-1">Demo Credentials</span>
-            <div className="grid grid-cols-2 gap-2 mt-1.5">
-              <div>
-                <span className="text-amber-900/60 block text-[10px]">ADMIN</span>
-                <span className="font-semibold block truncate">admin@restrobit.com</span>
-                <span className="opacity-75">admin123</span>
-              </div>
-              <div>
-                <span className="text-amber-900/60 block text-[10px]">WAITER</span>
-                <span className="font-semibold block truncate">waiter@bhojai.com</span>
-                <span className="opacity-75">waiter123</span>
-              </div>
-            </div>
-          </div>
+
 
           {/* PIN optional */}
           <div className="flex flex-col gap-1.5">
@@ -231,7 +216,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
                 </svg>
               </span>
               <input
@@ -252,7 +237,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
           {error && (
             <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+                <circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />
               </svg>
               <p className="text-sm font-medium text-red-600">{error}</p>
             </div>
@@ -303,7 +288,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
 
           {/* Numpad */}
           <div className="grid grid-cols-3 gap-2.5 mt-1">
-            {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key) => (
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((key) => (
               <button
                 key={key}
                 type="button"
@@ -320,8 +305,8 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
                   key === ''
                     ? 'cursor-default'
                     : key === '⌫'
-                    ? 'text-gray-500 hover:bg-gray-200'
-                    : 'text-gray-900 hover:bg-amber-50 active:bg-amber-100',
+                      ? 'text-gray-500 hover:bg-gray-200'
+                      : 'text-gray-900 hover:bg-amber-50 active:bg-amber-100',
                 )}
                 style={{
                   background: key === '' ? 'transparent' : key === '⌫' ? '#f3f4f6' : '#fff',
@@ -336,7 +321,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
           {error && (
             <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 mt-auto">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+                <circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />
               </svg>
               <p className="text-sm font-medium text-red-600">{error}</p>
             </div>
