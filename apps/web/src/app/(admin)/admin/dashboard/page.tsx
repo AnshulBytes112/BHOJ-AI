@@ -193,7 +193,7 @@ export default function AdminDashboard() {
         </ResponsiveGrid>
 
         {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <Card className="lg:col-span-2 border-none shadow-sm bg-white rounded-3xl p-6">
             <div className="flex justify-between items-center mb-6">
               <CardTitle className="text-lg font-bold">{chartsContent.sales.title}</CardTitle>
@@ -208,54 +208,101 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
-            <div className="h-[250px] w-full relative">
-              <svg className="w-full h-full" viewBox="0 0 800 200" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="gradient-orange" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.2" />
-                    <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path 
-                  d="M0 150 Q 100 160, 200 140 T 400 130 T 600 80 T 800 100" 
-                  fill="none" 
-                  stroke="var(--primary)" 
-                  strokeWidth="4" 
-                />
-                <path 
-                  d="M0 150 Q 100 160, 200 140 T 400 130 T 600 80 T 800 100 V 200 H 0 Z" 
-                  fill="url(#gradient-orange)" 
-                />
-                <path 
-                  d="M0 110 Q 150 120, 300 170 T 500 130 T 700 110 T 800 115" 
-                  fill="none" 
-                  stroke="#3d2b1f" 
-                  strokeWidth="4" 
-                />
-              </svg>
-              <div className="flex justify-between mt-4 text-[10px] text-muted-foreground font-medium px-2">
-                {metrics.salesData.labels.map((label, idx) => (
-                  <span key={idx}>{label}</span>
-                ))}
-              </div>
+            
+            {/* Dynamic CSS Revenue Chart */}
+            <div className="h-[250px] w-full relative flex items-end justify-between gap-2 px-2 pb-6 border-b border-dashed border-gray-200">
+              {metrics.salesData.labels.map((label, idx) => {
+                const dineIn = metrics.salesData.dineIn[idx] || 0;
+                const online = metrics.salesData.online[idx] || 0;
+                const total = dineIn + online;
+                const maxVal = Math.max(...metrics.salesData.dineIn.map((d, i) => d + (metrics.salesData.online[i] || 0)), 1);
+                const heightPercent = Math.max((total / maxVal) * 100, 2);
+                
+                return (
+                  <div key={idx} className="relative flex flex-col justify-end items-center h-full group flex-1">
+                    {/* Tooltip */}
+                    <div className="absolute -top-10 bg-gray-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none whitespace-nowrap">
+                      ₹{total.toFixed(0)} total
+                    </div>
+                    {/* Bar */}
+                    <div 
+                      className="w-full max-w-[32px] bg-primary rounded-t-md overflow-hidden relative"
+                      style={{ height: `${heightPercent}%`, transition: 'height 1s ease-out' }}
+                    >
+                       <div 
+                         className="absolute bottom-0 w-full bg-[#3d2b1f]" 
+                         style={{ height: `${(online / Math.max(total, 1)) * 100}%` }} 
+                       />
+                    </div>
+                    {/* Label */}
+                    <span className="absolute -bottom-6 text-[10px] font-medium text-gray-500 whitespace-nowrap">{label}</span>
+                  </div>
+                );
+              })}
             </div>
           </Card>
 
-          <Card className="border-none shadow-sm bg-white rounded-3xl p-6">
+          {/* Peak Hours Heatmap */}
+          <Card className="border-none shadow-sm bg-white rounded-3xl p-6 lg:col-span-1">
             <div className="flex justify-between items-center mb-6">
               <CardTitle className="text-lg font-bold">{chartsContent.popularTime.title}</CardTitle>
-              <Button variant="ghost" size="sm" className="text-[10px] font-bold h-6 gap-1 px-2">
-                {chartsContent.popularTime.filter} <ChevronRight size={12} />
-              </Button>
             </div>
-            <div className="h-[250px] flex flex-col justify-end border-b border-l border-dashed border-muted px-4 py-2 relative">
-               <div className="flex justify-between text-[10px] text-muted-foreground font-medium absolute bottom-[-24px] w-full left-0 px-2">
-                <span>15:00</span>
-                <span>17:00</span>
-                <span>19:00</span>
-                <span>21:00</span>
-                <span>23:00</span>
-              </div>
+            <div className="h-[250px] flex flex-col justify-between">
+               {/* 4x6 Grid for 24 hours */}
+               <div className="grid grid-cols-4 grid-rows-6 gap-1.5 h-[220px]">
+                 {metrics.peakHours?.map((ph, idx) => {
+                   const maxOrders = Math.max(...(metrics.peakHours?.map(p => p.orders) || []), 1);
+                   const intensity = Math.max(0.1, ph.orders / maxOrders);
+                   // Calculate color scale from light orange to dark orange/primary
+                   return (
+                     <div 
+                       key={idx}
+                       title={`${ph.hour} - ${ph.orders} orders`}
+                       className="rounded-sm flex items-center justify-center text-[8px] font-bold text-white transition-colors cursor-help hover:ring-2 hover:ring-amber-500 hover:ring-offset-1"
+                       style={{ 
+                         backgroundColor: `rgba(245, 158, 11, ${intensity})`,
+                         color: intensity > 0.5 ? 'white' : 'transparent'
+                       }}
+                     >
+                       {ph.orders > 0 ? ph.orders : ''}
+                     </div>
+                   );
+                 }) || <div className="col-span-4 row-span-6 flex items-center justify-center text-sm text-gray-400">No data available</div>}
+               </div>
+               <div className="flex justify-between text-[10px] text-muted-foreground font-medium px-1 mt-2">
+                 <span>00:00</span>
+                 <span>12:00</span>
+                 <span>23:00</span>
+               </div>
+            </div>
+          </Card>
+
+          {/* Top Selling Items */}
+          <Card className="border-none shadow-sm bg-white rounded-3xl p-6 lg:col-span-1">
+            <div className="flex justify-between items-center mb-6">
+              <CardTitle className="text-lg font-bold">Top Selling</CardTitle>
+            </div>
+            <div className="h-[250px] overflow-hidden flex flex-col gap-3">
+              {metrics.topSellingItems?.length ? metrics.topSellingItems.map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-xl transition-colors">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold shrink-0">
+                      #{idx + 1}
+                    </div>
+                    <div className="overflow-hidden">
+                      <p className="text-sm font-semibold text-gray-900 truncate" title={item.name}>{item.name}</p>
+                      <p className="text-[10px] text-gray-500">{item.sales} orders</p>
+                    </div>
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 shrink-0">
+                    ₹{item.revenue.toFixed(0)}
+                  </div>
+                </div>
+              )) : (
+                <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+                  No orders today
+                </div>
+              )}
             </div>
           </Card>
         </div>

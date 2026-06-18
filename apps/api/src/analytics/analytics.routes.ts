@@ -49,6 +49,75 @@ analyticsRouter.get('/dashboard', async (req, res) => {
     const avgOrderGrowth = 4.1; // placeholder
     const satisfactionGrowth = 0.2; // placeholder
 
+    // --- 1. Revenue Chart Data (Last 7 Days) ---
+    const trendResult = await client.query(
+      `SELECT 
+         DATE(created_at) as sale_date,
+         COALESCE(SUM(grand_total), 0) as daily_total
+       FROM bills
+       WHERE restaurant_id = $1 AND created_at >= CURRENT_DATE - INTERVAL '6 days'
+       GROUP BY DATE(created_at)
+       ORDER BY DATE(created_at) ASC`,
+      [restaurantId]
+    );
+
+    const labels: string[] = [];
+    const dineIn: number[] = [];
+    
+    // Fill the last 7 days even if no sales exist
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const row = trendResult.rows.find(r => {
+        const rowDate = new Date(r.sale_date);
+        return rowDate.toISOString().split('T')[0] === dateStr;
+      });
+      
+      labels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+      dineIn.push(row ? parseFloat(row.daily_total) : 0);
+    }
+
+    // --- 2. Top Selling Items ---
+    const topItemsResult = await client.query(
+      `SELECT 
+         bi.item_name as name, 
+         SUM(bi.quantity) as sales,
+         SUM(bi.line_total) as revenue
+       FROM bill_items bi
+       JOIN bills b ON b.id = bi.bill_id
+       WHERE b.restaurant_id = $1
+       GROUP BY bi.item_name
+       ORDER BY sales DESC
+       LIMIT 5`,
+      [restaurantId]
+    );
+    const topSellingItems = topItemsResult.rows.map(row => ({
+      name: row.name,
+      sales: parseInt(row.sales, 10),
+      revenue: parseFloat(row.revenue)
+    }));
+
+    // --- 3. Peak Hours Heatmap (Today) ---
+    const peakHoursResult = await client.query(
+      `SELECT 
+         EXTRACT(HOUR FROM created_at) as hour_of_day,
+         COUNT(id) as order_count
+       FROM bills
+       WHERE restaurant_id = $1 AND DATE(created_at) = CURRENT_DATE
+       GROUP BY EXTRACT(HOUR FROM created_at)
+       ORDER BY hour_of_day ASC`,
+      [restaurantId]
+    );
+    
+    const peakHours = Array.from({ length: 24 }, (_, i) => {
+      const row = peakHoursResult.rows.find(r => parseInt(r.hour_of_day, 10) === i);
+      return {
+        hour: `${i.toString().padStart(2, '0')}:00`,
+        orders: row ? parseInt(row.order_count, 10) : 0
+      };
+    });
+
     res.json({
       totalSales,
       subtotal: parseFloat(salesData.subtotal),
@@ -63,10 +132,12 @@ analyticsRouter.get('/dashboard', async (req, res) => {
       avgOrderGrowth,
       satisfactionGrowth,
       salesData: {
-        dineIn: [30, 40, 45, 50, 49, 60, 70, 91, 125], // Mock trend data
-        online: [20, 25, 30, 35, 40, 45, 50, 60, 80],
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
-      }
+        dineIn,
+        online: dineIn.map(v => Math.round(v * 0.3)), // Mock online sales as 30% of dineIn
+        labels
+      },
+      topSellingItems,
+      peakHours
     });
 
   } catch (err: any) {

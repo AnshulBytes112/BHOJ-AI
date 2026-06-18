@@ -21,6 +21,8 @@ export interface DashboardMetrics {
     online: number[];
     labels: string[];
   };
+  topSellingItems?: { name: string; sales: number; revenue: number }[];
+  peakHours?: { hour: string; orders: number }[];
 }
 
 export interface UserRecord {
