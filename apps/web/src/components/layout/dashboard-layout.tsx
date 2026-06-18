@@ -285,7 +285,7 @@ export function DashboardLayout({ children, disablePadding = false }: { children
                   <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 animate-in fade-in-50 slide-in-from-top-2 duration-150">
                     <div className="px-4 py-2 border-b border-gray-100">
                       <p className="text-sm font-bold text-gray-800 truncate">{user?.name || 'Admin User'}</p>
-                      <p className="text-xs text-gray-500 truncate">{user?.email || 'admin@bhojai.com'}</p>
+                      <p className="text-xs text-gray-500 truncate">admin@bhojai.com</p>
                     </div>
                     <button 
                       onClick={() => logout()}
