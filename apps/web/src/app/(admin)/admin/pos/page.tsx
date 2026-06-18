@@ -719,14 +719,15 @@ export default function POSTerminal() {
     // Add items from unbilled order items
     if (billableUnbilledItems.length > 0) {
       billableUnbilledItems.forEach((oi: any) => {
-        const existing = allItemsToBill.find(i => i.id === String(oi.item_id));
+        const price = Number(oi.price_at_billing);
+        const existing = allItemsToBill.find(i => i.id === String(oi.item_id) && i.price === price);
         if (existing) {
           existing.quantity += oi.quantity;
         } else {
           allItemsToBill.push({
             id: String(oi.item_id),
             name: oi.item_name || `Item #${oi.item_id}`,
-            price: Number(oi.price_at_billing),
+            price: price,
             quantity: oi.quantity,
             categoryId: '',
             gstRate: Number(oi.gst_percent_at_billing)
@@ -737,7 +738,7 @@ export default function POSTerminal() {
 
     // Add items from current cart
     cart.forEach(item => {
-      const existing = allItemsToBill.find(i => i.id === item.id);
+      const existing = allItemsToBill.find(i => i.id === item.id && i.price === item.price);
       if (existing) {
         existing.quantity += item.quantity;
       } else {
@@ -2008,26 +2009,6 @@ export default function POSTerminal() {
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Tabs Section */}
-          <div className="bg-white border-b overflow-x-auto scrollbar-none flex-shrink-0">
-            <div className="flex min-w-max">
-              {workflowTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => tab.id === 'categories' ? setActiveWorkflow(tab.id) : setShowWipDialog(true)}
-                  className={cn(
-                    "px-6 py-3 text-sm font-medium border-b-2 transition-all",
-                    activeWorkflow === tab.id 
-                      ? "border-blue-500 text-blue-600 bg-blue-50" 
-                      : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
             </div>
           </div>
 

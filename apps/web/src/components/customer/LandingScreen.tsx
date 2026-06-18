@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Utensils } from 'lucide-react';
 
 interface LandingScreenProps {
@@ -9,6 +9,17 @@ interface LandingScreenProps {
 }
 
 export default function LandingScreen({ tableNumber, onStart }: LandingScreenProps) {
+  const [restaurantName, setRestaurantName] = useState('Flavors');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('restaurant_name');
+      if (stored) {
+        setRestaurantName(stored);
+      }
+    }
+  }, []);
+
   return (
     <div className="flex-grow flex flex-col p-6 bg-gradient-to-b from-stone-50 to-white justify-between">
       {/* Header */}
@@ -16,11 +27,11 @@ export default function LandingScreen({ tableNumber, onStart }: LandingScreenPro
         <div className="w-24 h-24 bg-emerald-850 rounded-full mx-auto flex items-center justify-center shadow-lg border-4 border-white mb-4">
           <Utensils className="h-12 w-12 text-emerald-800" />
         </div>
-        <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Flavors</h1>
+        <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">{restaurantName}</h1>
         <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800 mt-1">Restaurant</p>
         
         <div className="mt-8">
-          <h2 className="text-2xl font-bold text-gray-800">Welcome to Flavors</h2>
+          <h2 className="text-2xl font-bold text-gray-800">Welcome to {restaurantName}</h2>
           <p className="text-sm text-stone-500 mt-1">Delicious food, your way!</p>
         </div>
 

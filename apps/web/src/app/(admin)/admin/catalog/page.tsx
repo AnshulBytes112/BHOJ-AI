@@ -127,6 +127,7 @@ export default function AdminCatalogPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [vegFilter, setVegFilter] = useState<'all' | 'veg' | 'nonveg'>('all');
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
@@ -158,10 +159,14 @@ export default function AdminCatalogPage() {
         statusFilter === 'all' ||
         (statusFilter === 'active' && item.is_active) ||
         (statusFilter === 'inactive' && !item.is_active);
+      const vegMatch =
+        vegFilter === 'all' ||
+        (vegFilter === 'veg' && item.is_veg) ||
+        (vegFilter === 'nonveg' && !item.is_veg);
 
-      return categoryMatch && statusMatch;
+      return categoryMatch && statusMatch && vegMatch;
     });
-  }, [items, selectedCategory, statusFilter]);
+  }, [items, selectedCategory, statusFilter, vegFilter]);
 
   async function loadItems() {
     setIsLoading(true);
@@ -473,6 +478,19 @@ export default function AdminCatalogPage() {
                       All
                     </button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Food Type</label>
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={vegFilter}
+                    onChange={(e) => setVegFilter(e.target.value as any)}
+                  >
+                    <option value="all">All Types</option>
+                    <option value="veg">Veg</option>
+                    <option value="nonveg">Non-Veg</option>
+                  </select>
                 </div>
               </div>
             </CardContent>

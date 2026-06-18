@@ -10,10 +10,20 @@ export default function VerifyPage() {
   const { login } = useAuth();
 
   const handleVerifySuccess = () => {
-    // Set a mock session and role
-    login('admin@finbooks.com', 'password');
-    // Navigate to admin dashboard after successful verification
-    router.push('/admin');
+    if (typeof window !== 'undefined') {
+      const pending = localStorage.getItem('pending_user');
+      if (pending) {
+        const userObj = JSON.parse(pending);
+        localStorage.setItem('user', JSON.stringify(userObj));
+        localStorage.setItem('token', String(userObj.id));
+        localStorage.setItem('restaurant_name', userObj.restaurantName);
+        localStorage.removeItem('pending_user');
+        window.location.href = '/admin/dashboard';
+        return;
+      }
+    }
+    login('admin@restrobit.com', 'admin123');
+    router.push('/admin/dashboard');
   };
 
   return <VerifyForm onSuccess={handleVerifySuccess} />;

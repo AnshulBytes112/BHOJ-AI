@@ -67,4 +67,5 @@ export interface Table {
   table_number: string;
   status: string;
   active_session_id?: string;
+  restaurant_name?: string;
 }

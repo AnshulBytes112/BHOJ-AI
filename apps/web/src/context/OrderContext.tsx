@@ -47,11 +47,14 @@ export function OrderProvider({ children, tableId }: { children: ReactNode; tabl
         
         const [tableData, cats, items] = await Promise.all([
           orderService.fetchTableDetails(tableId),
-          menuService.fetchCategories(),
-          menuService.fetchMenuItems()
+          menuService.fetchCategories(tableId),
+          menuService.fetchMenuItems(tableId)
         ]);
 
         setTableDetails(tableData);
+        if (tableData.restaurant_name && typeof window !== 'undefined') {
+          localStorage.setItem('restaurant_name', tableData.restaurant_name);
+        }
         setCategories(cats);
         setMenuItems(items);
 

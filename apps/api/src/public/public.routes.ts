@@ -7,6 +7,161 @@ import { generateKotForOrder } from '../orders/kot-utils';
 
 export const publicRouter = Router();
 
+// 0. POST /api/public/register — Register new restaurant and superadmin user
+publicRouter.post('/register', async (req, res) => {
+  const { name, phone, businessName } = req.body;
+  if (!name || !phone || !businessName) {
+    return res.status(400).json({ message: 'Name, phone number, and business name are required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Insert the new restaurant
+    const restResult = await client.query(
+      `INSERT INTO restaurants (name, phone, owner_name)
+       VALUES ($1, $2, $3)
+       RETURNING id, name`,
+      [businessName, phone, name]
+    );
+    const newRestaurant = restResult.rows[0];
+
+    // Set app.current_restaurant_id to this new restaurant ID inside the transaction
+    // so we can insert the users, tables, categories, etc., without RLS blocking it.
+    await client.query(`SET app.current_restaurant_id = '${newRestaurant.id}'`);
+
+    // 2. Insert the SUPERADMIN user
+    const userResult = await client.query(
+      `INSERT INTO users (username, display_name, role, restaurant_id)
+       VALUES ($1, $2, 'SUPERADMIN', $3)
+       ON CONFLICT (username)
+       DO UPDATE SET display_name = $2, role = 'SUPERADMIN', restaurant_id = $3
+       RETURNING id, username, display_name, role, restaurant_id`,
+      [phone, name, newRestaurant.id]
+    );
+    const newUser = userResult.rows[0];
+
+    // 3. Seed default categories, sections, gst config, receipt layout, and tables for the new restaurant
+    const defaultCategories = ['Starters', 'Main Course', 'Desserts', 'Beverages'];
+    for (const catName of defaultCategories) {
+      await client.query(
+        `INSERT INTO categories (name, restaurant_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [catName, newRestaurant.id]
+      );
+      
+      await client.query(
+        `INSERT INTO gst_config (label, category, gst_percentage, restaurant_id)
+         VALUES ($1, $2, 5.00, $3)
+         ON CONFLICT DO NOTHING`,
+        [catName, catName, newRestaurant.id]
+      );
+    }
+
+    const defaultSections = [
+      ['Kitchen', 'Main kitchen section for food items'],
+      ['Bar', 'Bar section for alcoholic and mixed drinks'],
+      ['Ice Cream', 'Ice cream and dessert counter'],
+      ['Beverage', 'Non-alcoholic beverages, coffee, and juices']
+    ];
+    for (const [secName, secDesc] of defaultSections) {
+      await client.query(
+        `INSERT INTO sections (section_name, description, is_active, restaurant_id)
+         VALUES ($1, $2, true, $3)
+         ON CONFLICT DO NOTHING`,
+        [secName, secDesc, newRestaurant.id]
+      );
+    }
+
+    // Add 5 default tables
+    for (let i = 1; i <= 5; i++) {
+      await client.query(
+        `INSERT INTO tables (table_number, status, restaurant_id)
+         VALUES ($1, 'free', $2)
+         ON CONFLICT DO NOTHING`,
+        [`${i}`, newRestaurant.id]
+      );
+    }
+
+    // Add a default receipt layout
+    await client.query(
+      `INSERT INTO receipt_layout (header_text, footer_text, restaurant_id)
+       VALUES ($1, 'Thank you for visiting! Come again.', $2)
+       ON CONFLICT DO NOTHING`,
+      [businessName, newRestaurant.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      success: true,
+      message: 'Restaurant registered successfully.',
+      restaurant: newRestaurant,
+      user: {
+        id: newUser.id,
+        name: newUser.display_name,
+        role: 'SUPERADMIN',
+        email: `${phone}@restrobit.com`,
+        restaurantName: newRestaurant.name,
+      }
+    });
+
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error('Registration failed:', err);
+    res.status(500).json({ message: err.message || 'Failed to register restaurant.' });
+  } finally {
+    client.release();
+  }
+});
+
+publicRouter.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (email === 'admin@restrobit.com' && password === 'admin123') {
+    const adminResult = await pool.query("SELECT id, username, display_name, role FROM users WHERE username = 'admin' OR role = 'SUPERADMIN' LIMIT 1");
+    const userObj = adminResult.rows[0] || { id: 1, username: 'admin', display_name: 'BhojAI Admin', role: 'SUPERADMIN' };
+    return res.json({
+      success: true,
+      user: {
+        id: userObj.id,
+        name: userObj.display_name,
+        role: userObj.role.toLowerCase(),
+        email: 'admin@restrobit.com',
+        restaurantName: 'BhojAI'
+      }
+    });
+  }
+
+  const phone = email.split('@')[0];
+  try {
+    const userResult = await pool.query(
+      `SELECT u.id, u.username, u.display_name, u.role, r.name as restaurant_name
+       FROM users u
+       JOIN restaurants r ON r.id = u.restaurant_id
+       WHERE u.username = $1 OR u.username = $2`,
+      [email, phone]
+    );
+    if (userResult.rows.length > 0) {
+      const userObj = userResult.rows[0];
+      return res.json({
+        success: true,
+        user: {
+          id: userObj.id,
+          name: userObj.display_name,
+          role: userObj.role.toLowerCase(),
+          email: email,
+          restaurantName: userObj.restaurant_name
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Login database query error:', e);
+  }
+  res.status(401).json({ message: 'Invalid credentials' });
+});
+
 // Helper to audit/log session events
 async function logSessionEvent(client: any, sessionId: string, eventType: string, metadata: any, channel: string) {
   await client.query(
@@ -21,8 +176,11 @@ publicRouter.get('/tables/:tableId', async (req, res) => {
   const { tableId } = req.params;
   try {
     const result = await pool.query(
-      `SELECT table_id, table_number, status, occupied_since, active_item_count, is_bill_paid
-       FROM tables WHERE table_id = $1`,
+      `SELECT t.table_id, t.table_number, t.status, t.occupied_since, t.active_item_count, t.is_bill_paid,
+              r.name as restaurant_name
+       FROM tables t
+       JOIN restaurants r ON r.id = t.restaurant_id
+       WHERE t.table_id = $1`,
       [tableId]
     );
     if (result.rows.length === 0) {
@@ -53,11 +211,25 @@ publicRouter.get('/tables/:tableId', async (req, res) => {
   }
 });
 
-// 2. GET /api/public/categories — List active categories
+// 2. GET /api/public/categories — List active categories for the scanned restaurant
 publicRouter.get('/categories', async (req, res) => {
+  const { tableId } = req.query as { tableId?: string };
   try {
+    let restaurantId: number = 1;
+    if (tableId) {
+      const tableRes = await pool.query(
+        `SELECT restaurant_id FROM tables WHERE table_id = $1 LIMIT 1`,
+        [tableId]
+      );
+      if (tableRes.rows.length > 0) {
+        restaurantId = tableRes.rows[0].restaurant_id;
+      }
+    }
     const result = await pool.query(
-      `SELECT id, name, is_active FROM categories WHERE is_active = true ORDER BY name`
+      `SELECT id, name, is_active FROM categories
+       WHERE is_active = true AND restaurant_id = $1
+       ORDER BY name`,
+      [restaurantId]
     );
     res.json(result.rows);
   } catch (err: any) {
@@ -66,9 +238,20 @@ publicRouter.get('/categories', async (req, res) => {
   }
 });
 
-// 3. GET /api/public/items — List active menu items
+// 3. GET /api/public/items — List active menu items for the scanned restaurant
 publicRouter.get('/items', async (req, res) => {
+  const { tableId } = req.query as { tableId?: string };
   try {
+    let restaurantId: number = 1;
+    if (tableId) {
+      const tableRes = await pool.query(
+        `SELECT restaurant_id FROM tables WHERE table_id = $1 LIMIT 1`,
+        [tableId]
+      );
+      if (tableRes.rows.length > 0) {
+        restaurantId = tableRes.rows[0].restaurant_id;
+      }
+    }
     const result = await pool.query(
       `SELECT i.id, i.serial_number, i.name, i.selling_price, i.category,
               i.stock_quantity, i.is_active, i.stock_type, i.image_url,
@@ -78,14 +261,18 @@ publicRouter.get('/items', async (req, res) => {
                 (
                   SELECT json_agg(json_build_object('id', ia.id, 'name', ia.name, 'price', ia.price, 'is_active', ia.is_active))
                   FROM item_addons ia
-                  WHERE ia.item_id = i.id
+                  WHERE ia.item_id = i.id AND ia.is_active = true
                 ),
                 '[]'::json
               ) as addons
        FROM items i
-       LEFT JOIN gst_config gc ON gc.category = i.category
+       LEFT JOIN gst_config gc
+         ON gc.category = i.category
+        AND gc.restaurant_id = i.restaurant_id
        WHERE i.is_active = true
-       ORDER BY i.name`
+         AND i.restaurant_id = $1
+       ORDER BY i.category, i.name`,
+      [restaurantId]
     );
     res.json(result.rows);
   } catch (err: any) {

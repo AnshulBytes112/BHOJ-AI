@@ -37,6 +37,49 @@ export const pool = new Pool({
   options: '-c timezone=Asia/Kolkata',
 });
 
+import { AsyncLocalStorage } from 'async_hooks';
+
+export interface TenantContext {
+  restaurantId: number;
+}
+
+export const tenantLocalStorage = new AsyncLocalStorage<TenantContext>();
+
+// Proxy query and connect to automatically inject SET app.current_restaurant_id
+const originalQuery = pool.query.bind(pool);
+pool.query = async function (this: any, text: any, params: any, callback: any) {
+  const store = tenantLocalStorage.getStore();
+  const restaurantId = store ? store.restaurantId : 1;
+
+  if (typeof text === 'string') {
+    const client = await pool.connect();
+    try {
+      await client.query(`SET app.current_restaurant_id = '${restaurantId}'`);
+      if (typeof params === 'function') {
+        return await client.query(text, params);
+      }
+      return await client.query(text, params || []);
+    } finally {
+      client.release();
+    }
+  }
+
+  return originalQuery(text, params, callback);
+} as any;
+
+const originalConnect = pool.connect.bind(pool);
+pool.connect = async function (this: any) {
+  const client = await originalConnect();
+  const store = tenantLocalStorage.getStore();
+  const restaurantId = store ? store.restaurantId : 1;
+  try {
+    await client.query(`SET app.current_restaurant_id = '${restaurantId}'`);
+  } catch (e) {
+    console.error('Failed to set app.current_restaurant_id on client connect:', e);
+  }
+  return client;
+} as any;
+
 export async function initializeDatabase(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -141,11 +184,38 @@ export async function initializeDatabase(): Promise<void> {
     $$;
   `);
 
+  // Ensure unique constraint on gst_config to prevent duplicates from repeated server restarts
   await pool.query(`
-    INSERT INTO gst_config (label, category, gst_percentage)
-    SELECT c.name, c.name, 5.00
+    ALTER TABLE gst_config
+      ADD COLUMN IF NOT EXISTS restaurant_id INTEGER;
+  `);
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'unique_gst_category_restaurant' AND conrelid = 'gst_config'::regclass
+      ) THEN
+        -- Delete duplicates first, keeping lowest id per (category, restaurant_id)
+        DELETE FROM gst_config a
+        USING gst_config b
+        WHERE a.id > b.id
+          AND a.category = b.category
+          AND COALESCE(a.restaurant_id, 1) = COALESCE(b.restaurant_id, 1);
+
+        ALTER TABLE gst_config
+          ADD CONSTRAINT unique_gst_category_restaurant UNIQUE (category, restaurant_id);
+      END IF;
+    END
+    $$;
+  `);
+
+  // Seed gst_config per-restaurant from categories, respecting the unique constraint
+  await pool.query(`
+    INSERT INTO gst_config (label, category, gst_percentage, restaurant_id)
+    SELECT c.name, c.name, 5.00, c.restaurant_id
     FROM categories c
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT (category, restaurant_id) DO NOTHING;
   `);
 
   await pool.query(`
@@ -286,6 +356,13 @@ export async function initializeDatabase(): Promise<void> {
     console.log('order_status_enum: cancelled value ensured');
   } catch (e: any) {
     console.warn('order_status_enum cancelled ALTER skipped:', e.message);
+  }
+
+  try {
+    await pool.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'sent_to_kitchen'`);
+    console.log('order_status_enum: sent_to_kitchen value ensured');
+  } catch (e: any) {
+    console.warn('order_status_enum sent_to_kitchen ALTER skipped:', e.message);
   }
 
   try {
@@ -563,6 +640,30 @@ export async function initializeDatabase(): Promise<void> {
         CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
   `);
 
+  // Ensure correct check constraint on kot_items status
+  try {
+    await pool.query(`ALTER TABLE kot_items DROP CONSTRAINT IF EXISTS kot_items_status_check;`);
+    await pool.query(`
+      ALTER TABLE kot_items
+        ADD CONSTRAINT kot_items_status_check
+        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+    `);
+  } catch (e: any) {
+    console.warn('Failed to rebuild kot_items_status_check constraint:', e.message);
+  }
+
+  // Ensure correct check constraint on section_kot_items status
+  try {
+    await pool.query(`ALTER TABLE section_kot_items DROP CONSTRAINT IF EXISTS section_kot_items_status_check;`);
+    await pool.query(`
+      ALTER TABLE section_kot_items
+        ADD CONSTRAINT section_kot_items_status_check
+        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+    `);
+  } catch (e: any) {
+    console.warn('Failed to rebuild section_kot_items_status_check constraint:', e.message);
+  }
+
   // 5b. Add extras and spice_level to order_items, kot_items, and section_kot_items.
   await pool.query(`
     ALTER TABLE order_items
@@ -631,6 +732,13 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS updated_by        INTEGER,
       ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       ADD COLUMN IF NOT EXISTS created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+  `);
+
+  // 6d. Ensure updated_at and updated_by columns exist on section_kots
+  await pool.query(`
+    ALTER TABLE section_kots
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS updated_by INTEGER;
   `);
 
   // 7. Index to speed up canFreeTable checks.
@@ -782,6 +890,12 @@ export async function initializeDatabase(): Promise<void> {
       ADD COLUMN IF NOT EXISTS notes TEXT;
   `);
 
+  await pool.query(`
+    ALTER TABLE kots
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS updated_by INTEGER;
+  `);
+
   // ── CUSTOM OPTIONS AND EXTRA CHARGES MIGRATIONS ──
   await pool.query(`
     ALTER TABLE items 
@@ -830,5 +944,165 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   console.log('Table management schema migrations complete.');
+
+  // ── TENANT MULTI-TENANCY MIGRATIONS ──
+  console.log('Running multi-tenancy migrations...');
+  
+  // 1. Create restaurants table
+  console.log('MT Step 1: Creating restaurants table...');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS restaurants (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR NOT NULL,
+      phone VARCHAR,
+      owner_name VARCHAR,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  console.log('MT Step 1: Done.');
+
+  // 2. Insert default restaurant BhojAI (id = 1)
+  console.log('MT Step 2: Seeding default restaurant...');
+  await pool.query(`
+    INSERT INTO restaurants (id, name)
+    VALUES (1, 'BhojAI')
+    ON CONFLICT (id) DO NOTHING;
+  `);
+  console.log('MT Step 2: Done.');
+
+  // 4. Update schema for all tenant tables
+  const tenantTables = [
+    'users',
+    'categories',
+    'items',
+    'gst_config',
+    'receipt_layout',
+    'tables',
+    'bills',
+    'orders',
+    'kots',
+    'sections'
+  ];
+
+  console.log('MT Step 3: Starting tenant tables loop...');
+  for (const table of tenantTables) {
+    console.log(`MT Loop: Processing table "${table}"...`);
+    // Add restaurant_id column if not exists
+    console.log(`MT Loop: "${table}" - adding column...`);
+    await pool.query(`
+      ALTER TABLE ${table} 
+        ADD COLUMN IF NOT EXISTS restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE;
+    `);
+    
+    // Default existing records to restaurant 1
+    console.log(`MT Loop: "${table}" - setting default value...`);
+    await pool.query(`
+      UPDATE ${table} SET restaurant_id = 1 WHERE restaurant_id IS NULL;
+    `);
+
+    // Enable RLS and Force RLS
+    console.log(`MT Loop: "${table}" - enabling RLS...`);
+    await pool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    console.log(`MT Loop: "${table}" - forcing RLS...`);
+    await pool.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+
+    // Create RLS Policy
+    await pool.query(`DROP POLICY IF EXISTS tenant_isolation_policy ON ${table};`);
+    await pool.query(`
+      CREATE POLICY tenant_isolation_policy ON ${table}
+      FOR ALL
+      USING (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer)
+      WITH CHECK (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer);
+    `);
+
+    // Set default value on the column so new inserts automatically inherit active tenant context
+    await pool.query(`
+      ALTER TABLE ${table} 
+        ALTER COLUMN restaurant_id 
+        SET DEFAULT coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer;
+    `);
+  }
+
+  // 3. Add security definer helper to resolve restaurant_id from table_id AFTER columns exist
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION get_table_restaurant_id(t_id UUID)
+    RETURNS INTEGER AS $$
+      SELECT restaurant_id FROM tables WHERE table_id = t_id;
+    $$ LANGUAGE SQL SECURITY DEFINER;
+  `);
+
+  // 3b. Add security definer helper to resolve restaurant_id from user_id AFTER columns exist
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION get_user_restaurant_id(u_id INTEGER)
+    RETURNS INTEGER AS $$
+      SELECT restaurant_id FROM users WHERE id = u_id;
+    $$ LANGUAGE SQL SECURITY DEFINER;
+  `);
+
+  // 5. Seed default tables for BhojAI (restaurant 1) if empty
+  const tablesCount = await pool.query("SELECT COUNT(*) FROM tables WHERE restaurant_id = 1");
+  if (parseInt(tablesCount.rows[0].count, 10) === 0) {
+    console.log('Seeding default tables for BhojAI...');
+    await pool.query(`
+      INSERT INTO tables (table_number, status, restaurant_id)
+      VALUES 
+        ('1', 'free', 1),
+        ('2', 'free', 1),
+        ('3', 'free', 1),
+        ('4', 'free', 1),
+        ('5', 'free', 1),
+        ('6', 'free', 1),
+        ('7', 'free', 1),
+        ('8', 'free', 1)
+      ON CONFLICT DO NOTHING;
+    `);
+  }
+
+  // 6. Seed default categories for BhojAI (restaurant 1) if empty
+  const catsCount = await pool.query("SELECT COUNT(*) FROM categories WHERE restaurant_id = 1");
+  if (parseInt(catsCount.rows[0].count, 10) === 0) {
+    console.log('Seeding default categories for BhojAI...');
+    await pool.query(`
+      INSERT INTO categories (name, is_active, restaurant_id)
+      VALUES 
+        ('Starters', true, 1),
+        ('Main Course', true, 1),
+        ('Beverages', true, 1),
+        ('Sweets', true, 1)
+      ON CONFLICT DO NOTHING;
+    `);
+  }
+
+  // 7. Seed default items for BhojAI (restaurant 1) if empty
+  const itemsCount = await pool.query("SELECT COUNT(*) FROM items WHERE restaurant_id = 1");
+  if (parseInt(itemsCount.rows[0].count, 10) === 0) {
+    console.log('Seeding default items for BhojAI...');
+    await pool.query(`
+      INSERT INTO items (id, serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, is_veg, restaurant_id)
+      VALUES 
+        (1, gen_random_uuid(), 'Paneer Tikka', 249.00, 'Starters', 100, true, 'unlimited'::stock_type, true, 1),
+        (2, gen_random_uuid(), 'Chicken Tikka', 299.00, 'Starters', 100, true, 'unlimited'::stock_type, false, 1),
+        (3, gen_random_uuid(), 'Butter Paneer Masala', 349.00, 'Main Course', 100, true, 'unlimited'::stock_type, true, 1),
+        (4, gen_random_uuid(), 'Chicken Biryani', 399.00, 'Main Course', 100, true, 'unlimited'::stock_type, false, 1),
+        (5, gen_random_uuid(), 'Masala Chai', 49.00, 'Beverages', 100, true, 'unlimited'::stock_type, true, 1),
+        (6, gen_random_uuid(), 'Gulab Jamun', 99.00, 'Sweets', 100, true, 'unlimited'::stock_type, true, 1)
+      ON CONFLICT DO NOTHING;
+    `);
+  }
+  
+  // 8. Reset sequences to avoid duplicate key errors from manual seeds
+  console.log('Resetting database sequence values...');
+  const tablesWithSeq = ['restaurants', 'users', 'categories', 'items', 'sections', 'gst_config'];
+  for (const table of tablesWithSeq) {
+    try {
+      await pool.query(`
+        SELECT setval('${table}_id_seq', COALESCE((SELECT MAX(id) FROM ${table}), 1));
+      `);
+    } catch (seqErr) {
+      console.warn(`Could not reset sequence for table ${table}:`, seqErr);
+    }
+  }
+
+  console.log('Multi-tenancy migrations complete.');
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Utensils, ShoppingCart, Search, Plus, Minus, ChevronRight, HelpCircle } from 'lucide-react';
 import { MenuItem, CartItem } from '../../types/customer';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,16 @@ export default function MenuScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [vegFilter, setVegFilter] = useState<'all' | 'veg' | 'nonveg'>('all');
+  const [restaurantName, setRestaurantName] = useState('Flavors');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('restaurant_name');
+      if (stored) {
+        setRestaurantName(stored);
+      }
+    }
+  }, []);
 
   const getCategoryEmoji = (catName: string) => {
     const name = catName.toLowerCase();
@@ -99,7 +109,7 @@ export default function MenuScreen({
               <Utensils className="h-5 w-5 text-emerald-800" />
             </div>
             <div>
-              <h1 className="font-extrabold text-lg text-gray-900 leading-none">Flavors</h1>
+              <h1 className="font-extrabold text-lg text-gray-900 leading-none">{restaurantName}</h1>
               <span className="text-[10px] text-gray-400 font-semibold">Restaurant</span>
             </div>
           </div>

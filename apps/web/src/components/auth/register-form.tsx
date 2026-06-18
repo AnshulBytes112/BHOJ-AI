@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { UI_CONTENT } from '@/lib/content';
 import { mockDb } from '@/lib/mock-api';
+import apiClient from '@/services/apiClient';
 
 interface RegisterFormProps {
   className?: string;
@@ -30,10 +31,15 @@ export function RegisterForm({ className, onSuccess }: RegisterFormProps) {
     setError(null);
 
     try {
-      const success = await mockDb.registerUser(formData);
-      if (success && onSuccess) onSuccess();
-    } catch (err) {
-      setError(register.errorSubmit);
+      const response = await apiClient.post('/public/register', formData);
+      if (response.data?.success) {
+        localStorage.setItem('pending_user', JSON.stringify(response.data.user));
+        if (onSuccess) onSuccess();
+      } else {
+        setError('Registration failed. Please try again.');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

@@ -31,6 +31,34 @@ function CustomerMenuContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // Hooks
+  const { cart, updateQuantity, clearCart, subtotal, totalCartQuantity, addToCart } = useCart();
+  const { 
+    tableDetails, 
+    orders, 
+    menuItems, 
+    categories, 
+    loading, 
+    submitting, 
+    error, 
+    setError,
+    placeOrder, 
+    callWaiter, 
+    requestBill, 
+    reloadOrders 
+  } = useOrder();
+
+  const [restaurantName, setRestaurantName] = useState('Flavors');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('restaurant_name');
+      if (stored) {
+        setRestaurantName(stored);
+      }
+    }
+  }, [tableDetails]);
+
   // View state switcher
   const [activeView, setActiveView] = useState<
     'landing' | 'menu' | 'item-details' | 'cart' | 'checkout' | 'order-confirmation' | 'order-tracking' | 'order-details' | 'call-waiter' | 'request-bill' | 'bill-summary'
@@ -90,22 +118,7 @@ function CustomerMenuContent() {
     }
   }, [activeView]);
 
-  // Hooks
-  const { cart, updateQuantity, clearCart, subtotal, totalCartQuantity, addToCart } = useCart();
-  const { 
-    tableDetails, 
-    orders, 
-    menuItems, 
-    categories, 
-    loading, 
-    submitting, 
-    error, 
-    setError,
-    placeOrder, 
-    callWaiter, 
-    requestBill, 
-    reloadOrders 
-  } = useOrder();
+  // Hooks already initialized above
 
   // Establish live web sockets
   useWebSocket({
@@ -124,7 +137,7 @@ function CustomerMenuContent() {
     return (
       <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto shadow-2xl">
         <Utensils className="h-16 w-16 text-emerald-800 animate-pulse mb-4" />
-        <h1 className="text-xl font-bold text-gray-800">Flavors Restaurant</h1>
+        <h1 className="text-xl font-bold text-gray-800">{restaurantName} Restaurant</h1>
         <p className="text-sm text-gray-500 mt-2">Loading menu and table configuration...</p>
       </div>
     );

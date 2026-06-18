@@ -10,7 +10,8 @@ function request(method, path, body = null) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test',
-        'x-role': 'ADMIN'
+        'x-role': 'ADMIN',
+        'x-user-id': '1'
       }
     }, res => {
       let data = '';
@@ -34,6 +35,7 @@ async function run() {
     console.log('--- STARTING TEST ---');
     // 1. Get a free table
     let res = await request('GET', '/tables');
+    console.log('Tables from API:', res.data);
     const table = res.data.find(t => t.status === 'free');
     if (!table) { console.log('No free table found'); return; }
     console.log('Found free table:', table.table_number);
@@ -52,12 +54,21 @@ async function run() {
     console.log('\n--- Sending to Kitchen ---');
     res = await request('POST', `/orders/${orderId}/send-to-kitchen`);
     console.log('Sent to kitchen status:', res.status, res.data.message);
-    const skot = res.data.sectionKots[0];
-    const skotId = skot.section_kot_id;
+    // Get the section KOT items to retrieve section_kot_item_id
+    console.log('Fetching section KOTs...');
+    let kotsRes = await request('GET', '/kots/section/Starters');
+    console.log('GET /kots/section/Starters response:', kotsRes.status, kotsRes.data);
+    const activeSkot = Array.isArray(kotsRes.data) ? kotsRes.data.find(sk => sk.order_id === orderId) : null;
+    if (!activeSkot) {
+      console.log('Could not find active KOT for order:', orderId);
+      return;
+    }
+    const skotItem = activeSkot.items[0];
+    const itemId = skotItem.section_kot_item_id;
 
-    // 4. Mark KOT Acknowledged
-    console.log('\n--- Mark KOT Acknowledged ---');
-    res = await request('POST', `/kots/section-kots/${skotId}/status`, { status: 'acknowledged' });
+    // 4. Mark KOT Item Acknowledged
+    console.log('\n--- Mark KOT Item Acknowledged ---');
+    res = await request('POST', `/kots/items/${itemId}/status`, { status: 'acknowledged' });
     console.log('Ack status:', res.status, res.data.status);
 
     // 5. Generate Bill
@@ -80,14 +91,18 @@ async function run() {
     res = await request('GET', `/tables/${table.table_id}`);
     console.log('\nTable status before KOT served:', res.data.status);
 
-    // 8. Mark KOT Completed
-    console.log('\n--- Mark KOT Ready ---');
-    res = await request('POST', `/kots/section-kots/${skotId}/status`, { status: 'completed' });
+    // 8. Mark KOT Item Preparing and then Ready
+    console.log('\n--- Mark KOT Item Preparing ---');
+    res = await request('POST', `/kots/items/${itemId}/status`, { status: 'preparing' });
+    console.log('Preparing status:', res.status, res.data.status);
+
+    console.log('\n--- Mark KOT Item Ready ---');
+    res = await request('POST', `/kots/items/${itemId}/status`, { status: 'ready' });
     console.log('Ready status:', res.status, res.data.status);
 
-    // 9. Mark KOT Served
-    console.log('\n--- Mark KOT Served ---');
-    res = await request('POST', `/kots/section-kots/${skotId}/status`, { status: 'served' });
+    // 9. Mark KOT Item Served
+    console.log('\n--- Mark KOT Item Served ---');
+    res = await request('POST', `/kots/items/${itemId}/status`, { status: 'served' });
     console.log('Served status:', res.status, res.data.status);
 
     // 10. Check Table Status

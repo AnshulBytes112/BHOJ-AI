@@ -3,7 +3,7 @@ import cors from 'cors';
 import * as path from 'path';
 import dotenv from 'dotenv';
 import { initializeDatabase } from './db';
-import { requireAdminRole } from './middleware/admin-auth';
+import { requireAdminRole, tenantContextMiddleware, publicTenantMiddleware } from './middleware/admin-auth';
 import { itemsRouter } from './items/items.routes';
 import { categoriesRouter } from './categories/categories.routes';
 import { billsRouter } from './bills/bills.routes';
@@ -70,14 +70,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.use('/api/public', publicRouter);
+app.use('/api/public', publicTenantMiddleware, tenantContextMiddleware, publicRouter);
 
 // Basic Root Route (Public)
 app.get('/api', (req, res) => {
   res.send({ message: 'Welcome to the Hotel Management API' });
 });
 
-app.use('/api', requireAdminRole);
+app.use('/api', requireAdminRole, tenantContextMiddleware);
 
 app.use('/api/items', itemsRouter);
 app.use('/api/categories', categoriesRouter);

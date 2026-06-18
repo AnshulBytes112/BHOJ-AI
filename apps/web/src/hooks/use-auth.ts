@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { mockDb } from '@/lib/mock-api';
+import apiClient from '@/services/apiClient';
 
 export type Role = 'superadmin' | 'admin' | 'staff' | 'manager' | null;
 
 interface User {
   name: string;
   role: Role;
+  restaurantName?: string;
 }
 
 /**
@@ -35,10 +37,20 @@ export function useAuth() {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const result = await mockDb.login(email, password);
-    if (result.success) {
-      setUser(result.user);
-      return true;
+    try {
+      const response = await apiClient.post('/public/login', { email, password });
+      if (response.data?.success) {
+        const userObj = response.data.user;
+        setUser(userObj);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('user', JSON.stringify(userObj));
+          localStorage.setItem('token', String(userObj.id));
+          localStorage.setItem('restaurant_name', userObj.restaurantName);
+        }
+        return true;
+      }
+    } catch (e) {
+      console.error('Login failed:', e);
     }
     return false;
   };

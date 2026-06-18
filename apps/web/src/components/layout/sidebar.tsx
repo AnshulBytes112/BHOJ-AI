@@ -29,11 +29,8 @@ const MENU_ITEMS: MenuItem[] = [
   { icon: FileText, label: 'Orders', href: '/admin/orders' },
   { icon: UtensilsCrossed, label: 'KOT', href: '/admin/kitchen' },
   { icon: TableIcon, label: 'Table', href: '/admin/tables' },
-  { icon: CalendarDays, label: 'Reservations', href: '/admin/reservations' },
-  { icon: Store, label: 'Offering', href: '/admin/offering' },
+  { icon: Store, label: 'Catalogue', href: '/admin/catalog' },
   { icon: FileText, label: 'Bills', href: '/admin/bills' },
-  { icon: Package, label: 'Inventory', href: '/admin/inventory' },
-  { icon: CreditCard, label: 'Payments', href: '/admin/payments' },
   { icon: FileText, label: 'Invoice', href: '/admin/invoices' },
   { icon: Settings, label: 'GST Config', href: '/admin/settings/gst' },
   { icon: FileText, label: 'Receipt Layout', href: '/admin/settings/receipt-layout' },
@@ -48,6 +45,33 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
+  const [restaurantName, setRestaurantName] = React.useState('BhojAI');
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('restaurant_name');
+      if (stored) {
+        setRestaurantName(stored);
+      } else if (user?.restaurantName) {
+        setRestaurantName(user.restaurantName);
+        localStorage.setItem('restaurant_name', user.restaurantName);
+      }
+    }
+  }, [user]);
+
+  const userRole = user?.role?.toUpperCase() || 'STAFF';
+  const filteredMenuItems = MENU_ITEMS.filter((item) => {
+    if (userRole === 'ADMIN' || userRole === 'SUPERADMIN') return true;
+    if (userRole === 'MANAGER') {
+      const restricted = ['/admin/settings/gst', '/admin/settings/receipt-layout', '/admin/users'];
+      return !restricted.includes(item.href);
+    }
+    if (userRole === 'STAFF') {
+      const allowed = ['/admin/pos', '/admin/orders', '/admin/kitchen', '/admin/tables', '/admin/reservations', '/admin/bills'];
+      return allowed.includes(item.href);
+    }
+    return false;
+  });
+
   return (
     <aside className={cn(
       "bg-background border-r flex flex-col h-screen sticky top-0 transition-all duration-300",
@@ -60,7 +84,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         </div>
         {!collapsed && (
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground">BhojAI</h1>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">{restaurantName}</h1>
           </div>
         )}
       </div>
@@ -80,7 +104,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
       {/* Navigation */}
       <nav className={cn("flex-1 px-4 overflow-y-auto space-y-1 py-4 scrollbar-hide", collapsed && "px-2")}>
-        {MENU_ITEMS.map((item) => {
+        {filteredMenuItems.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
