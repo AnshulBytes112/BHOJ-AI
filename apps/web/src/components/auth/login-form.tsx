@@ -206,6 +206,23 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             </div>
           </div>
 
+          {/* Hint */}
+          <div className="bg-amber-50 rounded-lg p-3 text-[11px] text-amber-800 leading-relaxed border border-amber-100">
+            <span className="font-bold uppercase tracking-wider block mb-1">Demo Credentials</span>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              <div>
+                <span className="text-amber-900/60 block text-[10px]">ADMIN</span>
+                <span className="font-semibold block truncate">admin@restrobit.com</span>
+                <span className="opacity-75">admin123</span>
+              </div>
+              <div>
+                <span className="text-amber-900/60 block text-[10px]">WAITER</span>
+                <span className="font-semibold block truncate">waiter@bhojai.com</span>
+                <span className="opacity-75">waiter123</span>
+              </div>
+            </div>
+          </div>
+
           {/* PIN optional */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="pin" className="text-xs font-bold tracking-widest uppercase text-gray-500">

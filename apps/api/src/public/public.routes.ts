@@ -134,6 +134,23 @@ publicRouter.post('/login', async (req, res) => {
     });
   }
 
+  if (email === 'waiter@bhojai.com' && password === 'waiter123') {
+    const waiterResult = await pool.query("SELECT id, username, display_name, role FROM users WHERE username = 'waiter1' LIMIT 1");
+    if (waiterResult.rows.length > 0) {
+      const userObj = waiterResult.rows[0];
+      return res.json({
+        success: true,
+        user: {
+          id: userObj.id,
+          name: userObj.display_name,
+          role: userObj.role.toLowerCase(),
+          email: 'waiter@bhojai.com',
+          restaurantName: 'BhojAI'
+        }
+      });
+    }
+  }
+
   const phone = email.split('@')[0];
   try {
     const userResult = await pool.query(
