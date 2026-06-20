@@ -78,7 +78,7 @@ export default function CartScreen({
   const total = subtotal - discountAmount + taxesAndCharges;
 
   return (
-    <div className="flex-grow flex flex-col bg-white">
+    <div className="flex-1 flex flex-col bg-white min-h-0 w-full relative overflow-hidden">
       {/* Header */}
       <div className="px-4 py-4 border-b border-stone-100 flex items-center justify-between bg-white sticky top-0 z-10">
         <div className="flex items-center gap-3">

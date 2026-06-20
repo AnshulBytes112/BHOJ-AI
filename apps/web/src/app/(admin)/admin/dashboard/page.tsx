@@ -306,6 +306,50 @@ export default function AdminDashboard() {
             </div>
           </Card>
         </div>
+
+        {/* Recent Reviews Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <Card className="border-none shadow-sm bg-white rounded-3xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <CardTitle className="text-lg font-bold flex items-center gap-2">
+                <Star className="text-yellow-500 fill-yellow-500" size={20} />
+                Recent Customer Reviews
+              </CardTitle>
+            </div>
+            <div className="flex flex-col gap-4">
+              {metrics.recentReviews && metrics.recentReviews.length > 0 ? (
+                metrics.recentReviews.map((review, idx) => (
+                  <div key={idx} className="p-4 bg-stone-50 rounded-2xl border border-stone-100 flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                      <div className="flex gap-1">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star
+                            key={i}
+                            size={14}
+                            className={i < review.rating ? "text-yellow-400 fill-yellow-400" : "text-stone-300"}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-stone-400 font-medium">
+                        {new Date(review.date).toLocaleDateString()} {new Date(review.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {review.feedback ? (
+                      <p className="text-sm text-gray-700 italic">"{review.feedback}"</p>
+                    ) : (
+                      <p className="text-sm text-stone-400 italic">No text feedback provided.</p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-stone-400 text-sm flex flex-col items-center">
+                  <Star size={32} className="opacity-20 mb-2" />
+                  <p>No reviews collected yet.</p>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
         </PageContainer>
       </DashboardLayout>
     </RoleGuard>

@@ -40,6 +40,14 @@ export function getWebSocketUrl(): string {
 
 export function useWebSocket({ tableId, onKotStatusUpdate, onBillStatusUpdate }: UseWebSocketProps) {
   const wsRef = useRef<WebSocket | null>(null);
+  
+  const onKotRef = useRef(onKotStatusUpdate);
+  const onBillRef = useRef(onBillStatusUpdate);
+
+  useEffect(() => {
+    onKotRef.current = onKotStatusUpdate;
+    onBillRef.current = onBillStatusUpdate;
+  }, [onKotStatusUpdate, onBillStatusUpdate]);
 
   useEffect(() => {
     if (!tableId) return;
@@ -65,9 +73,9 @@ export function useWebSocket({ tableId, onKotStatusUpdate, onBillStatusUpdate }:
           console.log('[WS Customer] Message received:', message);
 
           if (message.type === 'KOT_STATUS_UPDATED') {
-            onKotStatusUpdate();
+            onKotRef.current();
           } else if (message.type === 'BILL_STATUS_UPDATED') {
-            onBillStatusUpdate(message.status);
+            onBillRef.current(message.status);
           }
         } catch (err) {
           console.error('[WS Customer] Error parsing message:', err);
@@ -92,7 +100,7 @@ export function useWebSocket({ tableId, onKotStatusUpdate, onBillStatusUpdate }:
         wsRef.current.close();
       }
     };
-  }, [tableId, onKotStatusUpdate, onBillStatusUpdate]);
+  }, [tableId]); // Only reconnect if tableId changes
 
   return wsRef.current;
 }

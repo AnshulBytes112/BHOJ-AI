@@ -33,19 +33,19 @@ function CustomerMenuContent() {
 
   // Hooks
   const { cart, updateQuantity, clearCart, subtotal, totalCartQuantity, addToCart } = useCart();
-  const { 
-    tableDetails, 
-    orders, 
-    menuItems, 
-    categories, 
-    loading, 
-    submitting, 
-    error, 
+  const {
+    tableDetails,
+    orders,
+    menuItems,
+    categories,
+    loading,
+    submitting,
+    error,
     setError,
-    placeOrder, 
-    callWaiter, 
-    requestBill, 
-    reloadOrders 
+    placeOrder,
+    callWaiter,
+    requestBill,
+    reloadOrders
   } = useOrder();
 
   const [restaurantName, setRestaurantName] = useState('Flavors');
@@ -66,7 +66,7 @@ function CustomerMenuContent() {
 
   // Selected item details customization state
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
-  
+
   // Checkout coupon calculations state
   const [discountAmount, setDiscountAmount] = useState(0);
   const [promoApplied, setPromoApplied] = useState(false);
@@ -85,7 +85,7 @@ function CustomerMenuContent() {
     }
     const queryString = nextParams.toString();
     const targetUrl = queryString ? `${pathname}?${queryString}` : pathname;
-    
+
     if (replace) {
       router.replace(targetUrl);
     } else {
@@ -97,8 +97,8 @@ function CustomerMenuContent() {
   const currentView = searchParams.get('view') || 'landing';
   useEffect(() => {
     const validViews = [
-      'landing', 'menu', 'item-details', 'cart', 'checkout', 
-      'order-confirmation', 'order-tracking', 'order-details', 
+      'landing', 'menu', 'item-details', 'cart', 'checkout',
+      'order-confirmation', 'order-tracking', 'order-details',
       'call-waiter', 'request-bill', 'bill-summary'
     ];
     if (validViews.includes(currentView)) {
@@ -107,6 +107,13 @@ function CustomerMenuContent() {
       setActiveView('landing');
     }
   }, [currentView]);
+
+  // If the active session is already billed or payment_done, automatically jump to bill summary
+  useEffect(() => {
+    if (tableDetails?.session_status === 'billed' || tableDetails?.session_status === 'payment_done') {
+      navigateToView('bill-summary', true);
+    }
+  }, [tableDetails?.session_status]);
 
   // Automatically reset auxiliary states when shifting views
   useEffect(() => {
@@ -127,7 +134,7 @@ function CustomerMenuContent() {
       reloadOrders();
     },
     onBillStatusUpdate: (status) => {
-      if (status === 'billed') {
+      if (status === 'billed' || status === 'payment_done') {
         navigateToView('bill-summary', true);
       }
     }
@@ -148,7 +155,7 @@ function CustomerMenuContent() {
       <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto shadow-2xl">
         <h1 className="text-xl font-bold text-gray-800">Scan Error</h1>
         <p className="text-sm text-red-500 mt-2">{error}</p>
-        <button 
+        <button
           onClick={() => window.location.reload()}
           className="mt-6 px-6 py-2 bg-emerald-800 text-white rounded-xl font-semibold shadow hover:bg-emerald-900"
         >
@@ -161,14 +168,16 @@ function CustomerMenuContent() {
   const activeOrder = orders.find(o => o.order_id === viewingOrderId);
 
   return (
-    <div className="min-h-screen bg-stone-100 flex justify-center">
-      <div className="w-full max-w-md bg-white min-h-screen shadow-2xl flex flex-col relative overflow-hidden pb-16">
-        
+    <div className="h-screen h-[100dvh] bg-stone-100 flex justify-center overflow-hidden">
+      <div className={cn(
+        "w-full max-w-md bg-white h-full shadow-2xl flex flex-col relative",
+        activeView !== 'landing' && activeView !== 'item-details' ? "pb-16" : ""
+      )}>
         {/* Render Active View */}
         {activeView === 'landing' && (
-          <LandingScreen 
-            tableNumber={tableDetails?.table_number || '8'} 
-            onStart={() => navigateToView('menu')} 
+          <LandingScreen
+            tableNumber={tableDetails?.table_number || '8'}
+            onStart={() => navigateToView('menu')}
           />
         )}
 
@@ -256,6 +265,7 @@ function CustomerMenuContent() {
               navigateToView('order-details');
             }}
             onCallWaiter={() => callWaiter('General assistance')}
+            onRequestBill={() => navigateToView('request-bill')}
           />
         )}
 
@@ -284,8 +294,9 @@ function CustomerMenuContent() {
             onConfirmRequest={async () => {
               try {
                 await requestBill();
-                navigateToView('bill-summary', true);
-              } catch (e) {}
+                alert('Bill request sent to our staff. They will process it shortly.');
+                navigateToView('order-tracking');
+              } catch (e) { }
             }}
           />
         )}
@@ -299,7 +310,7 @@ function CustomerMenuContent() {
 
         {/* BOTTOM GLOBAL NAVIGATION BAR */}
         {activeView !== 'landing' && activeView !== 'item-details' && (
-          <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md h-16 bg-white border-t border-stone-200 flex justify-around items-center px-2 z-50 shadow-lg">
+          <nav className="absolute bottom-0 left-0 w-full h-16 bg-white border-t border-stone-200 flex justify-around items-center px-2 z-50 shadow-lg">
             <button
               onClick={() => navigateToView('menu')}
               className={cn(

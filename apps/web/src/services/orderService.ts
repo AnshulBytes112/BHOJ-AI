@@ -35,5 +35,24 @@ export const orderService = {
 
   async requestBillInvoice(tableId: string): Promise<void> {
     await publicApiClient.post(`/tables/${tableId}/request-bill`);
+  },
+
+  async submitReview(
+    tableId: string, 
+    rating: number, 
+    feedback: string,
+    foodRating?: number,
+    serviceRating?: number,
+    ambienceRating?: number,
+    quickTags?: string[]
+  ): Promise<void> {
+    await publicApiClient.post(`/tables/${tableId}/reviews`, { 
+      rating, 
+      feedback,
+      foodRating,
+      serviceRating,
+      ambienceRating,
+      quickTags
+    });
   }
 };

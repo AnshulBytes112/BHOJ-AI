@@ -671,9 +671,11 @@ export async function initializeDatabase(): Promise<void> {
         ADD CONSTRAINT section_kot_items_status_check
         CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
     `);
-  } catch (e: any) {
-    console.warn('Failed to rebuild section_kot_items_status_check constraint:', e.message);
-  }
+    } catch (e: any) {
+      if (!e.message.includes('already exists')) {
+        console.warn('Failed to rebuild section_kot_items_status_check constraint:', e.message);
+      }
+    }
 
   // 5b. Add extras and spice_level to order_items, kot_items, and section_kot_items.
   await pool.query(`
@@ -981,6 +983,32 @@ export async function initializeDatabase(): Promise<void> {
   `);
   console.log('MT Step 2: Done.');
 
+  // 3. Create customer_reviews table
+  console.log('MT Step 3: Creating customer_reviews table...');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_reviews (
+      id SERIAL PRIMARY KEY,
+      session_id UUID REFERENCES table_sessions(session_id) ON DELETE SET NULL,
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      food_rating INTEGER CHECK (food_rating >= 1 AND food_rating <= 5),
+      service_rating INTEGER CHECK (service_rating >= 1 AND service_rating <= 5),
+      ambience_rating INTEGER CHECK (ambience_rating >= 1 AND ambience_rating <= 5),
+      quick_tags JSONB DEFAULT '[]'::jsonb,
+      feedback TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Fallback for existing tables
+  await pool.query(`
+    ALTER TABLE customer_reviews 
+    ADD COLUMN IF NOT EXISTS food_rating INTEGER CHECK (food_rating >= 1 AND food_rating <= 5),
+    ADD COLUMN IF NOT EXISTS service_rating INTEGER CHECK (service_rating >= 1 AND service_rating <= 5),
+    ADD COLUMN IF NOT EXISTS ambience_rating INTEGER CHECK (ambience_rating >= 1 AND ambience_rating <= 5),
+    ADD COLUMN IF NOT EXISTS quick_tags JSONB DEFAULT '[]'::jsonb;
+  `);
+  console.log('MT Step 3: Done.');
+
   // 4. Update schema for all tenant tables
   const tenantTables = [
     'users',
@@ -992,7 +1020,8 @@ export async function initializeDatabase(): Promise<void> {
     'bills',
     'orders',
     'kots',
-    'sections'
+    'sections',
+    'customer_reviews'
   ];
 
   console.log('MT Step 3: Starting tenant tables loop...');
@@ -1019,12 +1048,18 @@ export async function initializeDatabase(): Promise<void> {
 
     // Create RLS Policy
     await pool.query(`DROP POLICY IF EXISTS tenant_isolation_policy ON ${table};`);
-    await pool.query(`
-      CREATE POLICY tenant_isolation_policy ON ${table}
-      FOR ALL
-      USING (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer)
-      WITH CHECK (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer);
-    `);
+    try {
+      await pool.query(`
+        CREATE POLICY tenant_isolation_policy ON ${table}
+        FOR ALL
+        USING (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer)
+        WITH CHECK (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer);
+      `);
+    } catch (e: any) {
+      if (!e.message.includes('already exists')) {
+        throw e;
+      }
+    }
 
     // Set default value on the column so new inserts automatically inherit active tenant context
     await pool.query(`

@@ -58,7 +58,7 @@ export function RoleGuard({
           onClick={() => router.push(user.role === 'staff' ? '/admin/pos' : '/admin/dashboard')} 
           className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm"
         >
-          Return to Dashboard
+          Return to POS
         </button>
       </div>
     );

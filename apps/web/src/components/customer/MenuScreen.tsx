@@ -89,18 +89,18 @@ export default function MenuScreen({
   };
 
   const filteredMenuItems = menuItems.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesCategory = !activeCategory || 
-                            (item.category && item.category.toLowerCase() === activeCategory.toLowerCase());
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesCategory = !activeCategory ||
+      (item.category && item.category.toLowerCase() === activeCategory.toLowerCase());
     const matchesVeg = vegFilter === 'all' ||
-                       (vegFilter === 'veg' && item.is_veg) ||
-                       (vegFilter === 'nonveg' && !item.is_veg);
+      (vegFilter === 'veg' && item.is_veg) ||
+      (vegFilter === 'nonveg' && !item.is_veg);
     return matchesSearch && matchesCategory && matchesVeg;
   });
 
   return (
-    <div className="flex-grow flex flex-col">
+    <div className="flex-1 flex flex-col relative overflow-hidden min-h-0 w-full">
       {/* Top Header */}
       <div className="bg-white px-4 pt-4 pb-2 border-b border-stone-100 sticky top-0 z-10">
         <div className="flex justify-between items-center mb-3">
@@ -118,8 +118,8 @@ export default function MenuScreen({
             <div className="bg-stone-50 border border-stone-200 rounded-full px-4 py-1.5 text-xs font-bold text-gray-700 flex items-center gap-1.5 shadow-sm">
               <span>Table {tableNumber}</span>
             </div>
-            <button 
-              onClick={onViewCart} 
+            <button
+              onClick={onViewCart}
               className="relative p-2 bg-stone-50 border border-stone-200 rounded-full text-gray-700 shadow-sm"
             >
               <ShoppingCart size={18} />
@@ -215,7 +215,7 @@ export default function MenuScreen({
       </div>
 
       {/* Menu List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-6">
         {filteredMenuItems.length === 0 ? (
           <div className="text-center py-12 text-stone-400">
             <HelpCircle size={48} className="mx-auto mb-2 opacity-50" />
@@ -227,7 +227,7 @@ export default function MenuScreen({
               {activeCategory || 'Our Specials'}
             </h2>
             {filteredMenuItems.map((item) => (
-              <div 
+              <div
                 key={item.id}
                 className="bg-white border border-stone-100 rounded-2xl p-3 flex gap-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => onSelectItem(item)}
@@ -250,7 +250,7 @@ export default function MenuScreen({
                   <div className="flex items-center justify-between mt-3">
                     <span className="font-black text-gray-900 text-lg">₹{item.selling_price}</span>
                     {getItemQuantity(item.id) === 0 ? (
-                      <button 
+                      <button
                         className="bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 rounded-xl px-3 py-1.5 text-xs font-black flex items-center gap-1 shadow-sm transition-all active:scale-[0.97]"
                         onClick={(e) => handleAddClick(e, item)}
                       >
@@ -292,9 +292,9 @@ export default function MenuScreen({
         )}
       </div>
 
-      {/* Floating view cart bar */}
+      {/* Static view cart bar */}
       {cart.length > 0 && (
-        <div className="absolute bottom-16 left-4 right-4 bg-emerald-800 text-white rounded-2xl p-3.5 flex items-center justify-between shadow-xl animate-in slide-in-from-bottom-5">
+        <div className="absolute bottom-0 left-0 right-0 bg-emerald-800 text-white p-4 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.15)] z-50">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-900 p-2 rounded-xl">
               <ShoppingCart size={18} />
@@ -304,11 +304,11 @@ export default function MenuScreen({
               <p className="font-black text-sm">₹{subtotal}</p>
             </div>
           </div>
-          <button 
+          <button
             onClick={onViewCart}
-            className="bg-white text-emerald-950 font-black text-xs px-4 py-2.5 rounded-xl flex items-center gap-1 hover:bg-stone-50 active:scale-[0.97]"
+            className="bg-white text-emerald-950 font-black text-sm px-5 py-2.5 rounded-xl flex items-center gap-1 hover:bg-stone-50 active:scale-[0.97] transition-transform"
           >
-            View Cart <ChevronRight size={14} />
+            View Cart <ChevronRight size={16} />
           </button>
         </div>
       )}

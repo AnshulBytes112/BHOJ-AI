@@ -1,8 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { useParams } from 'next/navigation';
 import { Receipt, Heart } from 'lucide-react';
 import { Order } from '../../types/customer';
+import { orderService } from '../../services/orderService';
+import ReviewPopup from './ReviewPopup';
 
 interface BillSummaryProps {
   orders: Order[];
@@ -10,6 +13,38 @@ interface BillSummaryProps {
 }
 
 export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
+  const params = useParams();
+  const tableId = params?.tableId as string;
+
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showReviewPopup, setShowReviewPopup] = useState(true); // Show by default when landed
+
+  const handleReviewSubmit = async (data: any) => {
+    setIsSubmitting(true);
+    try {
+      await orderService.submitReview(
+        tableId, 
+        data.rating, 
+        data.feedback, 
+        data.foodRating, 
+        data.serviceRating, 
+        data.ambienceRating, 
+        data.quickTags
+      );
+      setIsSubmitted(true);
+      setShowReviewPopup(false);
+    } catch (e) {
+      console.error('Failed to submit review', e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkipReview = () => {
+    setShowReviewPopup(false);
+  };
+
   // Combine all items from all non-cancelled orders in the current session
   const allItems: { name: string; qty: number; price: number; gstRate: number }[] = [];
 
@@ -97,8 +132,37 @@ export default function BillSummary({ orders, tableNumber }: BillSummaryProps) {
               </p>
               <p className="text-[11px] text-stone-400">We hope to serve you again.</p>
             </div>
+
+            {/* Review Section */}
+            <div className="mt-4 pt-4 border-t border-stone-200">
+              {isSubmitted ? (
+                <div className="text-center py-4 space-y-2 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <Heart className="mx-auto text-emerald-500 fill-emerald-500" size={24} />
+                  <p className="text-sm font-bold text-emerald-900">Thank you for your feedback!</p>
+                </div>
+              ) : (
+                !showReviewPopup && (
+                  <button
+                    onClick={() => setShowReviewPopup(true)}
+                    className="w-full bg-white border border-stone-200 text-gray-700 rounded-xl py-3 text-sm font-bold shadow-sm hover:bg-stone-50 transition-colors"
+                  >
+                    Leave a Review
+                  </button>
+                )
+              )}
+            </div>
+
           </div>
         </div>
+      )}
+
+      {/* Render Popup */}
+      {showReviewPopup && !isSubmitted && (
+        <ReviewPopup
+          isSubmitting={isSubmitting}
+          onSubmit={handleReviewSubmit}
+          onSkip={handleSkipReview}
+        />
       )}
     </div>
   );

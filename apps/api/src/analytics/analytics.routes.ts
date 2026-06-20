@@ -41,9 +41,35 @@ analyticsRouter.get('/dashboard', async (req, res) => {
     const totalSales = parseFloat(salesData.total_sales);
     const avgOrderValue = totalCustomers > 0 ? Math.round(totalSales / totalCustomers) : 0;
 
+    // Fetch Customer Satisfaction and Recent Reviews
+    const reviewsResult = await client.query(
+      `SELECT rating, feedback, created_at, session_id
+       FROM customer_reviews
+       WHERE restaurant_id = $1
+       ORDER BY created_at DESC
+       LIMIT 5`,
+      [restaurantId]
+    );
+    
+    const recentReviews = reviewsResult.rows.map(r => ({
+      rating: r.rating,
+      feedback: r.feedback,
+      date: r.created_at,
+      sessionId: r.session_id
+    }));
+
+    const avgRatingResult = await client.query(
+      `SELECT COALESCE(AVG(rating), 0) as avg_rating
+       FROM customer_reviews
+       WHERE restaurant_id = $1`,
+      [restaurantId]
+    );
+
+    const dbCustomerSatisfaction = parseFloat(avgRatingResult.rows[0].avg_rating);
+    const customerSatisfaction = dbCustomerSatisfaction > 0 ? Number(dbCustomerSatisfaction.toFixed(1)) : 4.8; // Fallback to 4.8 if no reviews yet
+
     // Simulated/Static metrics for UI fields we don't have DB models for yet
     const customerRetention = 68; // placeholder
-    const customerSatisfaction = 4.8; // placeholder
     const salesGrowth = 12.5; // placeholder
     const customerGrowth = 8.2; // placeholder
     const avgOrderGrowth = 4.1; // placeholder
@@ -137,7 +163,8 @@ analyticsRouter.get('/dashboard', async (req, res) => {
         labels
       },
       topSellingItems,
-      peakHours
+      peakHours,
+      recentReviews
     });
 
   } catch (err: any) {

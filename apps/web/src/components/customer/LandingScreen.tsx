@@ -21,7 +21,7 @@ export default function LandingScreen({ tableNumber, onStart }: LandingScreenPro
   }, []);
 
   return (
-    <div className="flex-grow flex flex-col p-6 bg-gradient-to-b from-stone-50 to-white justify-between">
+    <div className="flex-1 flex flex-col p-6 bg-gradient-to-b from-stone-50 to-white justify-between overflow-y-auto min-h-0 w-full">
       {/* Header */}
       <div className="text-center mt-8">
         <div className="w-24 h-24 bg-emerald-850 rounded-full mx-auto flex items-center justify-center shadow-lg border-4 border-white mb-4">

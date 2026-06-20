@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { RefreshCw, Clock, HelpCircle, ArrowLeft, Bell } from 'lucide-react';
+import { RefreshCw, Clock, HelpCircle, ArrowLeft, Bell, Receipt } from 'lucide-react';
 import { Order } from '../../types/customer';
 import { cn } from '@/lib/utils';
 
@@ -11,6 +11,7 @@ interface OrderTrackingProps {
   onRefresh: () => void;
   onViewOrderDetails: (orderId: string) => void;
   onCallWaiter: () => void;
+  onRequestBill: () => void;
 }
 
 export default function OrderTracking({
@@ -18,7 +19,8 @@ export default function OrderTracking({
   onBack,
   onRefresh,
   onViewOrderDetails,
-  onCallWaiter
+  onCallWaiter,
+  onRequestBill
 }: OrderTrackingProps) {
   return (
     <div className="flex-grow flex flex-col bg-white">
@@ -162,7 +164,13 @@ export default function OrderTracking({
       </div>
 
       {/* Bottom Actions */}
-      <div className="p-4 border-t border-stone-100 space-y-2 bg-white sticky bottom-0">
+      <div className="p-4 border-t border-stone-100 space-y-3 bg-white sticky bottom-0">
+        <button
+          onClick={onRequestBill}
+          className="w-full bg-emerald-800 text-white py-3.5 rounded-xl font-bold text-sm shadow hover:bg-emerald-900 flex items-center justify-center gap-2"
+        >
+          <Receipt size={16} /> Request Bill
+        </button>
         <button
           onClick={onCallWaiter}
           className="w-full border border-stone-200 text-gray-700 py-3.5 rounded-xl font-bold text-xs shadow hover:bg-stone-50 flex items-center justify-center gap-2"

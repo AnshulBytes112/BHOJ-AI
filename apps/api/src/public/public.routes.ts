@@ -703,41 +703,16 @@ publicRouter.post('/tables/:tableId/request-bill', async (req, res) => {
 
     const sessionId = sessionQuery.rows[0].session_id;
 
-    // Transition session to 'billed'
-    await client.query(
-      `UPDATE table_sessions
-       SET status = 'billed', last_activity_at = NOW(), version = version + 1
-       WHERE session_id = $1`,
-      [sessionId]
-    );
-
-    // Transition table status to 'billing_done'
-    await client.query(
-      `UPDATE tables SET status = 'billing_done' WHERE table_id = $1`,
-      [tableId]
-    );
-
     await logSessionEvent(client, sessionId, 'BILL_REQUESTED', { reason: 'Requested by customer QR checkout' }, 'CUSTOMER_QR');
-
-    // Fetch session billing items to return in response
-    const unbilledItems = await client.query(
-      `SELECT oi.item_id, i.name as item_name, oi.quantity, oi.price_at_billing, oi.gst_percent_at_billing
-       FROM order_items oi
-       JOIN orders o ON o.order_id = oi.order_id
-       JOIN items i ON i.id = oi.item_id
-       WHERE o.session_id = $1`,
-      [sessionId]
-    );
 
     await client.query('COMMIT');
 
     res.json({
-      message: 'Bill requested. Our staff will present your receipt shortly.',
-      items: unbilledItems.rows,
+      message: 'Bill requested. Our staff will process your bill shortly.',
       sessionId
     });
 
-    // Trigger WebSocket broadcast
+    // Trigger WebSocket broadcast to POS Admins
     broadcastToAdmins({
       type: 'REQUEST_BILL',
       tableId,
@@ -746,18 +721,66 @@ publicRouter.post('/tables/:tableId/request-bill', async (req, res) => {
       timestamp: new Date().toISOString()
     });
 
-    // Broadcast update to table client as well
-    broadcastToTable(tableId, {
-      type: 'BILL_STATUS_UPDATED',
-      tableId,
-      status: 'billed',
-      sessionId
-    });
-
   } catch (err: any) {
     await client.query('ROLLBACK');
     console.error('POST /public/tables/:tableId/request-bill error:', err);
     res.status(500).json({ message: 'Failed to request bill' });
+  } finally {
+    client.release();
+  }
+});
+
+// 8. POST /api/public/tables/:tableId/reviews — Submit Customer Review
+publicRouter.post('/tables/:tableId/reviews', async (req, res) => {
+  const { tableId } = req.params;
+  const { rating, feedback, foodRating, serviceRating, ambienceRating, quickTags } = req.body;
+
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'A valid rating between 1 and 5 is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    // Check if table exists
+    const tableCheck = await client.query(
+      `SELECT restaurant_id FROM tables WHERE table_id = $1`,
+      [tableId]
+    );
+    if (tableCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Table not found' });
+    }
+    const restaurantId = tableCheck.rows[0].restaurant_id;
+
+    // Find the most recent session for this table
+    const sessionQuery = await client.query(
+      `SELECT session_id FROM table_sessions
+       WHERE table_id = $1
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [tableId]
+    );
+
+    let sessionId = null;
+    if (sessionQuery.rows.length > 0) {
+      sessionId = sessionQuery.rows[0].session_id;
+    }
+
+    // Insert the review
+    const reviewResult = await client.query(
+      `INSERT INTO customer_reviews (session_id, restaurant_id, rating, food_rating, service_rating, ambience_rating, quick_tags, feedback)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, session_id, rating, feedback, created_at`,
+      [sessionId, restaurantId, rating, foodRating || null, serviceRating || null, ambienceRating || null, JSON.stringify(quickTags || []), feedback || null]
+    );
+
+    res.status(201).json({
+      message: 'Review submitted successfully',
+      review: reviewResult.rows[0]
+    });
+
+  } catch (err: any) {
+    console.error('POST /public/tables/:tableId/reviews error:', err);
+    res.status(500).json({ message: 'Failed to submit review' });
   } finally {
     client.release();
   }

@@ -3,6 +3,7 @@ import { PoolClient } from 'pg';
 import { randomBytes } from 'crypto';
 import { pool } from '../db';
 import { tryAutoFreeTable, auditLog } from '../tables/table-management';
+import { broadcastToTable } from '../websocket';
 
 type BillStatus = 'draft' | 'completed' | 'printed';
 
@@ -521,6 +522,16 @@ billsRouter.post('/', async (req, res) => {
     );
 
     await client.query('COMMIT');
+
+    // Broadcast update to table client so they can see the generated bill
+    if (tableId && activeSessionId) {
+      broadcastToTable(tableId, {
+        type: 'BILL_STATUS_UPDATED',
+        tableId,
+        status: 'billed',
+        sessionId: activeSessionId
+      });
+    }
 
     // Post-commit: if bill is paid, try to auto-free the table (validated)
     // This is safe because tryAutoFreeTable opens its own transaction.

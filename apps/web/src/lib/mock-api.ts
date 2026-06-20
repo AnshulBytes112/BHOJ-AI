@@ -23,6 +23,7 @@ export interface DashboardMetrics {
   };
   topSellingItems?: { name: string; sales: number; revenue: number }[];
   peakHours?: { hour: string; orders: number }[];
+  recentReviews?: { rating: number; feedback: string; date: string; sessionId?: string }[];
 }
 
 export interface UserRecord {
