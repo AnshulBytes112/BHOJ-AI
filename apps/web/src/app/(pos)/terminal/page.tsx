@@ -57,7 +57,7 @@ export default function PosTerminalPage() {
           id: i.id.toString(),
           categoryId: i.category,
           name: i.name,
-          price: parseFloat(i.selling_price),
+          price: parseFloat(i.effective_price ?? i.selling_price),
           description: i.description || '',
           isAvailable: i.is_active,
           gstRate: i.gst_percentage || 5
@@ -95,25 +95,26 @@ export default function PosTerminalPage() {
   // Or we can just let MenuGrid do it, but MenuGrid expects filtered list? Wait, in original code it calls updateItems.
   useEffect(() => {
     async function updateItems() {
+      const tableQuery = selectedTable ? (activeCategoryId ? `&tableId=${selectedTable}` : `?tableId=${selectedTable}`) : '';
       if (activeCategoryId) {
-        const res = await apiClient.get(`/items?category=${encodeURIComponent(activeCategoryId)}`);
+        const res = await apiClient.get(`/items?category=${encodeURIComponent(activeCategoryId)}${tableQuery}`);
         const items = res.data.map((i: any) => ({
           id: i.id.toString(),
           categoryId: i.category,
           name: i.name,
-          price: parseFloat(i.selling_price),
+          price: parseFloat(i.effective_price ?? i.selling_price),
           description: i.description || '',
           isAvailable: i.is_active,
           gstRate: i.gst_percentage || 5
         }));
         setMenuItems(items);
       } else {
-        const res = await apiClient.get('/items');
+        const res = await apiClient.get(`/items${tableQuery}`);
         const items = res.data.map((i: any) => ({
           id: i.id.toString(),
           categoryId: i.category,
           name: i.name,
-          price: parseFloat(i.selling_price),
+          price: parseFloat(i.effective_price ?? i.selling_price),
           description: i.description || '',
           isAvailable: i.is_active,
           gstRate: i.gst_percentage || 5
@@ -122,7 +123,7 @@ export default function PosTerminalPage() {
       }
     }
     if (!isLoading) updateItems();
-  }, [activeCategoryId, isLoading]);
+  }, [activeCategoryId, isLoading, selectedTable]);
 
   const handleAddItem = (item: MenuItem) => {
     setCart(prev => {

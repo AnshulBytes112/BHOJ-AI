@@ -297,7 +297,7 @@ export default function POSTerminal() {
       const [catsResp, itemsResp, tablesResp, chargesResp] = await Promise.all([
         apiClient.get<Array<{ id: number; name: string }>>('/categories'),
         apiClient.get<Array<{
-          id: number; category: string; name: string; selling_price: string;
+          id: number; category: string; name: string; selling_price: string; effective_price?: string;
           stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
           is_veg?: boolean;
           addons?: any[];
@@ -326,7 +326,7 @@ export default function POSTerminal() {
       const allItems: MenuItem[] = (itemsResp.data ?? []).map((item) => ({
         id: String(item.id),
         categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
-        name: item.name, price: Number(item.selling_price), description: '',
+        name: item.name, price: Number(item.effective_price ?? item.selling_price), description: '',
         isVegetarian: !!item.is_veg, isAvailable: item.is_active, gstRate: 0,
         stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
         image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
@@ -454,6 +454,41 @@ export default function POSTerminal() {
 
     return () => window.clearInterval(interval);
   }, [selectedTable, fetchTableOrders]);
+
+  // NEW: Refetch items when selectedTable changes to get correct zone prices
+  useEffect(() => {
+    if (isLoading) return;
+    
+    async function fetchZonePrices() {
+      try {
+        console.log('[POS] Fetching items for table:', selectedTable);
+        const tableQuery = selectedTable ? `?tableId=${selectedTable}` : '';
+        const itemsResp = await apiClient.get(`/items${tableQuery}`);
+        
+        console.log('[POS] Items response:', itemsResp.data.slice(0, 2));
+        
+        const categoryIdByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+        
+        const allItems: MenuItem[] = (itemsResp.data ?? []).map((item: any) => ({
+          id: String(item.id),
+          categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
+          name: item.name, price: Number(item.effective_price ?? item.selling_price), description: '',
+          isVegetarian: !!item.is_veg, isAvailable: item.is_active, gstRate: 0,
+          stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
+          image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
+            ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
+          addons: item.addons || [],
+          customizable_options: item.customizable_options || [],
+        }));
+        
+        setItems(allItems);
+      } catch (error) {
+        console.error('Failed to fetch zone prices', error);
+      }
+    }
+    
+    fetchZonePrices();
+  }, [selectedTable, isLoading, categories]);
 
   const handleImageFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {

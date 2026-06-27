@@ -373,30 +373,76 @@ billsRouter.post('/', async (req, res) => {
       });
     }
 
-    // Fetch all active extra charges
+    // ── RESOLVE ORDER TYPE from the session/orders for apply_on charge filtering ──
+    let resolvedOrderType = 'Dine In';
+    if (actualOrderIds.length > 0) {
+      const otResult = await client.query(
+        `SELECT order_type FROM orders WHERE order_id = ANY($1::uuid[]) AND order_type IS NOT NULL LIMIT 1`,
+        [actualOrderIds]
+      );
+      if (otResult.rows.length > 0 && otResult.rows[0].order_type) {
+        resolvedOrderType = otResult.rows[0].order_type;
+      }
+    }
+    const orderTypeLower = resolvedOrderType.toLowerCase();
+    const isParcel   = orderTypeLower.includes('parcel') || orderTypeLower.includes('takeaway');
+    const isDineIn   = orderTypeLower.includes('dine');
+    const isDelivery = orderTypeLower.includes('delivery');
+
+    // Fetch applicable extra charges filtered by apply_on rule
     const activeChargesResult = await client.query(
-      `SELECT name, charge_type, value FROM extra_charges WHERE is_active = true`
+      `SELECT name, charge_type, value, apply_on, is_taxable
+       FROM extra_charges
+       WHERE is_active = true
+         AND (
+           apply_on = 'always'
+           OR (apply_on = 'parcel'   AND $1 = true)
+           OR (apply_on = 'takeaway' AND $1 = true)
+           OR (apply_on = 'dine_in'  AND $2 = true)
+           OR (apply_on = 'delivery' AND $3 = true)
+         )`,
+      [isParcel, isDineIn, isDelivery]
     );
 
-    let extraChargesTotal = 0;
-    const extraChargesBreakdown = activeChargesResult.rows.map((charge: any) => {
+    // Split into taxable (added to GST base) and non-taxable (added after GST)
+    let taxableChargesTotal = 0;
+    let nonTaxableChargesTotal = 0;
+    const extraChargesBreakdown: Array<{
+      name: string; charge_type: string; value: number;
+      amount: number; apply_on: string; is_taxable: boolean;
+    }> = [];
+
+    for (const charge of activeChargesResult.rows) {
       const val = Number(charge.value);
       let amt = 0;
       if (charge.charge_type === 'percentage') {
+        // percentage base is always the item subtotal
         amt = roundMoney(subtotal * (val / 100));
       } else {
         amt = roundMoney(val);
       }
-      extraChargesTotal = roundMoney(extraChargesTotal + amt);
-      return {
+      if (charge.is_taxable) {
+        taxableChargesTotal = roundMoney(taxableChargesTotal + amt);
+      } else {
+        nonTaxableChargesTotal = roundMoney(nonTaxableChargesTotal + amt);
+      }
+      extraChargesBreakdown.push({
         name: charge.name,
         charge_type: charge.charge_type,
         value: val,
         amount: amt,
-      };
-    });
+        apply_on: charge.apply_on,
+        is_taxable: charge.is_taxable,
+      });
+    }
 
-    const grandTotal = roundMoney(subtotal + gstTotal + extraChargesTotal);
+    // GST is calculated on (item subtotal + taxable extra charges)
+    const gstBase = roundMoney(subtotal + taxableChargesTotal);
+    // Recalculate gstTotal based on new gstBase ratio (proportional uplift)
+    const gstMultiplier = subtotal > 0 ? gstBase / subtotal : 1;
+    const adjustedGstTotal = roundMoney(gstTotal * gstMultiplier);
+
+    const grandTotal = roundMoney(gstBase + adjustedGstTotal + nonTaxableChargesTotal);
 
     // ── CORE FIX: payment is treated as successful by default until payment module exists.
     // The table is NEVER freed here — that is handled by tryAutoFreeTable.
@@ -411,8 +457,8 @@ billsRouter.post('/', async (req, res) => {
       `,
       [
         cashierId,
-        subtotal,
-        gstTotal,
+        gstBase,          // subtotal stored = item subtotal + taxable charges (the taxable base)
+        adjustedGstTotal, // gst on the full taxable base
         grandTotal,
         paymentStatus,
         tableId ?? null,
@@ -420,6 +466,7 @@ billsRouter.post('/', async (req, res) => {
         JSON.stringify(extraChargesBreakdown),
       ]
     );
+
 
     const bill = billResult.rows[0];
 

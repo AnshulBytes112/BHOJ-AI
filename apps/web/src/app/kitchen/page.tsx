@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import apiClient from '@/services/apiClient';
 import {
   ChefHat, Loader2, RefreshCw, CheckCircle2,
-  AlertTriangle, Clock, CreditCard,
+  AlertTriangle, Clock, CreditCard, Wifi, WifiOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -325,6 +325,11 @@ export default function KitchenDashboardPage() {
   const [sectionLoading, setSectionLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
+
+  // Keep a stable ref to activeSection for use inside the WS callback
+  const activeSectionRef = useRef<string | null>(null);
+  activeSectionRef.current = activeSection;
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -354,14 +359,57 @@ export default function KitchenDashboardPage() {
   useEffect(() => { fetchSections(); }, []);
   useEffect(() => { fetchSkots(activeSection); }, [activeSection]);
 
-  // Auto-refresh every 20 seconds
+  // ─── WebSocket — real-time KOT events ───────────────────────────────────────
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const wsBase = apiBase.replace(/^https?:/, protocol);
+    const wsUrl = `${wsBase}/ws`;
+
+    let ws: WebSocket;
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let isUnmounted = false;
+
+    function connect() {
+      if (isUnmounted) return;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => setWsConnected(true);
+      ws.onclose = () => {
+        setWsConnected(false);
+        if (!isUnmounted) reconnectTimeout = setTimeout(connect, 5000);
+      };
+      ws.onerror = () => ws.close();
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'KOT_GENERATED' || data.type === 'KOT_STATUS_UPDATED') {
+            // Re-fetch the active section to get the latest KOTs
+            fetchSections();
+            fetchSkots(activeSectionRef.current, true);
+          }
+        } catch { /* ignore malformed */ }
+      };
+    }
+
+    connect();
+
+    return () => {
+      isUnmounted = true;
+      clearTimeout(reconnectTimeout);
+      ws?.close();
+    };
+  }, []);
+
+  // Fallback: slower 60-second poll to self-heal if WS misses an event
   useEffect(() => {
     const interval = setInterval(() => {
       fetchSections();
-      fetchSkots(activeSection, true);
-    }, 20000);
+      fetchSkots(activeSectionRef.current, true);
+    }, 60000);
     return () => clearInterval(interval);
-  }, [activeSection, fetchSections, fetchSkots]);
+  }, [fetchSections, fetchSkots]);
 
   // ⭐ ITEM-CENTRIC: Update individual items using POST /kots/items/:itemId/status
   const handleItemStatusChange = async (itemId: string, status: string) => {
@@ -409,8 +457,13 @@ export default function KitchenDashboardPage() {
           </div>
           <div>
             <h2 className="text-3xl font-black tracking-tight">Kitchen Dashboard</h2>
-            <p className="text-muted-foreground text-sm">
-              Active KOTs · {paidCount > 0 && (
+            <p className="text-muted-foreground text-sm flex items-center gap-2">
+              Active KOTs
+              {wsConnected
+                ? <span className="flex items-center gap-1 text-green-600 text-xs font-semibold"><Wifi size={11} /> Live</span>
+                : <span className="flex items-center gap-1 text-gray-400 text-xs"><WifiOff size={11} /> Reconnecting…</span>
+              }
+              {paidCount > 0 && (
                 <span className="text-green-700 font-semibold">{paidCount} table(s) already paid</span>
               )}
             </p>

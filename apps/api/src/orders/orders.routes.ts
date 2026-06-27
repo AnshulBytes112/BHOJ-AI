@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db';
 import { generateKotForOrder } from './kot-utils';
+import { broadcastToAdmins } from '../websocket';
 
 export const ordersRouter = Router();
 
@@ -94,6 +95,21 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
     const { parentKot, sectionKots } = await generateKotForOrder(client, orderId);
 
     await client.query('COMMIT');
+
+    // Broadcast to kitchen display — same as public (QR) order flow
+    try {
+      broadcastToAdmins({
+        type: 'KOT_GENERATED',
+        orderId,
+        kotId: parentKot.kot_id,
+        kotNumber: parentKot.kot_number,
+        tableNumber: parentKot.table_number,
+        orderType: parentKot.order_type,
+        sections: sectionKots.map((sk: any) => sk.section_name),
+      });
+    } catch (broadcastErr: any) {
+      console.warn('[send-to-kitchen] KOT_GENERATED broadcast error (non-fatal):', broadcastErr.message);
+    }
 
     res.json({
       message: 'Order sent to kitchen successfully',

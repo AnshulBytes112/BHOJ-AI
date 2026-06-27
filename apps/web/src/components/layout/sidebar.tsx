@@ -18,7 +18,8 @@ import {
   Users,
   LogOut,
   ChevronRight,
-  Settings
+  Settings,
+  Layers
 } from 'lucide-react';
 
 type MenuItem = { icon: any; label: string; href: string; badge?: number | string };
@@ -29,6 +30,7 @@ const MENU_ITEMS: MenuItem[] = [
   { icon: FileText, label: 'Orders', href: '/admin/orders' },
   { icon: UtensilsCrossed, label: 'KOT', href: '/admin/kitchen' },
   { icon: TableIcon, label: 'Table', href: '/admin/tables' },
+  { icon: Layers, label: 'Pricing', href: '/admin/pricing' },
   { icon: Store, label: 'Catalogue', href: '/admin/catalog' },
   { icon: FileText, label: 'Bills', href: '/admin/bills' },
   { icon: FileText, label: 'Invoice', href: '/admin/invoices' },
@@ -36,6 +38,7 @@ const MENU_ITEMS: MenuItem[] = [
   { icon: FileText, label: 'Receipt Layout', href: '/admin/settings/receipt-layout' },
   { icon: Users, label: 'User', href: '/admin/users' },
 ];
+
 
 interface SidebarProps {
   collapsed?: boolean;

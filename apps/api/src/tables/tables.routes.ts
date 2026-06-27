@@ -781,7 +781,7 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     await client.query('BEGIN');
 
     const tableCheck = await client.query(
-      `SELECT table_id, table_number, status FROM tables WHERE table_id = $1 FOR UPDATE`,
+      `SELECT table_id, table_number, status, zone_id, restaurant_id FROM tables WHERE table_id = $1 FOR UPDATE`,
       [tableId]
     );
     if (tableCheck.rows.length === 0) {
@@ -789,6 +789,20 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
       return res.status(404).json({ message: 'Table not found' });
     }
     const currentStatus = tableCheck.rows[0].status;
+    const zoneId = tableCheck.rows[0].zone_id ?? null;
+    const restaurantId = tableCheck.rows[0].restaurant_id ?? 1;
+
+    // Resolve active schedule for dynamic pricing
+    const scheduleResult = await client.query(
+      `SELECT schedule_id FROM menu_schedules
+       WHERE is_active = true
+         AND restaurant_id = $1
+         AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::time BETWEEN start_time AND end_time
+         AND EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::integer = ANY(days_of_week)
+       LIMIT 1`,
+      [restaurantId]
+    );
+    const activeScheduleId = scheduleResult.rows[0]?.schedule_id ?? null;
 
     // ─── SESSION INTEGRATION ─────────────────────────────────────────────────
     // 1. Look up the active session for this table (including merges)
@@ -897,8 +911,17 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     const orderItems = await Promise.all(
       items.map(async (item: any) => {
         const itemData = await client.query(
-          `SELECT id, name, selling_price FROM items WHERE id = $1`,
-          [item.id || item.item_id]
+          `SELECT i.id, i.name, 
+                  COALESCE(
+                    CASE WHEN $2::uuid IS NOT NULL THEN izp.price ELSE NULL END,
+                    CASE WHEN $3::uuid IS NOT NULL THEN isp.price ELSE NULL END,
+                    i.selling_price
+                  ) as effective_price
+           FROM items i
+           LEFT JOIN item_zone_prices izp ON izp.item_id = i.id AND izp.zone_id = $2::uuid
+           LEFT JOIN item_schedule_prices isp ON isp.item_id = i.id AND isp.schedule_id = $3::uuid
+           WHERE i.id = $1`,
+          [item.id || item.item_id, zoneId, activeScheduleId]
         );
         if (itemData.rows.length === 0) throw new Error(`Item ${item.id || item.item_id} not found`);
         const dbItem = itemData.rows[0];
@@ -919,7 +942,7 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
             addonPriceSum += Number(addon.price);
           }
         });
-        const finalPriceAtBilling = Number(dbItem.selling_price) + addonPriceSum;
+        const finalPriceAtBilling = Number(dbItem.effective_price) + addonPriceSum;
 
         const itemResult = await client.query(
           `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing, extras, spice_level)

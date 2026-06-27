@@ -765,7 +765,7 @@ export async function initializeDatabase(): Promise<void> {
   //    Fix capitalized legacy values that don't match the enum
   // ─────────────────────────────────────────────────────────────────────────
   try {
-    const updateAvailable = await pool.query(`UPDATE tables SET status = 'free' WHERE status = 'Available' RETURNING table_id;`);
+    const updateAvailable = await pool.query(`UPDATE tables SET status = 'free' WHERE status::text = 'Available' RETURNING table_id;`);
     if (updateAvailable.rowCount > 0) {
       console.log(`✓ Migrated ${updateAvailable.rowCount} tables from 'Available' to 'free'`);
     }
@@ -774,7 +774,7 @@ export async function initializeDatabase(): Promise<void> {
   }
 
   try {
-    const updateOccupied = await pool.query(`UPDATE tables SET status = 'occupied' WHERE status = 'Occupied' RETURNING table_id;`);
+    const updateOccupied = await pool.query(`UPDATE tables SET status = 'occupied' WHERE status::text = 'Occupied' RETURNING table_id;`);
     if (updateOccupied.rowCount > 0) {
       console.log(`✓ Migrated ${updateOccupied.rowCount} tables from 'Occupied' to 'occupied'`);
     }
@@ -783,7 +783,7 @@ export async function initializeDatabase(): Promise<void> {
   }
 
   try {
-    const updateBilling = await pool.query(`UPDATE tables SET status = 'billing_done' WHERE status = 'Billing' RETURNING table_id;`);
+    const updateBilling = await pool.query(`UPDATE tables SET status = 'billing_done' WHERE status::text = 'Billing' RETURNING table_id;`);
     if (updateBilling.rowCount > 0) {
       console.log(`✓ Migrated ${updateBilling.rowCount} tables from 'Billing' to 'billing_done'`);
     }
@@ -1138,7 +1138,7 @@ export async function initializeDatabase(): Promise<void> {
   
   // 8. Reset sequences to avoid duplicate key errors from manual seeds
   console.log('Resetting database sequence values...');
-  const tablesWithSeq = ['restaurants', 'users', 'categories', 'items', 'sections', 'gst_config'];
+  const tablesWithSeq = ['restaurants', 'users', 'categories', 'items', 'gst_config'];
   for (const table of tablesWithSeq) {
     try {
       await pool.query(`
@@ -1150,5 +1150,197 @@ export async function initializeDatabase(): Promise<void> {
   }
 
   console.log('Multi-tenancy migrations complete.');
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DYNAMIC PRICING SYSTEM — Schema Migrations
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('Running dynamic pricing migrations...');
+
+  // 1. Dining zones (AC Hall, Banquet, Rooftop, etc.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dining_zones (
+      zone_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name          VARCHAR(100) NOT NULL,
+      description   TEXT,
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // 2. Per-zone item price overrides
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_zone_prices (
+      id            SERIAL PRIMARY KEY,
+      item_id       INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      zone_id       UUID NOT NULL REFERENCES dining_zones(zone_id) ON DELETE CASCADE,
+      price         NUMERIC(10,2) NOT NULL,
+      restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(item_id, zone_id)
+    );
+  `);
+
+  // 3. Time-of-day menu schedule windows (Breakfast, Lunch, Happy Hour, etc.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS menu_schedules (
+      schedule_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name          VARCHAR(100) NOT NULL,
+      start_time    TIME NOT NULL,
+      end_time      TIME NOT NULL,
+      days_of_week  INTEGER[] NOT NULL DEFAULT '{0,1,2,3,4,5,6}',
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // 4. Per-schedule item price overrides
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_schedule_prices (
+      id            SERIAL PRIMARY KEY,
+      item_id       INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+      schedule_id   UUID NOT NULL REFERENCES menu_schedules(schedule_id) ON DELETE CASCADE,
+      price         NUMERIC(10,2) NOT NULL,
+      restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE,
+      created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(item_id, schedule_id)
+    );
+  `);
+
+  // 5. Zone assignment on tables (single source of truth — no zone in QR URLs)
+  await pool.query(`
+    ALTER TABLE tables
+      ADD COLUMN IF NOT EXISTS zone_id UUID REFERENCES dining_zones(zone_id) ON DELETE SET NULL;
+  `);
+
+  // 6. Indexes for pricing tables
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_dining_zones_restaurant  ON dining_zones(restaurant_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_zone_prices_item    ON item_zone_prices(item_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_zone_prices_zone    ON item_zone_prices(zone_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_schedules_rest      ON menu_schedules(restaurant_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_schedule_prices_item ON item_schedule_prices(item_id);`);
+
+  // 7. RLS on dining_zones + menu_schedules (restaurant-scoped, same pattern as other tables)
+  for (const tbl of ['dining_zones', 'menu_schedules']) {
+    await pool.query(`ALTER TABLE ${tbl} ENABLE ROW LEVEL SECURITY;`);
+    await pool.query(`ALTER TABLE ${tbl} FORCE ROW LEVEL SECURITY;`);
+    await pool.query(`DROP POLICY IF EXISTS tenant_isolation_policy ON ${tbl};`);
+    try {
+      await pool.query(`
+        CREATE POLICY tenant_isolation_policy ON ${tbl}
+        FOR ALL
+        USING (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer)
+        WITH CHECK (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer);
+      `);
+    } catch (e: any) {
+      if (!e.message.includes('already exists')) throw e;
+    }
+    await pool.query(`
+      ALTER TABLE ${tbl}
+        ALTER COLUMN restaurant_id
+        SET DEFAULT coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer;
+    `);
+  }
+
+  console.log('Dynamic pricing migrations complete.');
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONFIGURABLE TAXES & CHARGES — Schema Migrations
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('Running configurable taxes migrations...');
+
+  // apply_on: which order types trigger this charge automatically
+  await pool.query(`
+    ALTER TABLE extra_charges
+      ADD COLUMN IF NOT EXISTS apply_on VARCHAR(50) NOT NULL DEFAULT 'always'
+        CHECK (apply_on IN ('always', 'dine_in', 'parcel', 'delivery', 'takeaway', 'never'));
+  `);
+
+  // is_taxable: if true, charge is added to subtotal BEFORE GST is calculated (e.g. parcel fee)
+  //             if false, charge is added AFTER GST (e.g. service charge, admin fee)
+  await pool.query(`
+    ALTER TABLE extra_charges
+      ADD COLUMN IF NOT EXISTS is_taxable BOOLEAN NOT NULL DEFAULT false;
+  `);
+
+  console.log('Configurable taxes migrations complete.');
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // KDS-READINESS — Schema Migrations
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('Running KDS-readiness migrations...');
+
+  // restaurant_id on section_kots for RLS multi-tenant isolation
+  await pool.query(`
+    ALTER TABLE section_kots
+      ADD COLUMN IF NOT EXISTS restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`UPDATE section_kots SET restaurant_id = 1 WHERE restaurant_id IS NULL;`);
+
+  // restaurant_id on section_kot_items for RLS multi-tenant isolation
+  await pool.query(`
+    ALTER TABLE section_kot_items
+      ADD COLUMN IF NOT EXISTS restaurant_id INTEGER REFERENCES restaurants(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`UPDATE section_kot_items SET restaurant_id = 1 WHERE restaurant_id IS NULL;`);
+
+  // display_type on sections: controls whether a section shows on KDS, prints KOT, or both
+  await pool.query(`
+    ALTER TABLE sections
+      ADD COLUMN IF NOT EXISTS display_type VARCHAR(20) NOT NULL DEFAULT 'kds'
+        CHECK (display_type IN ('kds', 'print', 'both'));
+  `);
+
+  // print_triggered_at on kots: audit trail for when a KOT was physically printed
+  await pool.query(`
+    ALTER TABLE kots
+      ADD COLUMN IF NOT EXISTS print_triggered_at TIMESTAMP;
+  `);
+
+  // RLS on section_kots
+  await pool.query(`ALTER TABLE section_kots ENABLE ROW LEVEL SECURITY;`);
+  await pool.query(`ALTER TABLE section_kots FORCE ROW LEVEL SECURITY;`);
+  await pool.query(`DROP POLICY IF EXISTS tenant_isolation_policy ON section_kots;`);
+  try {
+    await pool.query(`
+      CREATE POLICY tenant_isolation_policy ON section_kots
+      FOR ALL
+      USING (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer)
+      WITH CHECK (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer);
+    `);
+  } catch (e: any) {
+    if (!e.message.includes('already exists')) throw e;
+  }
+  await pool.query(`
+    ALTER TABLE section_kots
+      ALTER COLUMN restaurant_id
+      SET DEFAULT coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer;
+  `);
+
+  // RLS on section_kot_items
+  await pool.query(`ALTER TABLE section_kot_items ENABLE ROW LEVEL SECURITY;`);
+  await pool.query(`ALTER TABLE section_kot_items FORCE ROW LEVEL SECURITY;`);
+  await pool.query(`DROP POLICY IF EXISTS tenant_isolation_policy ON section_kot_items;`);
+  try {
+    await pool.query(`
+      CREATE POLICY tenant_isolation_policy ON section_kot_items
+      FOR ALL
+      USING (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer)
+      WITH CHECK (restaurant_id = coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer);
+    `);
+  } catch (e: any) {
+    if (!e.message.includes('already exists')) throw e;
+  }
+  await pool.query(`
+    ALTER TABLE section_kot_items
+      ALTER COLUMN restaurant_id
+      SET DEFAULT coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer;
+  `);
+
+  console.log('KDS-readiness migrations complete.');
 }
 

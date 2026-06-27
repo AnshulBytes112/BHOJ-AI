@@ -62,6 +62,8 @@ type ExtraCharge = {
   charge_type: 'fixed' | 'percentage';
   value: string;
   is_active: boolean;
+  apply_on: 'always' | 'dine_in' | 'parcel' | 'delivery' | 'takeaway' | 'never';
+  is_taxable: boolean;
   updated_at: string;
 };
 
@@ -70,6 +72,8 @@ type ChargeForm = {
   charge_type: 'fixed' | 'percentage';
   value: string;
   is_active: boolean;
+  apply_on: 'always' | 'dine_in' | 'parcel' | 'delivery' | 'takeaway' | 'never';
+  is_taxable: boolean;
 };
 
 const EMPTY_CHARGE_FORM: ChargeForm = {
@@ -77,6 +81,26 @@ const EMPTY_CHARGE_FORM: ChargeForm = {
   charge_type: 'percentage',
   value: '',
   is_active: true,
+  apply_on: 'always',
+  is_taxable: false,
+};
+
+const APPLY_ON_LABELS: Record<string, string> = {
+  always:   'Always (all orders)',
+  dine_in:  'Dine In only',
+  parcel:   'Parcel / Takeaway',
+  delivery: 'Delivery only',
+  takeaway: 'Takeaway only',
+  never:    'Never (disabled)',
+};
+
+const APPLY_ON_COLORS: Record<string, string> = {
+  always:   'bg-blue-100 text-blue-700',
+  dine_in:  'bg-green-100 text-green-700',
+  parcel:   'bg-orange-100 text-orange-700',
+  delivery: 'bg-purple-100 text-purple-700',
+  takeaway: 'bg-amber-100 text-amber-700',
+  never:    'bg-gray-100 text-gray-500',
 };
 
 export default function AdminSettingsPage() {
@@ -246,6 +270,8 @@ export default function AdminSettingsPage() {
       charge_type: charge.charge_type,
       value: charge.value,
       is_active: charge.is_active,
+      apply_on: charge.apply_on ?? 'always',
+      is_taxable: charge.is_taxable ?? false,
     });
     setChargeErrors({});
     setChargeFormOpen(true);
@@ -480,6 +506,8 @@ export default function AdminSettingsPage() {
                       <TableHead>Charge Name</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Value</TableHead>
+                      <TableHead>Apply On</TableHead>
+                      <TableHead>Tax Treatment</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Last Updated</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -507,6 +535,18 @@ export default function AdminSettingsPage() {
                             {charge.charge_type === 'percentage'
                               ? `${Number(charge.value).toFixed(2)}%`
                               : `Rs ${Number(charge.value).toFixed(2)}`}
+                          </TableCell>
+                          <TableCell>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${APPLY_ON_COLORS[charge.apply_on] ?? 'bg-gray-100 text-gray-500'}`}>
+                              {APPLY_ON_LABELS[charge.apply_on] ?? charge.apply_on}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              charge.is_taxable ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                              {charge.is_taxable ? 'Taxable' : 'Non-taxable'}
+                            </span>
                           </TableCell>
                           <TableCell>
                             <Badge variant={charge.is_active ? 'default' : 'secondary'}>
@@ -675,29 +715,64 @@ export default function AdminSettingsPage() {
                 {chargeErrors.name && <p className="text-xs text-destructive">{chargeErrors.name}</p>}
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Charge Type</label>
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={chargeForm.charge_type}
-                  onChange={(e) => setChargeForm({ ...chargeForm, charge_type: e.target.value as 'fixed' | 'percentage' })}
-                >
-                  <option value="percentage">Percentage (%)</option>
-                  <option value="fixed">Fixed (Rs)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Charge Type</label>
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={chargeForm.charge_type}
+                    onChange={(e) => setChargeForm({ ...chargeForm, charge_type: e.target.value as 'fixed' | 'percentage' })}
+                  >
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed">Fixed (Rs)</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Value</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={chargeForm.value}
+                    onChange={(e) => setChargeForm({ ...chargeForm, value: e.target.value })}
+                    placeholder="e.g. 5.00"
+                  />
+                  {chargeErrors.value && <p className="text-xs text-destructive">{chargeErrors.value}</p>}
+                </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Value</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={chargeForm.value}
-                  onChange={(e) => setChargeForm({ ...chargeForm, value: e.target.value })}
-                  placeholder="e.g. 5.00"
-                />
-                {chargeErrors.value && <p className="text-xs text-destructive">{chargeErrors.value}</p>}
+                <label className="text-sm font-medium">Apply On</label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={chargeForm.apply_on}
+                  onChange={(e) => setChargeForm({ ...chargeForm, apply_on: e.target.value as ChargeForm['apply_on'] })}
+                >
+                  <option value="always">Always — all order types</option>
+                  <option value="dine_in">Dine In only</option>
+                  <option value="parcel">Parcel / Takeaway</option>
+                  <option value="delivery">Delivery only</option>
+                  <option value="never">Never (soft disable)</option>
+                </select>
+                <p className="text-xs text-muted-foreground">Controls when this charge is automatically applied to a bill.</p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <span className="text-sm font-medium">Include in GST Base</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    If enabled, this charge is added to the item subtotal <strong>before</strong> GST is calculated (e.g. packaging fee).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={`rounded-md px-3 py-1 text-xs font-medium ml-3 shrink-0 ${
+                    chargeForm.is_taxable ? 'bg-indigo-600 text-white' : 'bg-muted text-muted-foreground'
+                  }`}
+                  onClick={() => setChargeForm({ ...chargeForm, is_taxable: !chargeForm.is_taxable })}
+                >
+                  {chargeForm.is_taxable ? 'Yes — Taxable' : 'No — Non-taxable'}
+                </button>
               </div>
 
               <div className="flex items-center justify-between rounded-md border p-3">

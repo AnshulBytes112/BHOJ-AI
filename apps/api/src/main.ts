@@ -16,7 +16,9 @@ import { sessionsRouter } from './sessions/sessions.routes';
 import { publicRouter } from './public/public.routes';
 import { extraChargesRouter } from './gst/extra-charges.routes';
 import { analyticsRouter } from './analytics/analytics.routes';
+import { pricingRouter } from './pricing/pricing.routes';
 import { initializeWebSocket } from './websocket';
+
 
 dotenv.config();
 
@@ -91,6 +93,8 @@ app.use('/api/orders', ordersRouter);
 app.use('/api/kots', kotsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/pricing', pricingRouter);
+
 
 
 

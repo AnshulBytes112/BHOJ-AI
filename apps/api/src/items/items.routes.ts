@@ -325,8 +325,43 @@ itemsRouter.post('/', async (req, res) => {
 
 itemsRouter.get('/', async (req, res) => {
   try {
+    const { tableId } = req.query as { tableId?: string };
+    
+    // Resolve dynamic pricing context
+    let restaurantId = 1; // Default
+    let zoneId: string | null = null;
+    
+    if (tableId) {
+      const tableRes = await pool.query(
+        `SELECT restaurant_id, zone_id FROM tables WHERE table_id = $1 LIMIT 1`,
+        [tableId]
+      );
+      if (tableRes.rows.length > 0) {
+        restaurantId = tableRes.rows[0].restaurant_id;
+        zoneId = tableRes.rows[0].zone_id ?? null;
+      }
+    }
+    
+    console.log(`[API /items] tableId: ${tableId}, zoneId: ${zoneId}, restaurantId: ${restaurantId}`);
+
+    // Resolve current active schedule
+    const scheduleResult = await pool.query(
+      `SELECT schedule_id FROM menu_schedules
+       WHERE is_active = true
+         AND restaurant_id = $1
+         AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::time BETWEEN start_time AND end_time
+         AND EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::integer = ANY(days_of_week)
+       LIMIT 1`,
+      [restaurantId]
+    );
+    const activeScheduleId: string | null = scheduleResult.rows[0]?.schedule_id ?? null;
+
+    const fakeUuid = '00000000-0000-0000-0000-000000000000';
     const whereParts: string[] = [];
-    const params: Array<string | boolean> = [];
+    const params: Array<string | boolean | null | number> = [
+      zoneId ?? fakeUuid, 
+      activeScheduleId ?? fakeUuid
+    ];
 
     if (typeof req.query.category === 'string' && req.query.category.trim()) {
       params.push(req.query.category.trim());
@@ -341,9 +376,14 @@ itemsRouter.get('/', async (req, res) => {
 
     const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
 
-    const result = await pool.query<ItemRow>(
+    const result = await pool.query<ItemRow & { effective_price: string | null }>(
       `
       SELECT i.*,
+             COALESCE(
+               CASE WHEN $1::uuid IS NOT NULL THEN izp.price ELSE NULL END,
+               CASE WHEN $2::uuid IS NOT NULL THEN isp.price ELSE NULL END,
+               i.selling_price
+             ) as effective_price,
              COALESCE(
                (
                  SELECT json_agg(json_build_object('id', ia.id, 'name', ia.name, 'price', ia.price, 'is_active', ia.is_active))
@@ -353,6 +393,8 @@ itemsRouter.get('/', async (req, res) => {
                '[]'::json
              ) as addons
       FROM items i
+      LEFT JOIN item_zone_prices izp ON izp.item_id = i.id AND izp.zone_id = $1::uuid
+      LEFT JOIN item_schedule_prices isp ON isp.item_id = i.id AND isp.schedule_id = $2::uuid
       ${whereClause}
       ORDER BY i.id ASC;
       `,

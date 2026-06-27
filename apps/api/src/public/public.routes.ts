@@ -221,15 +221,18 @@ async function logSessionEvent(client: any, sessionId: string, eventType: string
   );
 }
 
-// 1. GET /api/public/tables/:tableId — Retrieve table details
+// 1. GET /api/public/tables/:tableId — Retrieve table details (includes zone for dynamic pricing)
 publicRouter.get('/tables/:tableId', async (req, res) => {
   const { tableId } = req.params;
   try {
     const result = await pool.query(
       `SELECT t.table_id, t.table_number, t.status, t.occupied_since, t.active_item_count, t.is_bill_paid,
+              t.zone_id,
+              dz.name as zone_name,
               r.name as restaurant_name
        FROM tables t
        JOIN restaurants r ON r.id = t.restaurant_id
+       LEFT JOIN dining_zones dz ON dz.zone_id = t.zone_id
        WHERE t.table_id = $1`,
       [tableId]
     );
@@ -288,25 +291,48 @@ publicRouter.get('/categories', async (req, res) => {
   }
 });
 
-// 3. GET /api/public/items — List active menu items for the scanned restaurant
+// 3. GET /api/public/items — List active menu items with dynamic pricing
+// Price resolution: zone override (via table) > time-of-day schedule > base price
 publicRouter.get('/items', async (req, res) => {
   const { tableId } = req.query as { tableId?: string };
   try {
     let restaurantId: number = 1;
+    let zoneId: string | null = null;
+
     if (tableId) {
       const tableRes = await pool.query(
-        `SELECT restaurant_id FROM tables WHERE table_id = $1 LIMIT 1`,
+        `SELECT restaurant_id, zone_id FROM tables WHERE table_id = $1 LIMIT 1`,
         [tableId]
       );
       if (tableRes.rows.length > 0) {
         restaurantId = tableRes.rows[0].restaurant_id;
+        zoneId = tableRes.rows[0].zone_id ?? null;
       }
     }
+
+    // Resolve current active schedule (if any) based on server time + day-of-week
+    const scheduleResult = await pool.query(
+      `SELECT schedule_id FROM menu_schedules
+       WHERE is_active = true
+         AND restaurant_id = $1
+         AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::time BETWEEN start_time AND end_time
+         AND EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::integer = ANY(days_of_week)
+       LIMIT 1`,
+      [restaurantId]
+    );
+    const activeScheduleId: string | null = scheduleResult.rows[0]?.schedule_id ?? null;
+
     const result = await pool.query(
       `SELECT i.id, i.serial_number, i.name, i.selling_price, i.category,
               i.stock_quantity, i.is_active, i.stock_type, i.image_url,
               i.customizable_options, i.is_veg,
               gc.gst_percentage as gst_rate,
+              -- Price resolution: zone > schedule > base
+              COALESCE(
+                CASE WHEN $2::uuid IS NOT NULL THEN izp.price ELSE NULL END,
+                CASE WHEN $3::uuid IS NOT NULL THEN isp.price ELSE NULL END,
+                i.selling_price
+              ) as effective_price,
               COALESCE(
                 (
                   SELECT json_agg(json_build_object('id', ia.id, 'name', ia.name, 'price', ia.price, 'is_active', ia.is_active))
@@ -319,10 +345,14 @@ publicRouter.get('/items', async (req, res) => {
        LEFT JOIN gst_config gc
          ON gc.category = i.category
         AND gc.restaurant_id = i.restaurant_id
+       LEFT JOIN item_zone_prices izp
+         ON izp.item_id = i.id AND izp.zone_id = $2::uuid
+       LEFT JOIN item_schedule_prices isp
+         ON isp.item_id = i.id AND isp.schedule_id = $3::uuid
        WHERE i.is_active = true
          AND i.restaurant_id = $1
        ORDER BY i.category, i.name`,
-      [restaurantId]
+      [restaurantId, zoneId, activeScheduleId]
     );
     res.json(result.rows);
   } catch (err: any) {
@@ -358,7 +388,7 @@ publicRouter.post('/tables/:tableId/orders', async (req, res) => {
 
     // Check table exists
     const tableCheck = await client.query(
-      `SELECT table_id, table_number, status FROM tables WHERE table_id = $1 FOR UPDATE`,
+      `SELECT table_id, table_number, status, zone_id, restaurant_id FROM tables WHERE table_id = $1 FOR UPDATE`,
       [tableId]
     );
     if (tableCheck.rows.length === 0) {
@@ -367,6 +397,20 @@ publicRouter.post('/tables/:tableId/orders', async (req, res) => {
     }
     const table = tableCheck.rows[0];
     const currentStatus = table.status;
+    const zoneId = table.zone_id ?? null;
+    const restaurantId = table.restaurant_id ?? 1;
+
+    // Resolve active schedule for dynamic pricing
+    const scheduleResult = await client.query(
+      `SELECT schedule_id FROM menu_schedules
+       WHERE is_active = true
+         AND restaurant_id = $1
+         AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::time BETWEEN start_time AND end_time
+         AND EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata'))::integer = ANY(days_of_week)
+       LIMIT 1`,
+      [restaurantId]
+    );
+    const activeScheduleId = scheduleResult.rows[0]?.schedule_id ?? null;
 
     // Find or create active table session
     const sessionQuery = await client.query(
@@ -448,8 +492,17 @@ publicRouter.post('/tables/:tableId/orders', async (req, res) => {
     const orderItems = await Promise.all(
       items.map(async (item: any) => {
         const itemData = await client.query(
-          `SELECT id, name, selling_price FROM items WHERE id = $1`,
-          [item.id || item.item_id]
+          `SELECT i.id, i.name, 
+                  COALESCE(
+                    CASE WHEN $2::uuid IS NOT NULL THEN izp.price ELSE NULL END,
+                    CASE WHEN $3::uuid IS NOT NULL THEN isp.price ELSE NULL END,
+                    i.selling_price
+                  ) as effective_price
+           FROM items i
+           LEFT JOIN item_zone_prices izp ON izp.item_id = i.id AND izp.zone_id = $2::uuid
+           LEFT JOIN item_schedule_prices isp ON isp.item_id = i.id AND isp.schedule_id = $3::uuid
+           WHERE i.id = $1`,
+          [item.id || item.item_id, zoneId, activeScheduleId]
         );
         if (itemData.rows.length === 0) throw new Error(`Item ${item.id || item.item_id} not found`);
         const dbItem = itemData.rows[0];
@@ -470,7 +523,7 @@ publicRouter.post('/tables/:tableId/orders', async (req, res) => {
             addonPriceSum += Number(addon.price);
           }
         });
-        const finalPriceAtBilling = Number(dbItem.selling_price) + addonPriceSum;
+        const finalPriceAtBilling = Number(dbItem.effective_price) + addonPriceSum;
 
         const itemResult = await client.query(
           `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing, extras, spice_level)
