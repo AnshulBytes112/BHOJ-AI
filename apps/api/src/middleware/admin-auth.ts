@@ -52,7 +52,7 @@ export function requirePermission(permissionName: string) {
       `, [role, permissionName]);
 
       if (permCheck.rows.length === 0) {
-        return res.status(403).json({ message: \`Forbidden: Requires permission \${permissionName}\` });
+        return res.status(403).json({ message: `Forbidden: Requires permission ${permissionName}` });
       }
 
       next();

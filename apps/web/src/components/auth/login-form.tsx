@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { UI_CONTENT } from '@/lib/content';
 import { useAuth } from '@/hooks/use-auth';
 
 interface LoginFormProps {
@@ -19,7 +18,6 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'password' | 'pin'>('password');
 
-  const { login: loginContent } = UI_CONTENT.auth;
   const { login: loginAction, loginWithPin } = useAuth();
 
   async function onSubmit(event: React.SyntheticEvent) {
@@ -56,7 +54,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
         if (onSuccess) onSuccess(user.role);
       } else {
         setError('Invalid PIN. Please try again.');
-        setPin(''); // Reset PIN on failure
+        setPin(''); 
       }
     } catch (err) {
       setError('Invalid PIN. Please try again.');
@@ -65,6 +63,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
       setIsLoading(false);
     }
   }, [pin, loginWithPin, onSuccess]);
+
   React.useEffect(() => {
     if (activeTab !== 'pin' || isLoading) return;
 
@@ -85,31 +84,24 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
   }, [activeTab, isLoading, pin, onSubmitPin]);
 
   return (
-    <div className={cn('flex flex-col h-full p-8 gap-6', className)}>
+    <div className={cn('flex flex-col h-full p-8 gap-6 max-w-md w-full mx-auto bg-[#111] text-white rounded-2xl border border-white/5 shadow-2xl', className)}>
 
       {/* ── Header ── */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 11l19-9-9 19-2-8-8-2z" />
-          </svg>
-        </div>
-        <div>
-          <p className="font-bold text-base text-gray-900 leading-none">BhojAI</p>
-          <p className="text-xs text-gray-400 mt-0.5">Restaurant OS · Spice Garden</p>
-        </div>
+      <div className="flex flex-col items-center justify-center pt-4 pb-2">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Welcome back</h2>
+        <p className="text-sm text-gray-400 mt-1">Sign in to your account</p>
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex rounded-xl p-1 gap-1" style={{ background: '#ede9e0' }}>
+      <div className="flex rounded-xl p-1 gap-1 bg-[#1a1a1a]">
         <button
           type="button"
           onClick={() => { setActiveTab('password'); setError(null); }}
           className={cn(
-            'flex-1 py-2 text-sm font-semibold rounded-lg transition-all',
+            'flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-300',
             activeTab === 'password'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'bg-orange-500 text-white shadow-md'
+              : 'text-gray-400 hover:text-white'
           )}
         >
           Password Login
@@ -118,10 +110,10 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
           type="button"
           onClick={() => { setActiveTab('pin'); setError(null); }}
           className={cn(
-            'flex-1 py-2 text-sm font-semibold rounded-lg transition-all',
+            'flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-300',
             activeTab === 'pin'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'bg-orange-500 text-white shadow-md'
+              : 'text-gray-400 hover:text-white'
           )}
         >
           Quick PIN
@@ -130,15 +122,15 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
 
       {/* ── PASSWORD LOGIN TAB ── */}
       {activeTab === 'password' && (
-        <form onSubmit={onSubmit} className="flex flex-col gap-4 flex-1">
+        <form onSubmit={onSubmit} className="flex flex-col gap-4 flex-1 animate-in fade-in slide-in-from-right-4 duration-300">
 
           {/* Username */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-xs font-bold tracking-widest uppercase text-gray-500">
+            <label htmlFor="email" className="text-xs font-bold tracking-widest uppercase text-gray-400">
               Username
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
                 </svg>
@@ -153,9 +145,9 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className={cn(
-                  'w-full h-11 rounded-xl border pl-9 pr-4 text-sm text-gray-800 bg-white outline-none transition-all',
-                  'border-gray-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 placeholder:text-gray-400',
-                  error && 'border-red-400'
+                  'w-full h-11 rounded-xl border pl-9 pr-4 text-sm text-white bg-[#1a1a1a] outline-none transition-all duration-300',
+                  'border-white/10 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 placeholder:text-gray-500',
+                  error && 'border-red-500/30'
                 )}
               />
             </div>
@@ -163,11 +155,11 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
 
           {/* Password */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-xs font-bold tracking-widest uppercase text-gray-500">
+            <label htmlFor="password" className="text-xs font-bold tracking-widest uppercase text-gray-400">
               Password
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
@@ -182,16 +174,16 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className={cn(
-                  'w-full h-11 rounded-xl border pl-9 pr-10 text-sm text-gray-800 bg-white outline-none transition-all',
-                  'border-gray-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 placeholder:text-gray-400',
-                  error && 'border-red-400'
+                  'w-full h-11 rounded-xl border pl-9 pr-10 text-sm text-white bg-[#1a1a1a] outline-none transition-all duration-300',
+                  'border-white/10 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 placeholder:text-gray-500',
+                  error && 'border-red-500/30'
                 )}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
                 tabIndex={-1}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
               >
                 {showPassword ? (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -206,15 +198,13 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             </div>
           </div>
 
-
-
           {/* PIN optional */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="pin" className="text-xs font-bold tracking-widest uppercase text-gray-500">
+            <label htmlFor="pin" className="text-xs font-bold tracking-widest uppercase text-gray-400">
               PIN <span className="normal-case font-normal">(Optional / Waiter 2FA)</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
                 </svg>
@@ -228,18 +218,18 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
                 disabled={isLoading}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                className="w-full h-11 rounded-xl border border-gray-200 pl-9 pr-4 text-sm text-gray-800 bg-white outline-none transition-all focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 placeholder:text-gray-400"
+                className="w-full h-11 rounded-xl border border-white/10 pl-9 pr-4 text-sm text-white bg-[#1a1a1a] outline-none transition-all duration-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 placeholder:text-gray-500"
               />
             </div>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
+            <div className="flex items-center gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2.5">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                 <circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />
               </svg>
-              <p className="text-sm font-medium text-red-600">{error}</p>
+              <p className="text-sm font-medium text-red-400">{error}</p>
             </div>
           )}
 
@@ -247,8 +237,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
           <button
             type="submit"
             disabled={isLoading}
-            className="mt-auto w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 4px 20px rgba(245,158,11,0.35)' }}
+            className="mt-auto w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/20"
           >
             {isLoading ? (
               <>
@@ -262,22 +251,22 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
 
       {/* ── QUICK PIN TAB ── */}
       {activeTab === 'pin' && (
-        <div className="flex flex-col gap-5 flex-1">
+        <div className="flex flex-col gap-5 flex-1 animate-in fade-in slide-in-from-right-4 duration-300">
 
           {/* PIN display */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold tracking-widest uppercase text-gray-500">
+            <label className="text-xs font-bold tracking-widest uppercase text-gray-400">
               Enter your PIN
             </label>
             <div className="flex gap-3 justify-center mt-1">
               {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="w-12 h-14 rounded-xl border-2 flex items-center justify-center text-2xl font-bold transition-all"
+                  className="w-12 h-14 rounded-xl border-2 flex items-center justify-center text-2xl font-bold transition-all duration-300"
                   style={{
-                    borderColor: i < pin.length ? '#f59e0b' : '#e5e7eb',
-                    background: i < pin.length ? '#fffbf0' : '#fff',
-                    color: '#1a0a00',
+                    borderColor: i < pin.length ? '#f97316' : '#2a2a2a',
+                    background: i < pin.length ? '#1f130b' : '#1a1a1a',
+                    color: '#fff',
                   }}
                 >
                   {i < pin.length ? '•' : ''}
@@ -301,16 +290,16 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
                   }
                 }}
                 className={cn(
-                  'h-12 rounded-xl text-base font-semibold transition-all active:scale-95',
+                  'h-12 rounded-xl text-base font-semibold transition-all duration-200 active:scale-95 text-white',
                   key === ''
                     ? 'cursor-default'
                     : key === '⌫'
-                      ? 'text-gray-500 hover:bg-gray-200'
-                      : 'text-gray-900 hover:bg-amber-50 active:bg-amber-100',
+                      ? 'hover:bg-white/5 active:bg-white/10'
+                      : 'hover:bg-orange-500/10 active:bg-orange-500/20',
                 )}
                 style={{
-                  background: key === '' ? 'transparent' : key === '⌫' ? '#f3f4f6' : '#fff',
-                  border: key === '' ? 'none' : '1.5px solid #e5e7eb',
+                  background: key === '' ? 'transparent' : '#1a1a1a',
+                  border: key === '' ? 'none' : '1px solid rgba(255,255,255,0.08)',
                 }}
               >
                 {key}
@@ -319,11 +308,11 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 mt-auto">
+            <div className="flex items-center gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2.5 mt-auto">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                 <circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />
               </svg>
-              <p className="text-sm font-medium text-red-600">{error}</p>
+              <p className="text-sm font-medium text-red-400">{error}</p>
             </div>
           )}
 
@@ -332,8 +321,7 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
             type="button"
             onClick={onSubmitPin}
             disabled={isLoading || pin.length < 4}
-            className="w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed mt-auto"
-            style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 4px 20px rgba(245,158,11,0.35)' }}
+            className="w-full h-11 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 transition-all duration-300 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed mt-auto bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/20"
           >
             {isLoading ? (
               <>
@@ -346,9 +334,11 @@ export function LoginForm({ className, onSuccess }: LoginFormProps) {
       )}
 
       {/* ── Footer ── */}
-      <p className="text-center text-xs text-gray-400 mt-auto pt-2">
-        BhojAI Restaurant OS · v1.0 · Powered by AI
-      </p>
+      <div className="mt-4 pt-4 border-t border-white/5 flex justify-center">
+        <p className="text-center text-xs text-gray-500">
+          New to BhojAI? <a href="/register" className="text-orange-500 font-medium hover:underline transition-all">Create a Super Admin account</a>
+        </p>
+      </div>
     </div>
   );
 }

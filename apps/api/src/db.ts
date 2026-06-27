@@ -100,16 +100,52 @@ export async function initializeDatabase(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS pin VARCHAR(10) NULL;
   `);
 
+  // Use a PL/pgSQL DO block to check for tenant_id/outlet_id columns at the DB level.
+  // This avoids the race condition where the TypeScript-level check returns the wrong
+  // answer (e.g. due to RLS on information_schema or a stale compiled snapshot) and
+  // an INSERT without tenant_id hits a NOT NULL constraint that already exists in prod.
   await pool.query(`
-    INSERT INTO users (username, display_name, role, pin)
-    VALUES ('system_admin', 'System Admin', 'ADMIN', '0000')
-    ON CONFLICT (username) DO UPDATE SET pin = '0000', role = 'ADMIN';
-  `);
+    DO $$
+    DECLARE
+      has_tenant  BOOLEAN;
+      has_outlet  BOOLEAN;
+    BEGIN
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'tenant_id'
+      ) INTO has_tenant;
 
-  await pool.query(`
-    INSERT INTO users (username, display_name, role, pin)
-    VALUES ('waiter1', 'John Waiter', 'STAFF', '1234')
-    ON CONFLICT (username) DO UPDATE SET pin = '1234', role = 'STAFF';
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'outlet_id'
+      ) INTO has_outlet;
+
+      IF has_tenant AND has_outlet THEN
+        INSERT INTO users (username, display_name, role, pin, tenant_id, outlet_id)
+        VALUES ('system_admin', 'System Admin', 'ADMIN', '0000', 1, 1)
+        ON CONFLICT (username) DO UPDATE SET pin = '0000', role = 'ADMIN', tenant_id = 1, outlet_id = 1;
+
+        INSERT INTO users (username, display_name, role, pin, tenant_id, outlet_id)
+        VALUES ('waiter1', 'John Waiter', 'STAFF', '1234', 1, 1)
+        ON CONFLICT (username) DO UPDATE SET pin = '1234', role = 'STAFF', tenant_id = 1, outlet_id = 1;
+      ELSIF has_tenant THEN
+        INSERT INTO users (username, display_name, role, pin, tenant_id)
+        VALUES ('system_admin', 'System Admin', 'ADMIN', '0000', 1)
+        ON CONFLICT (username) DO UPDATE SET pin = '0000', role = 'ADMIN', tenant_id = 1;
+
+        INSERT INTO users (username, display_name, role, pin, tenant_id)
+        VALUES ('waiter1', 'John Waiter', 'STAFF', '1234', 1)
+        ON CONFLICT (username) DO UPDATE SET pin = '1234', role = 'STAFF', tenant_id = 1;
+      ELSE
+        INSERT INTO users (username, display_name, role, pin)
+        VALUES ('system_admin', 'System Admin', 'ADMIN', '0000')
+        ON CONFLICT (username) DO UPDATE SET pin = '0000', role = 'ADMIN';
+
+        INSERT INTO users (username, display_name, role, pin)
+        VALUES ('waiter1', 'John Waiter', 'STAFF', '1234')
+        ON CONFLICT (username) DO UPDATE SET pin = '1234', role = 'STAFF';
+      END IF;
+    END $$;
   `);
 
   await pool.query(`
@@ -226,12 +262,28 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   // Seed gst_config per-restaurant from categories, respecting the unique constraint
-  await pool.query(`
-    INSERT INTO gst_config (label, category, gst_percentage, restaurant_id)
-    SELECT c.name, c.name, 5.00, c.restaurant_id
-    FROM categories c
-    ON CONFLICT (category, restaurant_id) DO NOTHING;
+  const gstColumnsRes = await pool.query(`
+    SELECT column_name 
+    FROM information_schema.columns 
+    WHERE table_name = 'gst_config' AND column_name = 'tenant_id'
   `);
+  const gstHasTenantId = gstColumnsRes.rows.length > 0;
+
+  if (gstHasTenantId) {
+    await pool.query(`
+      INSERT INTO gst_config (label, category, gst_percentage, restaurant_id, tenant_id, outlet_id)
+      SELECT c.name, c.name, 5.00, c.restaurant_id, COALESCE(c.tenant_id, 1), COALESCE(c.outlet_id, 1)
+      FROM categories c
+      ON CONFLICT (category, restaurant_id) DO NOTHING;
+    `);
+  } else {
+    await pool.query(`
+      INSERT INTO gst_config (label, category, gst_percentage, restaurant_id)
+      SELECT c.name, c.name, 5.00, c.restaurant_id
+      FROM categories c
+      ON CONFLICT (category, restaurant_id) DO NOTHING;
+    `);
+  }
 
   await pool.query(`
     CREATE SEQUENCE IF NOT EXISTS bill_serial_number_seq START 1001;
@@ -315,11 +367,26 @@ export async function initializeDatabase(): Promise<void> {
     );
   `);
 
-  await pool.query(`
-    INSERT INTO receipt_layout (header_text, footer_text)
-    SELECT 'RestroManager Hotel', 'Thank you for visiting! Come again.'
-    WHERE NOT EXISTS (SELECT 1 FROM receipt_layout);
+  const receiptColumnsRes = await pool.query(`
+    SELECT column_name 
+    FROM information_schema.columns 
+    WHERE table_name = 'receipt_layout' AND column_name = 'tenant_id'
   `);
+  const receiptHasTenantId = receiptColumnsRes.rows.length > 0;
+
+  if (receiptHasTenantId) {
+    await pool.query(`
+      INSERT INTO receipt_layout (header_text, footer_text, tenant_id, outlet_id)
+      SELECT 'RestroManager Hotel', 'Thank you for visiting! Come again.', 1, 1
+      WHERE NOT EXISTS (SELECT 1 FROM receipt_layout);
+    `);
+  } else {
+    await pool.query(`
+      INSERT INTO receipt_layout (header_text, footer_text)
+      SELECT 'RestroManager Hotel', 'Thank you for visiting! Come again.'
+      WHERE NOT EXISTS (SELECT 1 FROM receipt_layout);
+    `);
+  }
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id);');
 
@@ -523,25 +590,62 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   // ── Seed default kitchen sections ──
-  await pool.query(`
-    INSERT INTO sections (section_name, description, is_active) VALUES
-      ('Kitchen', 'Main kitchen section for food items', true),
-      ('Bar', 'Bar section for alcoholic and mixed drinks', true),
-      ('Ice Cream', 'Ice cream and dessert counter', true),
-      ('Beverage', 'Non-alcoholic beverages, coffee, and juices', true)
-    ON CONFLICT (section_name) DO NOTHING;
+  const sectionsColumnsRes = await pool.query(`
+    SELECT column_name 
+    FROM information_schema.columns 
+    WHERE table_name = 'sections' AND column_name = 'tenant_id'
   `);
+  const sectionsHasTenantId = sectionsColumnsRes.rows.length > 0;
+
+  if (sectionsHasTenantId) {
+    await pool.query(`
+      INSERT INTO sections (section_name, description, is_active, tenant_id, outlet_id) VALUES
+        ('Kitchen', 'Main kitchen section for food items', true, 1, 1),
+        ('Bar', 'Bar section for alcoholic and mixed drinks', true, 1, 1),
+        ('Ice Cream', 'Ice cream and dessert counter', true, 1, 1),
+        ('Beverage', 'Non-alcoholic beverages, coffee, and juices', true, 1, 1)
+      ON CONFLICT (section_name) DO NOTHING;
+    `);
+  } else {
+    await pool.query(`
+      INSERT INTO sections (section_name, description, is_active) VALUES
+        ('Kitchen', 'Main kitchen section for food items', true),
+        ('Bar', 'Bar section for alcoholic and mixed drinks', true),
+        ('Ice Cream', 'Ice cream and dessert counter', true),
+        ('Beverage', 'Non-alcoholic beverages, coffee, and juices', true)
+      ON CONFLICT (section_name) DO NOTHING;
+    `);
+  }
 
   // ── Seed default POS categories (used by KOT dashboard) ──
   try {
-    const seedResult = await pool.query(`
-      INSERT INTO categories (name, is_active) VALUES
-        ('Main Course', true),
-        ('Starters', true),
-        ('Beverages', true),
-        ('Sweets', true)
-      ON CONFLICT (name) DO NOTHING;
+    const categoriesColumnsRes = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'categories' AND column_name = 'tenant_id'
     `);
+    const categoriesHasTenantId = categoriesColumnsRes.rows.length > 0;
+
+    let seedResult;
+    if (categoriesHasTenantId) {
+      seedResult = await pool.query(`
+        INSERT INTO categories (name, is_active, tenant_id, outlet_id) VALUES
+          ('Main Course', true, 1, 1),
+          ('Starters', true, 1, 1),
+          ('Beverages', true, 1, 1),
+          ('Sweets', true, 1, 1)
+        ON CONFLICT (name) DO NOTHING;
+      `);
+    } else {
+      seedResult = await pool.query(`
+        INSERT INTO categories (name, is_active) VALUES
+          ('Main Course', true),
+          ('Starters', true),
+          ('Beverages', true),
+          ('Sweets', true)
+        ON CONFLICT (name) DO NOTHING;
+      `);
+    }
     console.log('Categories seed completed, rows affected:', seedResult.rowCount);
     
     // Verify categories exist
@@ -1092,52 +1196,100 @@ export async function initializeDatabase(): Promise<void> {
   // 5. Seed default tables for BhojAI (restaurant 1) if empty
   const tablesCount = await pool.query("SELECT COUNT(*) FROM tables WHERE restaurant_id = 1");
   if (parseInt(tablesCount.rows[0].count, 10) === 0) {
+    const tablesColRes = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='tables' AND column_name='tenant_id'`);
+    const tablesSeedHasTenant = tablesColRes.rows.length > 0;
     console.log('Seeding default tables for BhojAI...');
-    await pool.query(`
-      INSERT INTO tables (table_number, status, restaurant_id)
-      VALUES 
-        ('1', 'free', 1),
-        ('2', 'free', 1),
-        ('3', 'free', 1),
-        ('4', 'free', 1),
-        ('5', 'free', 1),
-        ('6', 'free', 1),
-        ('7', 'free', 1),
-        ('8', 'free', 1)
-      ON CONFLICT DO NOTHING;
-    `);
+    if (tablesSeedHasTenant) {
+      await pool.query(`
+        INSERT INTO tables (table_number, status, restaurant_id, tenant_id, outlet_id)
+        VALUES 
+          ('1', 'free', 1, 1, 1),
+          ('2', 'free', 1, 1, 1),
+          ('3', 'free', 1, 1, 1),
+          ('4', 'free', 1, 1, 1),
+          ('5', 'free', 1, 1, 1),
+          ('6', 'free', 1, 1, 1),
+          ('7', 'free', 1, 1, 1),
+          ('8', 'free', 1, 1, 1)
+        ON CONFLICT DO NOTHING;
+      `);
+    } else {
+      await pool.query(`
+        INSERT INTO tables (table_number, status, restaurant_id)
+        VALUES 
+          ('1', 'free', 1),
+          ('2', 'free', 1),
+          ('3', 'free', 1),
+          ('4', 'free', 1),
+          ('5', 'free', 1),
+          ('6', 'free', 1),
+          ('7', 'free', 1),
+          ('8', 'free', 1)
+        ON CONFLICT DO NOTHING;
+      `);
+    }
   }
 
   // 6. Seed default categories for BhojAI (restaurant 1) if empty
   const catsCount = await pool.query("SELECT COUNT(*) FROM categories WHERE restaurant_id = 1");
   if (parseInt(catsCount.rows[0].count, 10) === 0) {
+    const catsColRes = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='categories' AND column_name='tenant_id'`);
+    const catsSeedHasTenant = catsColRes.rows.length > 0;
     console.log('Seeding default categories for BhojAI...');
-    await pool.query(`
-      INSERT INTO categories (name, is_active, restaurant_id)
-      VALUES 
-        ('Starters', true, 1),
-        ('Main Course', true, 1),
-        ('Beverages', true, 1),
-        ('Sweets', true, 1)
-      ON CONFLICT DO NOTHING;
-    `);
+    if (catsSeedHasTenant) {
+      await pool.query(`
+        INSERT INTO categories (name, is_active, restaurant_id, tenant_id, outlet_id)
+        VALUES 
+          ('Starters', true, 1, 1, 1),
+          ('Main Course', true, 1, 1, 1),
+          ('Beverages', true, 1, 1, 1),
+          ('Sweets', true, 1, 1, 1)
+        ON CONFLICT DO NOTHING;
+      `);
+    } else {
+      await pool.query(`
+        INSERT INTO categories (name, is_active, restaurant_id)
+        VALUES 
+          ('Starters', true, 1),
+          ('Main Course', true, 1),
+          ('Beverages', true, 1),
+          ('Sweets', true, 1)
+        ON CONFLICT DO NOTHING;
+      `);
+    }
   }
 
   // 7. Seed default items for BhojAI (restaurant 1) if empty
   const itemsCount = await pool.query("SELECT COUNT(*) FROM items WHERE restaurant_id = 1");
   if (parseInt(itemsCount.rows[0].count, 10) === 0) {
+    const itemsColRes = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='items' AND column_name='tenant_id'`);
+    const itemsSeedHasTenant = itemsColRes.rows.length > 0;
     console.log('Seeding default items for BhojAI...');
-    await pool.query(`
-      INSERT INTO items (id, serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, is_veg, restaurant_id)
-      VALUES 
-        (1, gen_random_uuid(), 'Paneer Tikka', 249.00, 'Starters', 100, true, 'unlimited'::stock_type, true, 1),
-        (2, gen_random_uuid(), 'Chicken Tikka', 299.00, 'Starters', 100, true, 'unlimited'::stock_type, false, 1),
-        (3, gen_random_uuid(), 'Butter Paneer Masala', 349.00, 'Main Course', 100, true, 'unlimited'::stock_type, true, 1),
-        (4, gen_random_uuid(), 'Chicken Biryani', 399.00, 'Main Course', 100, true, 'unlimited'::stock_type, false, 1),
-        (5, gen_random_uuid(), 'Masala Chai', 49.00, 'Beverages', 100, true, 'unlimited'::stock_type, true, 1),
-        (6, gen_random_uuid(), 'Gulab Jamun', 99.00, 'Sweets', 100, true, 'unlimited'::stock_type, true, 1)
-      ON CONFLICT DO NOTHING;
-    `);
+    if (itemsSeedHasTenant) {
+      await pool.query(`
+        INSERT INTO items (id, serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, is_veg, restaurant_id, tenant_id, outlet_id)
+        VALUES 
+          (1, gen_random_uuid(), 'Paneer Tikka', 249.00, 'Starters', 100, true, 'unlimited'::stock_type, true, 1, 1, 1),
+          (2, gen_random_uuid(), 'Chicken Tikka', 299.00, 'Starters', 100, true, 'unlimited'::stock_type, false, 1, 1, 1),
+          (3, gen_random_uuid(), 'Butter Paneer Masala', 349.00, 'Main Course', 100, true, 'unlimited'::stock_type, true, 1, 1, 1),
+          (4, gen_random_uuid(), 'Chicken Biryani', 399.00, 'Main Course', 100, true, 'unlimited'::stock_type, false, 1, 1, 1),
+          (5, gen_random_uuid(), 'Masala Chai', 49.00, 'Beverages', 100, true, 'unlimited'::stock_type, true, 1, 1, 1),
+          (6, gen_random_uuid(), 'Gulab Jamun', 99.00, 'Sweets', 100, true, 'unlimited'::stock_type, true, 1, 1, 1)
+        ON CONFLICT DO NOTHING;
+      `);
+    } else {
+      await pool.query(`
+        INSERT INTO items (id, serial_number, name, selling_price, category, stock_quantity, is_active, stock_type, is_veg, restaurant_id)
+        VALUES 
+          (1, gen_random_uuid(), 'Paneer Tikka', 249.00, 'Starters', 100, true, 'unlimited'::stock_type, true, 1),
+          (2, gen_random_uuid(), 'Chicken Tikka', 299.00, 'Starters', 100, true, 'unlimited'::stock_type, false, 1),
+          (3, gen_random_uuid(), 'Butter Paneer Masala', 349.00, 'Main Course', 100, true, 'unlimited'::stock_type, true, 1),
+          (4, gen_random_uuid(), 'Chicken Biryani', 399.00, 'Main Course', 100, true, 'unlimited'::stock_type, false, 1),
+          (5, gen_random_uuid(), 'Masala Chai', 49.00, 'Beverages', 100, true, 'unlimited'::stock_type, true, 1),
+          (6, gen_random_uuid(), 'Gulab Jamun', 99.00, 'Sweets', 100, true, 'unlimited'::stock_type, true, 1)
+        ON CONFLICT DO NOTHING;
+      `);
+    }
   }
   
   // 8. Reset sequences to avoid duplicate key errors from manual seeds
