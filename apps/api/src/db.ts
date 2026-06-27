@@ -40,21 +40,24 @@ export const pool = new Pool({
 import { AsyncLocalStorage } from 'async_hooks';
 
 export interface TenantContext {
-  restaurantId: number;
+  tenantId: number;
+  outletId: number;
+  restaurantId?: number; // legacy
 }
 
 export const tenantLocalStorage = new AsyncLocalStorage<TenantContext>();
 
-// Proxy query and connect to automatically inject SET app.current_restaurant_id
+// Proxy query and connect to automatically inject SET app.current_tenant_id
 const originalQuery = pool.query.bind(pool);
 pool.query = async function (this: any, text: any, params: any, callback: any) {
   const store = tenantLocalStorage.getStore();
-  const restaurantId = store ? store.restaurantId : 1;
+  const tenantId = store ? store.tenantId : 1;
+  const outletId = store ? store.outletId : 1;
 
   if (typeof text === 'string') {
     const client = await pool.connect();
     try {
-      await client.query(`SET app.current_restaurant_id = '${restaurantId}'`);
+      await client.query(`SET app.current_tenant_id = '${tenantId}'; SET app.current_outlet_id = '${outletId}';`);
       if (typeof params === 'function') {
         return await client.query(text, params);
       }
@@ -71,11 +74,12 @@ const originalConnect = pool.connect.bind(pool);
 pool.connect = async function (this: any) {
   const client = await originalConnect();
   const store = tenantLocalStorage.getStore();
-  const restaurantId = store ? store.restaurantId : 1;
+  const tenantId = store ? store.tenantId : 1;
+  const outletId = store ? store.outletId : 1;
   try {
-    await client.query(`SET app.current_restaurant_id = '${restaurantId}'`);
+    await client.query(`SET app.current_tenant_id = '${tenantId}'; SET app.current_outlet_id = '${outletId}';`);
   } catch (e) {
-    console.error('Failed to set app.current_restaurant_id on client connect:', e);
+    console.error('Failed to set context on client connect:', e);
   }
   return client;
 } as any;

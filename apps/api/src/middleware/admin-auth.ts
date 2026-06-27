@@ -1,7 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
 import { pool, tenantLocalStorage } from '../db';
+import jwt from 'jsonwebtoken';
 
-const ADMIN_ROLES = ['ADMIN', 'SUPERADMIN', 'MANAGER', 'STAFF'];
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development-only';
 
 export async function requireAdminRole(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (req.method === 'OPTIONS') {
@@ -10,61 +11,63 @@ export async function requireAdminRole(req: Request, res: Response, next: NextFu
   }
 
   const authorization = req.header('authorization');
-  if (!authorization) {
-    res.status(401).json({ message: 'Unauthorized: missing Authorization header.' });
+  if (!authorization || !authorization.startsWith('Bearer ')) {
+    res.status(401).json({ message: 'Unauthorized: missing or invalid Authorization header.' });
     return;
   }
 
-  const roleHeader = (req.header('x-role') ?? req.header('x-user-role'))?.toUpperCase();
-  if (!roleHeader || !ADMIN_ROLES.includes(roleHeader)) {
-    res.status(403).json({ message: 'Forbidden: ADMIN role is required.' });
-    return;
-  }
-
-  const userId = req.header('x-user-id');
-  let restaurantId = 1;
-  if (userId) {
-    try {
-      const userResult = await pool.query('SELECT get_user_restaurant_id($1) AS restaurant_id', [userId]);
-      if (userResult.rows.length > 0 && userResult.rows[0].restaurant_id !== null) {
-        restaurantId = userResult.rows[0].restaurant_id;
-      }
-    } catch (e) {
-      console.error('Failed to resolve restaurant_id for user:', e);
-    }
-  }
-
-  // Role-based Access Control (RBAC)
-  const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
-  if (isMutation) {
-    const uppercaseRole = roleHeader.toUpperCase();
-    const path = req.originalUrl.toLowerCase();
-
-    // 1. Restrict GST and Receipt layouts (settings) to ADMIN and SUPERADMIN only
-    const isSettingsPath = path.includes('/api/gst-config') || 
-                           path.includes('/api/extra-charges') || 
-                           path.includes('/api/receipt-layout');
+  const token = authorization.split(' ')[1];
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
     
-    if (isSettingsPath && (uppercaseRole === 'STAFF' || uppercaseRole === 'MANAGER')) {
-      res.status(403).json({ message: 'Forbidden: Waiters and Managers cannot modify tax rates, extra charges, or layouts.' });
-      return;
-    }
-
-    // 2. Restrict Items and Categories modifications to ADMIN, SUPERADMIN, and MANAGER only (no WAITER/STAFF)
-    const isMenuPath = path.includes('/api/items') || path.includes('/api/categories');
-    if (isMenuPath && uppercaseRole === 'STAFF') {
-      res.status(403).json({ message: 'Forbidden: Waiters cannot add or modify menu items, addons, or categories.' });
-      return;
-    }
+    // Inject tenant context into request object
+    (req as any).tenantId = decoded.tenant_id;
+    (req as any).outletId = decoded.outlet_id;
+    (req as any).userId = decoded.id;
+    (req as any).userRole = decoded.role;
+    
+    next();
+  } catch (err) {
+    res.status(401).json({ message: 'Unauthorized: invalid token.' });
   }
+}
 
-  (req as any).restaurantId = restaurantId;
-  next();
+export function requirePermission(permissionName: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const role = (req as any).userRole;
+    if (!role) {
+      return res.status(403).json({ message: 'Forbidden: No role assigned.' });
+    }
+
+    if (role === 'SUPERADMIN') {
+      return next();
+    }
+
+    try {
+      const permCheck = await pool.query(`
+        SELECT 1 FROM role_permissions rp
+        JOIN permissions p ON p.id = rp.permission_id
+        WHERE rp.role = $1 AND p.name = $2
+      `, [role, permissionName]);
+
+      if (permCheck.rows.length === 0) {
+        return res.status(403).json({ message: \`Forbidden: Requires permission \${permissionName}\` });
+      }
+
+      next();
+    } catch (e) {
+      res.status(500).json({ message: 'Internal server error while checking permissions.' });
+    }
+  };
 }
 
 export const tenantContextMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  const restaurantId = (req as any).restaurantId || 1;
-  tenantLocalStorage.run({ restaurantId }, () => {
+  const tenantId = (req as any).tenantId;
+  const outletId = (req as any).outletId;
+  const restaurantId = (req as any).restaurantId; // fallback for legacy code during migration
+
+  tenantLocalStorage.run({ tenantId, outletId, restaurantId }, () => {
     next();
   });
 };
@@ -73,7 +76,6 @@ export const publicTenantMiddleware = async (req: Request, res: Response, next: 
   const match = req.originalUrl.match(/\/tables\/([a-fA-F0-9-]{36})/);
   let tableId = match ? match[1] : (req.query.tableId as string);
 
-  // Fallback to referer header if tableId is not in URL or query
   if (!tableId && req.headers.referer) {
     const refererMatch = req.headers.referer.match(/\/menu\/([a-fA-F0-9-]{36})/);
     if (refererMatch) {
@@ -81,19 +83,23 @@ export const publicTenantMiddleware = async (req: Request, res: Response, next: 
     }
   }
 
-  let restaurantId = 1;
+  let tenantId = 1; // Fallback default
+  let outletId = 1;
 
   if (tableId) {
     try {
-      const tableCheck = await pool.query('SELECT get_table_restaurant_id($1) AS restaurant_id', [tableId]);
-      if (tableCheck.rows.length > 0 && tableCheck.rows[0].restaurant_id !== null) {
-        restaurantId = tableCheck.rows[0].restaurant_id;
+      // Find the tenant and outlet based on the table's assigned outlet
+      const tableCheck = await pool.query('SELECT tenant_id, outlet_id FROM tables WHERE table_id = $1 LIMIT 1', [tableId]);
+      if (tableCheck.rows.length > 0) {
+        tenantId = tableCheck.rows[0].tenant_id;
+        outletId = tableCheck.rows[0].outlet_id;
       }
     } catch (e) {
-      console.error('Failed to resolve restaurantId from tableId', e);
+      console.error('Failed to resolve tenant context from tableId', e);
     }
   }
 
-  (req as any).restaurantId = restaurantId;
+  (req as any).tenantId = tenantId;
+  (req as any).outletId = outletId;
   next();
 };

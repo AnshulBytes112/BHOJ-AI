@@ -17,6 +17,7 @@ import { publicRouter } from './public/public.routes';
 import { extraChargesRouter } from './gst/extra-charges.routes';
 import { analyticsRouter } from './analytics/analytics.routes';
 import { pricingRouter } from './pricing/pricing.routes';
+import { supportRouter } from './support/support.routes';
 import { initializeWebSocket } from './websocket';
 
 
@@ -94,7 +95,7 @@ app.use('/api/kots', kotsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/pricing', pricingRouter);
-
+app.use('/api/support', supportRouter);
 
 
 
