@@ -1,7 +1,11 @@
 import express from 'express'; // Trigger rebuild
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
 import * as path from 'path';
 import dotenv from 'dotenv';
+import { logger } from './logger';
 import { initializeDatabase } from './db';
 import { requireAdminRole, tenantContextMiddleware, publicTenantMiddleware } from './middleware/admin-auth';
 import { itemsRouter } from './items/items.routes';
@@ -24,6 +28,20 @@ import { initializeWebSocket } from './websocket';
 dotenv.config();
 
 const app = express();
+
+// Security middlewares
+app.use(helmet());
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', apiLimiter);
+
+// Logging middleware
+app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
 const allowedOrigins = [
   "http://localhost:3000",

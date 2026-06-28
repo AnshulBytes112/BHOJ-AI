@@ -8,6 +8,7 @@ const { composePlugins, withNx } = require('@nx/next');
  **/
 const nextConfig = {
   distDir: process.env.VERCEL ? 'dist/apps/web/.next' : '.next',
+  output: 'standalone',
   nx: {},
 };
 

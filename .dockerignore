@@ -1,0 +1,10 @@
+node_modules
+dist
+.nx
+.git
+.vscode
+tmp
+out-tsc
+coverage
+.next
+apps/web/.next
