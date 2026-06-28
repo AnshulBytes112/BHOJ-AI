@@ -111,13 +111,13 @@ export async function initializeDatabase(): Promise<void> {
       has_outlet  BOOLEAN;
     BEGIN
       SELECT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'tenant_id'
+        SELECT 1 FROM pg_attribute
+        WHERE attrelid = 'users'::regclass AND attname = 'tenant_id' AND NOT attisdropped
       ) INTO has_tenant;
 
       SELECT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'outlet_id'
+        SELECT 1 FROM pg_attribute
+        WHERE attrelid = 'users'::regclass AND attname = 'outlet_id' AND NOT attisdropped
       ) INTO has_outlet;
 
       IF has_tenant AND has_outlet THEN
@@ -263,9 +263,9 @@ export async function initializeDatabase(): Promise<void> {
 
   // Seed gst_config per-restaurant from categories, respecting the unique constraint
   const gstColumnsRes = await pool.query(`
-    SELECT column_name 
-    FROM information_schema.columns 
-    WHERE table_name = 'gst_config' AND column_name = 'tenant_id'
+    SELECT attname AS column_name 
+    FROM pg_attribute 
+    WHERE attrelid = 'gst_config'::regclass AND attname = 'tenant_id' AND NOT attisdropped
   `);
   const gstHasTenantId = gstColumnsRes.rows.length > 0;
 
@@ -368,9 +368,9 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   const receiptColumnsRes = await pool.query(`
-    SELECT column_name 
-    FROM information_schema.columns 
-    WHERE table_name = 'receipt_layout' AND column_name = 'tenant_id'
+    SELECT attname AS column_name 
+    FROM pg_attribute 
+    WHERE attrelid = 'receipt_layout'::regclass AND attname = 'tenant_id' AND NOT attisdropped
   `);
   const receiptHasTenantId = receiptColumnsRes.rows.length > 0;
 
@@ -591,9 +591,9 @@ export async function initializeDatabase(): Promise<void> {
 
   // ── Seed default kitchen sections ──
   const sectionsColumnsRes = await pool.query(`
-    SELECT column_name 
-    FROM information_schema.columns 
-    WHERE table_name = 'sections' AND column_name = 'tenant_id'
+    SELECT attname AS column_name 
+    FROM pg_attribute 
+    WHERE attrelid = 'sections'::regclass AND attname = 'tenant_id' AND NOT attisdropped
   `);
   const sectionsHasTenantId = sectionsColumnsRes.rows.length > 0;
 
@@ -620,9 +620,9 @@ export async function initializeDatabase(): Promise<void> {
   // ── Seed default POS categories (used by KOT dashboard) ──
   try {
     const categoriesColumnsRes = await pool.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'categories' AND column_name = 'tenant_id'
+      SELECT attname AS column_name 
+      FROM pg_attribute 
+      WHERE attrelid = 'categories'::regclass AND attname = 'tenant_id' AND NOT attisdropped
     `);
     const categoriesHasTenantId = categoriesColumnsRes.rows.length > 0;
 
