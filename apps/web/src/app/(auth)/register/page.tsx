@@ -8,8 +8,8 @@ export default function RegisterPage() {
   const router = useRouter();
 
   const handleRegisterSuccess = () => {
-    // Navigate to verify page after successful registration
-    router.push('/verify');
+    // Navigate to onboarding wizard after successful registration
+    router.push('/onboarding');
   };
 
   return <RegisterForm onSuccess={handleRegisterSuccess} />;

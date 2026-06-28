@@ -117,35 +117,79 @@ publicRouter.post('/register', async (req, res) => {
   }
 });
 
+import jwt from 'jsonwebtoken';
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development-only';
+
+function generateToken(user: any) {
+  // Extract tenant/outlet defaults
+  // In a real multi-tenant app, these would come from user's assignments
+  // Default to 1 if not present for migration safety
+  const tenant_id = user.tenant_id || 1; 
+  const outlet_id = user.outlet_id || user.restaurant_id || 1;
+
+  return jwt.sign({
+    id: user.id,
+    role: user.role,
+    tenant_id,
+    outlet_id
+  }, JWT_SECRET, { expiresIn: '24h' });
+}
+
 publicRouter.post('/login', async (req, res) => {
   const { email, password } = req.body;
+  
+  const getPermissions = async (role: string) => {
+    if (role === 'SUPERADMIN') return ['*'];
+    try {
+      const perms = await pool.query(`
+        SELECT p.name FROM role_permissions rp 
+        JOIN permissions p ON p.id = rp.permission_id 
+        WHERE rp.role = $1
+      `, [role]);
+      return perms.rows.map(row => row.name);
+    } catch (e) {
+      return [];
+    }
+  };
+
   if (email === 'admin@restrobit.com' && password === 'admin123') {
-    const adminResult = await pool.query("SELECT id, username, display_name, role FROM users WHERE username = 'admin' OR role = 'SUPERADMIN' LIMIT 1");
-    const userObj = adminResult.rows[0] || { id: 1, username: 'admin', display_name: 'BhojAI Admin', role: 'SUPERADMIN' };
+    const adminResult = await pool.query("SELECT id, username, display_name, role, tenant_id, outlet_id FROM users WHERE username = 'admin' OR role = 'SUPERADMIN' LIMIT 1");
+    const userObj = adminResult.rows[0] || { id: 1, username: 'admin', display_name: 'BhojAI Admin', role: 'SUPERADMIN', tenant_id: 1, outlet_id: 1 };
+    
+    const token = generateToken(userObj);
+    const permissions = await getPermissions(userObj.role);
+    
     return res.json({
       success: true,
+      token,
       user: {
         id: userObj.id,
         name: userObj.display_name,
         role: userObj.role.toLowerCase(),
         email: 'admin@restrobit.com',
-        restaurantName: 'BhojAI'
+        restaurantName: 'BhojAI',
+        permissions
       }
     });
   }
 
   if (email === 'waiter@bhojai.com' && password === 'waiter123') {
-    const waiterResult = await pool.query("SELECT id, username, display_name, role FROM users WHERE username = 'waiter1' LIMIT 1");
+    const waiterResult = await pool.query("SELECT id, username, display_name, role, tenant_id, outlet_id FROM users WHERE username = 'waiter1' LIMIT 1");
     if (waiterResult.rows.length > 0) {
       const userObj = waiterResult.rows[0];
+      const token = generateToken(userObj);
+      const permissions = await getPermissions(userObj.role);
+      
       return res.json({
         success: true,
+        token,
         user: {
           id: userObj.id,
           name: userObj.display_name,
           role: userObj.role.toLowerCase(),
           email: 'waiter@bhojai.com',
-          restaurantName: 'BhojAI'
+          restaurantName: 'BhojAI',
+          permissions
         }
       });
     }
@@ -154,22 +198,27 @@ publicRouter.post('/login', async (req, res) => {
   const phone = email.split('@')[0];
   try {
     const userResult = await pool.query(
-      `SELECT u.id, u.username, u.display_name, u.role, r.name as restaurant_name
+      `SELECT u.id, u.username, u.display_name, u.role, u.tenant_id, u.outlet_id, o.name as restaurant_name
        FROM users u
-       JOIN restaurants r ON r.id = u.restaurant_id
+       LEFT JOIN outlets o ON o.id = u.outlet_id
        WHERE u.username = $1 OR u.username = $2`,
       [email, phone]
     );
     if (userResult.rows.length > 0) {
       const userObj = userResult.rows[0];
+      const token = generateToken(userObj);
+      const permissions = await getPermissions(userObj.role);
+      
       return res.json({
         success: true,
+        token,
         user: {
           id: userObj.id,
           name: userObj.display_name,
           role: userObj.role.toLowerCase(),
           email: email,
-          restaurantName: userObj.restaurant_name
+          restaurantName: userObj.restaurant_name || 'BhojAI',
+          permissions
         }
       });
     }
@@ -187,22 +236,37 @@ publicRouter.post('/login/pin', async (req, res) => {
 
   try {
     const userResult = await pool.query(
-      `SELECT u.id, u.username, u.display_name, u.role, r.name as restaurant_name
+      `SELECT u.id, u.username, u.display_name, u.role, u.tenant_id, u.outlet_id, o.name as restaurant_name
        FROM users u
-       LEFT JOIN restaurants r ON r.id = u.restaurant_id
+       LEFT JOIN outlets o ON o.id = u.outlet_id
        WHERE u.pin = $1`,
       [pin]
     );
     if (userResult.rows.length > 0) {
       const userObj = userResult.rows[0];
+      const token = generateToken(userObj);
+      
+      // Inline permissions fetch for PIN login
+      let permissions = [];
+      if (userObj.role === 'SUPERADMIN') {
+        permissions = ['*'];
+      } else {
+        try {
+          const perms = await pool.query(`SELECT p.name FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE rp.role = $1`, [userObj.role]);
+          permissions = perms.rows.map(row => row.name);
+        } catch(e) {}
+      }
+
       return res.json({
         success: true,
+        token,
         user: {
           id: userObj.id,
           name: userObj.display_name,
           role: userObj.role.toLowerCase(),
           email: userObj.username, // Using username as a fallback
-          restaurantName: userObj.restaurant_name || 'BhojAI'
+          restaurantName: userObj.restaurant_name || 'BhojAI',
+          permissions
         }
       });
     }

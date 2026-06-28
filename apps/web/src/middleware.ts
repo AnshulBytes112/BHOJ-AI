@@ -7,11 +7,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Redirect root to login if no token (basic check)
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-
   // Auth Guard Logic (Future)
   const token = request.cookies.get('token');
   return NextResponse.next();

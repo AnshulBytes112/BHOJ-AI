@@ -10,6 +10,7 @@ interface User {
   name: string;
   role: Role;
   restaurantName?: string;
+  permissions?: string[];
 }
 
 /**
@@ -41,10 +42,11 @@ export function useAuth() {
       const response = await apiClient.post('/public/login', { email, password });
       if (response.data?.success) {
         const userObj = response.data.user;
+        const token = response.data.token;
         setUser(userObj);
         if (typeof window !== 'undefined') {
           localStorage.setItem('user', JSON.stringify(userObj));
-          localStorage.setItem('token', String(userObj.id));
+          localStorage.setItem('token', token);
           localStorage.setItem('restaurant_name', userObj.restaurantName);
         }
         return userObj;
@@ -60,10 +62,11 @@ export function useAuth() {
       const response = await apiClient.post('/public/login/pin', { pin });
       if (response.data?.success) {
         const userObj = response.data.user;
+        const token = response.data.token;
         setUser(userObj);
         if (typeof window !== 'undefined') {
           localStorage.setItem('user', JSON.stringify(userObj));
-          localStorage.setItem('token', String(userObj.id));
+          localStorage.setItem('token', token);
           localStorage.setItem('restaurant_name', userObj.restaurantName);
         }
         return userObj;
@@ -81,12 +84,19 @@ export function useAuth() {
     window.location.href = '/login';
   };
 
+  const hasPermission = (permission: string) => {
+    if (!user) return false;
+    if (user.role === 'superadmin' || user.permissions?.includes('*')) return true;
+    return user.permissions?.includes(permission) || false;
+  };
+
   return {
     user,
     isLoading,
     login,
     loginWithPin,
     logout,
+    hasPermission,
     isSuperAdmin: user?.role === 'superadmin',
     isAdmin: user?.role === 'admin',
     isManager: user?.role === 'manager',
