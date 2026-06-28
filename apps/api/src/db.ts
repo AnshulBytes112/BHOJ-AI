@@ -112,12 +112,12 @@ export async function initializeDatabase(): Promise<void> {
     BEGIN
       SELECT EXISTS (
         SELECT 1 FROM pg_attribute
-        WHERE attrelid = 'users'::regclass AND attname = 'tenant_id' AND NOT attisdropped
+        WHERE attrelid = to_regclass('users') AND attname = 'tenant_id' AND NOT attisdropped
       ) INTO has_tenant;
 
       SELECT EXISTS (
         SELECT 1 FROM pg_attribute
-        WHERE attrelid = 'users'::regclass AND attname = 'outlet_id' AND NOT attisdropped
+        WHERE attrelid = to_regclass('users') AND attname = 'outlet_id' AND NOT attisdropped
       ) INTO has_outlet;
 
       IF has_tenant AND has_outlet THEN
@@ -265,7 +265,7 @@ export async function initializeDatabase(): Promise<void> {
   const gstColumnsRes = await pool.query(`
     SELECT attname AS column_name 
     FROM pg_attribute 
-    WHERE attrelid = 'gst_config'::regclass AND attname = 'tenant_id' AND NOT attisdropped
+    WHERE attrelid = to_regclass('gst_config') AND attname = 'tenant_id' AND NOT attisdropped
   `);
   const gstHasTenantId = gstColumnsRes.rows.length > 0;
 
@@ -370,7 +370,7 @@ export async function initializeDatabase(): Promise<void> {
   const receiptColumnsRes = await pool.query(`
     SELECT attname AS column_name 
     FROM pg_attribute 
-    WHERE attrelid = 'receipt_layout'::regclass AND attname = 'tenant_id' AND NOT attisdropped
+    WHERE attrelid = to_regclass('receipt_layout') AND attname = 'tenant_id' AND NOT attisdropped
   `);
   const receiptHasTenantId = receiptColumnsRes.rows.length > 0;
 
@@ -593,7 +593,7 @@ export async function initializeDatabase(): Promise<void> {
   const sectionsColumnsRes = await pool.query(`
     SELECT attname AS column_name 
     FROM pg_attribute 
-    WHERE attrelid = 'sections'::regclass AND attname = 'tenant_id' AND NOT attisdropped
+    WHERE attrelid = to_regclass('sections') AND attname = 'tenant_id' AND NOT attisdropped
   `);
   const sectionsHasTenantId = sectionsColumnsRes.rows.length > 0;
 
@@ -622,7 +622,7 @@ export async function initializeDatabase(): Promise<void> {
     const categoriesColumnsRes = await pool.query(`
       SELECT attname AS column_name 
       FROM pg_attribute 
-      WHERE attrelid = 'categories'::regclass AND attname = 'tenant_id' AND NOT attisdropped
+      WHERE attrelid = to_regclass('categories') AND attname = 'tenant_id' AND NOT attisdropped
     `);
     const categoriesHasTenantId = categoriesColumnsRes.rows.length > 0;
 
