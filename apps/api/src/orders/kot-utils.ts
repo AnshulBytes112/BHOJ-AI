@@ -46,8 +46,8 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
 
   // 4. Create parent KOT
   const kotResult = await client.query(
-    `INSERT INTO kots (order_id, table_id, table_number, order_phase, kot_number, status, session_id, order_type, payment_option, notes)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9)
+    `INSERT INTO kots (order_id, table_id, table_number, order_phase, kot_number, status, session_id, order_type, payment_option, notes, tenant_id, outlet_id)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       orderId,
@@ -58,7 +58,9 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
       order.session_id,
       order.order_type || 'Dine In',
       order.payment_option || 'Pay at Restaurant',
-      order.notes || null
+      order.notes || null,
+      order.tenant_id || 1,
+      order.outlet_id || 1
     ]
   );
   const parentKot = kotResult.rows[0];
@@ -66,9 +68,9 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
   // 5. Insert KOT items
   for (const item of itemsResult.rows) {
     await client.query(
-      `INSERT INTO kot_items (kot_id, item_id, item_name, quantity, serial_number, extras, spice_level)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [parentKot.kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level]
+      `INSERT INTO kot_items (kot_id, item_id, item_name, quantity, serial_number, extras, spice_level, tenant_id, outlet_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [parentKot.kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level, order.tenant_id || 1, order.outlet_id || 1]
     );
   }
 
@@ -91,17 +93,17 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
     skSeq++;
 
     const skotResult = await client.query(
-      `INSERT INTO section_kots (parent_kot_id, section_id, section_name, section_kot_number, status)
-       VALUES ($1, NULL, $2, $3, 'pending') RETURNING *`,
-      [parentKot.kot_id, sectionName, sectionKotNumber]
+      `INSERT INTO section_kots (parent_kot_id, section_id, section_name, section_kot_number, status, tenant_id, outlet_id)
+       VALUES ($1, NULL, $2, $3, 'pending', $4, $5) RETURNING *`,
+      [parentKot.kot_id, sectionName, sectionKotNumber, order.tenant_id || 1, order.outlet_id || 1]
     );
     const skot = skotResult.rows[0];
 
     for (const item of items) {
       await client.query(
-        `INSERT INTO section_kot_items (section_kot_id, item_id, item_name, quantity, serial_number, extras, spice_level)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level]
+        `INSERT INTO section_kot_items (section_kot_id, item_id, item_name, quantity, serial_number, extras, spice_level, tenant_id, outlet_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level, order.tenant_id || 1, order.outlet_id || 1]
       );
     }
     sectionKots.push({
