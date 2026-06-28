@@ -29,7 +29,7 @@ sessionsRouter.post('/start', async (req, res) => {
 
     // 1. Lock and retrieve the target table to ensure it exists and prevent race conditions
     const tableResult = await client.query(
-      `SELECT table_id, table_number, status FROM tables WHERE table_id = $1 FOR UPDATE`,
+      `SELECT table_id, table_number, status, tenant_id, outlet_id FROM tables WHERE table_id = $1 FOR UPDATE`,
       [table_id]
     );
     if (tableResult.rows.length === 0) {
@@ -70,8 +70,8 @@ sessionsRouter.post('/start', async (req, res) => {
       `INSERT INTO table_sessions (
         table_id, session_code, status, guest_count, started_at,
         created_by, active_order_id, payment_status, is_payment_locked,
-        is_force_closed, source_type, assigned_waiter_id, notes, version
-      ) VALUES ($1, $2, 'active', $3, NOW(), $4, NULL, 'unpaid', false, false, $5, $6, $7, 1)
+        is_force_closed, source_type, assigned_waiter_id, notes, version, tenant_id, outlet_id
+      ) VALUES ($1, $2, 'active', $3, NOW(), $4, NULL, 'unpaid', false, false, $5, $6, $7, 1, $8, $9)
       RETURNING *`,
       [
         table_id,
@@ -81,14 +81,16 @@ sessionsRouter.post('/start', async (req, res) => {
         finalSourceType,
         assigned_waiter_id ?? null,
         notes ?? null,
+        table.tenant_id,
+        table.outlet_id
       ]
     );
     const session = insertResult.rows[0];
 
     // 5. Link table in session_tables mapping
     await client.query(
-      `INSERT INTO session_tables (session_id, table_id) VALUES ($1, $2)`,
-      [session.session_id, table_id]
+      `INSERT INTO session_tables (session_id, table_id, tenant_id, outlet_id) VALUES ($1, $2, $3, $4)`,
+      [session.session_id, table_id, table.tenant_id, table.outlet_id]
     );
 
     // 6. Update the table status to occupied
@@ -100,14 +102,16 @@ sessionsRouter.post('/start', async (req, res) => {
     // 7. Write the SESSION_STARTED event log
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'SESSION_STARTED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'SESSION_STARTED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         session.session_id,
         JSON.stringify({ table_number: table.table_number, guest_count: guestCountParsed }),
         req.body.created_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
         finalSourceType,
+        table.tenant_id,
+        table.outlet_id
       ]
     );
 

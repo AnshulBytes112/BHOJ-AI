@@ -781,7 +781,7 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
     await client.query('BEGIN');
 
     const tableCheck = await client.query(
-      `SELECT table_id, table_number, status, zone_id, restaurant_id FROM tables WHERE table_id = $1 FOR UPDATE`,
+      `SELECT table_id, table_number, status, zone_id, restaurant_id, tenant_id, outlet_id FROM tables WHERE table_id = $1 FOR UPDATE`,
       [tableId]
     );
     if (tableCheck.rows.length === 0) {
@@ -846,13 +846,15 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
         // Record State Transition Event
         await client.query(
           `INSERT INTO session_events (
-            session_id, event_type, timestamp, metadata, source_device, source_channel
-          ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4)`,
+            session_id, event_type, timestamp, metadata, source_device, source_channel, tenant_id, outlet_id
+          ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4, $5, $6)`,
           [
             finalSessionId,
             JSON.stringify({ previous_status: activeSession.status, reason: 'New order added' }),
             req.header('x-device') ?? 'POS_TERMINAL',
-            source_type ?? 'POS'
+            source_type ?? 'POS',
+            tableCheck.rows[0].tenant_id,
+            tableCheck.rows[0].outlet_id
           ]
         );
       }
@@ -866,28 +868,30 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
         `INSERT INTO table_sessions (
            table_id, session_code, status, guest_count, started_at,
            payment_status, is_payment_locked, is_force_closed, source_type,
-           assigned_waiter_id, version
-         ) VALUES ($1, $2, 'active', 1, NOW(), 'unpaid', false, false, $3, $4, 1)
+           assigned_waiter_id, version, tenant_id, outlet_id
+         ) VALUES ($1, $2, 'active', 1, NOW(), 'unpaid', false, false, $3, $4, 1, $5, $6)
          RETURNING session_id`,
-        [tableId, sessionCode, finalSourceType, assigned_waiter_id ?? null]
+        [tableId, sessionCode, finalSourceType, assigned_waiter_id ?? null, tableCheck.rows[0].tenant_id, tableCheck.rows[0].outlet_id]
       );
       finalSessionId = newSessionResult.rows[0].session_id;
 
       await client.query(
-        `INSERT INTO session_tables (session_id, table_id) VALUES ($1, $2)`,
-        [finalSessionId, tableId]
+        `INSERT INTO session_tables (session_id, table_id, tenant_id, outlet_id) VALUES ($1, $2, $3, $4)`,
+        [finalSessionId, tableId, tableCheck.rows[0].tenant_id, tableCheck.rows[0].outlet_id]
       );
 
       // Event log
       await client.query(
         `INSERT INTO session_events (
-          session_id, event_type, timestamp, metadata, source_device, source_channel
-         ) VALUES ($1, 'SESSION_STARTED', NOW(), $2, $3, $4)`,
+          session_id, event_type, timestamp, metadata, source_device, source_channel, tenant_id, outlet_id
+         ) VALUES ($1, 'SESSION_STARTED', NOW(), $2, $3, $4, $5, $6)`,
         [
           finalSessionId,
           JSON.stringify({ table_number: tableCheck.rows[0].table_number, guest_count: 1, note: 'Auto-started by order placement' }),
           req.header('x-device') ?? 'POS_TERMINAL',
-          finalSourceType
+          finalSourceType,
+          tableCheck.rows[0].tenant_id,
+          tableCheck.rows[0].outlet_id
         ]
       );
     }
@@ -901,10 +905,10 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
 
     // RULE 2: Order belongs to session_id
     const orderResult = await client.query(
-      `INSERT INTO orders (table_id, order_phase, status, session_id, source_type, order_type, payment_option, notes)
-       VALUES ($1, $2, 'open', $3, $4, $5, $6, $7)
+      `INSERT INTO orders (table_id, order_phase, status, session_id, source_type, order_type, payment_option, notes, tenant_id, outlet_id)
+       VALUES ($1, $2, 'open', $3, $4, $5, $6, $7, $8, $9)
        RETURNING order_id, table_id, order_phase, status, created_at, session_id, source_type, order_type, payment_option, notes`,
-      [tableId, orderPhase, finalSessionId, finalSourceType, orderTypeVal, paymentOptionVal, specialInstructionsVal]
+      [tableId, orderPhase, finalSessionId, finalSourceType, orderTypeVal, paymentOptionVal, specialInstructionsVal, tableCheck.rows[0].tenant_id, tableCheck.rows[0].outlet_id]
     );
     const newOrder = orderResult.rows[0];
 
@@ -945,10 +949,10 @@ tablesRouter.post('/:tableId/orders', async (req, res) => {
         const finalPriceAtBilling = Number(dbItem.effective_price) + addonPriceSum;
 
         const itemResult = await client.query(
-          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing, extras, spice_level)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing, extras, spice_level, tenant_id, outlet_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING order_item_id, item_id, quantity, price_at_billing, extras, spice_level`,
-          [newOrder.order_id, dbItem.id, item.quantity || 1, finalPriceAtBilling, item.gstRate || 5, selectedExtras, selectedSpiceLevel]
+          [newOrder.order_id, dbItem.id, item.quantity || 1, finalPriceAtBilling, item.gstRate || 5, selectedExtras, selectedSpiceLevel, tableCheck.rows[0].tenant_id, tableCheck.rows[0].outlet_id]
         );
         return { ...itemResult.rows[0], item_name: dbItem.name };
       })

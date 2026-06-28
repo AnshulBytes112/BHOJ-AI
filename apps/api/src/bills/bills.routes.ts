@@ -147,7 +147,7 @@ async function ensureActiveTableSession(
   }
 
   const tableResult = await client.query(
-    `SELECT table_id, table_number FROM tables WHERE table_id = $1 FOR UPDATE`,
+    `SELECT table_id, table_number, tenant_id, outlet_id FROM tables WHERE table_id = $1 FOR UPDATE`,
     [tableId]
   );
 
@@ -163,25 +163,25 @@ async function ensureActiveTableSession(
     `INSERT INTO table_sessions (
        table_id, session_code, status, guest_count, started_at,
        payment_status, is_payment_locked, is_force_closed, source_type,
-       created_by, version
-     ) VALUES ($1, $2, 'active', 1, NOW(), 'unpaid', false, false, 'POS', $3, 1)
+       created_by, version, tenant_id, outlet_id
+     ) VALUES ($1, $2, 'active', 1, NOW(), 'unpaid', false, false, 'POS', $3, 1, $4, $5)
      RETURNING session_id`,
-    [tableId, sessionCode, userId]
+    [tableId, sessionCode, userId, tableResult.rows[0].tenant_id, tableResult.rows[0].outlet_id]
   );
 
   const sessionId = created.rows[0].session_id;
 
   await client.query(
-    `INSERT INTO session_tables (session_id, table_id)
-     VALUES ($1, $2)
+    `INSERT INTO session_tables (session_id, table_id, tenant_id, outlet_id)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT DO NOTHING`,
-    [sessionId, tableId]
+    [sessionId, tableId, tableResult.rows[0].tenant_id, tableResult.rows[0].outlet_id]
   );
 
   await client.query(
-    `INSERT INTO session_events (session_id, event_type, timestamp, metadata, source_device, source_channel, performed_by)
-     VALUES ($1, 'SESSION_STARTED', NOW(), $2, 'POS_TERMINAL', 'POS', $3)`,
-    [sessionId, JSON.stringify({ table_id: tableId, note: 'Auto-started by bill generation' }), userId]
+    `INSERT INTO session_events (session_id, event_type, timestamp, metadata, source_device, source_channel, performed_by, tenant_id, outlet_id)
+     VALUES ($1, 'SESSION_STARTED', NOW(), $2, 'POS_TERMINAL', 'POS', $3, $4, $5)`,
+    [sessionId, JSON.stringify({ table_id: tableId, note: 'Auto-started by bill generation' }), userId, tableResult.rows[0].tenant_id, tableResult.rows[0].outlet_id]
   );
 
   return sessionId;
