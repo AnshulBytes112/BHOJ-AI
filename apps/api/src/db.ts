@@ -51,8 +51,8 @@ export const tenantLocalStorage = new AsyncLocalStorage<TenantContext>();
 const originalQuery = pool.query.bind(pool);
 pool.query = async function (this: any, text: any, params: any, callback: any) {
   const store = tenantLocalStorage.getStore();
-  const tenantId = store ? store.tenantId : 1;
-  const outletId = store ? store.outletId : 1;
+  const tenantId = store && store.tenantId != null ? store.tenantId : '';
+  const outletId = store && store.outletId != null ? store.outletId : '';
 
   if (typeof text === 'string') {
     const client = await pool.connect();
@@ -74,8 +74,8 @@ const originalConnect = pool.connect.bind(pool);
 pool.connect = async function (this: any) {
   const client = await originalConnect();
   const store = tenantLocalStorage.getStore();
-  const tenantId = store ? store.tenantId : 1;
-  const outletId = store ? store.outletId : 1;
+  const tenantId = store && store.tenantId != null ? store.tenantId : '';
+  const outletId = store && store.outletId != null ? store.outletId : '';
   try {
     await client.query(`SET app.current_tenant_id = '${tenantId}'; SET app.current_outlet_id = '${outletId}';`);
   } catch (e) {

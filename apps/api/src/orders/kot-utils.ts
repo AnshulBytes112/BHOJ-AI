@@ -59,8 +59,8 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
       order.order_type || 'Dine In',
       order.payment_option || 'Pay at Restaurant',
       order.notes || null,
-      order.tenant_id || 1,
-      order.outlet_id || 1
+      order.tenant_id || null,
+      order.outlet_id || null
     ]
   );
   const parentKot = kotResult.rows[0];
@@ -70,7 +70,7 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
     await client.query(
       `INSERT INTO kot_items (kot_id, item_id, item_name, quantity, serial_number, extras, spice_level, tenant_id, outlet_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [parentKot.kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level, order.tenant_id || 1, order.outlet_id || 1]
+      [parentKot.kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level, order.tenant_id || null, order.outlet_id || null]
     );
   }
 
@@ -95,7 +95,7 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
     const skotResult = await client.query(
       `INSERT INTO section_kots (parent_kot_id, section_id, section_name, section_kot_number, status, tenant_id, outlet_id)
        VALUES ($1, NULL, $2, $3, 'pending', $4, $5) RETURNING *`,
-      [parentKot.kot_id, sectionName, sectionKotNumber, order.tenant_id || 1, order.outlet_id || 1]
+      [parentKot.kot_id, sectionName, sectionKotNumber, order.tenant_id || null, order.outlet_id || null]
     );
     const skot = skotResult.rows[0];
 
@@ -103,7 +103,7 @@ export async function generateKotForOrder(client: PoolClient, orderId: string) {
       await client.query(
         `INSERT INTO section_kot_items (section_kot_id, item_id, item_name, quantity, serial_number, extras, spice_level, tenant_id, outlet_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level, order.tenant_id || 1, order.outlet_id || 1]
+        [skot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number, item.extras, item.spice_level, order.tenant_id || null, order.outlet_id || null]
       );
     }
     sectionKots.push({

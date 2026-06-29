@@ -124,8 +124,8 @@ function generateToken(user: any) {
   // Extract tenant/outlet defaults
   // In a real multi-tenant app, these would come from user's assignments
   // Default to 1 if not present for migration safety
-  const tenant_id = user.tenant_id || 1; 
-  const outlet_id = user.outlet_id || user.restaurant_id || 1;
+  const tenant_id = user.tenant_id || null; 
+  const outlet_id = user.outlet_id || user.restaurant_id || null;
 
   return jwt.sign({
     id: user.id,
@@ -154,7 +154,7 @@ publicRouter.post('/login', async (req, res) => {
 
   if (email === 'admin@restrobit.com' && password === 'admin123') {
     const adminResult = await pool.query("SELECT id, username, display_name, role, tenant_id, outlet_id FROM users WHERE username = 'admin' OR role = 'SUPERADMIN' LIMIT 1");
-    const userObj = adminResult.rows[0] || { id: 1, username: 'admin', display_name: 'BhojAI Admin', role: 'SUPERADMIN', tenant_id: 1, outlet_id: 1 };
+    const userObj = adminResult.rows[0] || { id: 1, username: 'admin', display_name: 'BhojAI Admin', role: 'SUPERADMIN', tenant_id: null, outlet_id: null };
     
     const token = generateToken(userObj);
     const permissions = await getPermissions(userObj.role);
@@ -277,7 +277,7 @@ publicRouter.post('/login/pin', async (req, res) => {
 });
 
 // Helper to audit/log session events
-async function logSessionEvent(client: any, sessionId: string, eventType: string, metadata: any, channel: string, tenantId: number = 1, outletId: number = 1) {
+async function logSessionEvent(client: any, sessionId: string, eventType: string, metadata: any, channel: string, tenantId: number | null = null, outletId: number | null = null) {
   await client.query(
     `INSERT INTO session_events (session_id, event_type, timestamp, metadata, source_device, source_channel, tenant_id, outlet_id)
      VALUES ($1, $2, NOW(), $3, 'CUSTOMER_MOBILE', $4, $5, $6)`,

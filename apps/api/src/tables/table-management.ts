@@ -72,10 +72,16 @@ export async function auditLog(
   } = {}
 ): Promise<void> {
   try {
+    // We use a savepoint so that if this insert fails, it doesn't abort the outer transaction
+    await (client as any).query('SAVEPOINT audit_log_sp');
+    
     await (client as any).query(
-      `INSERT INTO audit_log
-         (action, entity_type, entity_id, user_id, table_id, reason, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO audit_logs
+         (action, entity_type, entity_id, user_id, table_id, reason, metadata, tenant_id, outlet_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7,
+         current_setting('app.current_tenant_id')::integer,
+         current_setting('app.current_outlet_id')::integer
+       )`,
       [
         action,
         opts.entityType ?? null,
@@ -86,7 +92,12 @@ export async function auditLog(
         opts.metadata ? JSON.stringify(opts.metadata) : null,
       ]
     );
+    
+    await (client as any).query('RELEASE SAVEPOINT audit_log_sp');
   } catch (err: any) {
+    try {
+      await (client as any).query('ROLLBACK TO SAVEPOINT audit_log_sp');
+    } catch (rbErr) {}
     // Audit failures must NEVER crash the main flow.
     console.error('auditLog write failed (non-fatal):', err.message);
   }

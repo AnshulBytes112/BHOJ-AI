@@ -203,8 +203,8 @@ billsRouter.post('/', async (req, res) => {
       mergedLineMap.set(line.itemId, (mergedLineMap.get(line.itemId) ?? 0) + line.quantity);
     }
     
-    let tenantId = 1;
-    let outletId = 1;
+    let tenantId = null;
+    let outletId = null;
     if (tableId) {
       const tRes = await client.query('SELECT tenant_id, outlet_id FROM tables WHERE table_id = $1', [tableId]);
       if (tRes.rows.length > 0) {

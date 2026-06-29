@@ -96,8 +96,8 @@ export const publicTenantMiddleware = async (req: Request, res: Response, next: 
     }
   }
 
-  let tenantId = 1; // Fallback default
-  let outletId = 1;
+  let tenantId = null; // No fallback default
+  let outletId = null;
 
   if (tableId) {
     try {
