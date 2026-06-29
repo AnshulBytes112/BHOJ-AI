@@ -202,6 +202,22 @@ billsRouter.post('/', async (req, res) => {
     for (const line of lines) {
       mergedLineMap.set(line.itemId, (mergedLineMap.get(line.itemId) ?? 0) + line.quantity);
     }
+    
+    let tenantId = 1;
+    let outletId = 1;
+    if (tableId) {
+      const tRes = await client.query('SELECT tenant_id, outlet_id FROM tables WHERE table_id = $1', [tableId]);
+      if (tRes.rows.length > 0) {
+        tenantId = tRes.rows[0].tenant_id;
+        outletId = tRes.rows[0].outlet_id;
+      }
+    } else if (orderIds && orderIds.length > 0) {
+      const oRes = await client.query('SELECT tenant_id, outlet_id FROM orders WHERE order_id = ANY($1::uuid[]) LIMIT 1', [orderIds]);
+      if (oRes.rows.length > 0) {
+        tenantId = oRes.rows[0].tenant_id;
+        outletId = oRes.rows[0].outlet_id;
+      }
+    }
     const activeSessionId = tableId
       ? await ensureActiveTableSession(client, tableId, cashierId)
       : null;
@@ -275,10 +291,10 @@ billsRouter.post('/', async (req, res) => {
       const orderPhase = orderPhaseResult.rows[0].next_phase;
 
       const orderResult = await client.query<{ order_id: string; created_at: string }>(
-        `INSERT INTO orders (table_id, order_phase, status, session_id)
-         VALUES ($1, $2, 'open', $3)
+        `INSERT INTO orders (table_id, order_phase, status, session_id, tenant_id, outlet_id)
+         VALUES ($1, $2, 'open', $3, $4, $5)
          RETURNING order_id, created_at`,
-        [tableId, orderPhase, activeSessionId]
+        [tableId, orderPhase, activeSessionId, tenantId, outletId]
       );
       const newOrder = orderResult.rows[0];
       actualOrderIds = [newOrder.order_id];
@@ -288,9 +304,9 @@ billsRouter.post('/', async (req, res) => {
         const item = itemById.get(itemId) as CatalogItemRow;
         const gstRate = await getGstRateForCategory(client, item.category);
         await client.query(
-          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [newOrder.order_id, item.id, quantity, Number(item.selling_price), gstRate]
+          `INSERT INTO order_items (order_id, item_id, quantity, price_at_billing, gst_percent_at_billing, tenant_id, outlet_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [newOrder.order_id, item.id, quantity, Number(item.selling_price), gstRate, tenantId, outletId]
         );
       }
     }
@@ -451,8 +467,8 @@ billsRouter.post('/', async (req, res) => {
 
     const billResult = await client.query<BillRow>(
       `
-      INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id, session_id, extra_charges)
-      VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8)
+      INSERT INTO bills (cashier_id, subtotal, gst_total, grand_total, status, payment_status, table_id, session_id, extra_charges, tenant_id, outlet_id)
+      VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8, $9, $10)
       RETURNING *;
       `,
       [
@@ -464,6 +480,8 @@ billsRouter.post('/', async (req, res) => {
         tableId ?? null,
         activeSessionId,
         JSON.stringify(extraChargesBreakdown),
+        tenantId,
+        outletId
       ]
     );
 
@@ -474,9 +492,9 @@ billsRouter.post('/', async (req, res) => {
       await client.query(
         `
         INSERT INTO bill_items
-          (bill_id, item_id, item_name, quantity, unit_price, gst_rate, gst_amount, line_total)
+          (bill_id, item_id, item_name, quantity, unit_price, gst_rate, gst_amount, line_total, tenant_id, outlet_id)
         VALUES
-          ($1, $2, $3, $4, $5, $6, $7, $8);
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
         `,
         [
           bill.id,
@@ -487,6 +505,8 @@ billsRouter.post('/', async (req, res) => {
           line.gst_rate,
           line.gst_amount,
           line.line_total,
+          tenantId,
+          outletId
         ]
       );
     }
