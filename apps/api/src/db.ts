@@ -1498,5 +1498,118 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   console.log('KDS-readiness migrations complete.');
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MULTI-TENANT TRIGGER SAFETY NET
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('Running multi-tenant safety net migrations...');
+
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION auto_set_tenant_context()
+    RETURNS TRIGGER AS $$
+    DECLARE
+      ctx_tenant_id INTEGER;
+    BEGIN
+      IF NEW.tenant_id IS NULL THEN
+        BEGIN
+          ctx_tenant_id := current_setting('app.current_tenant_id', true)::integer;
+        EXCEPTION WHEN OTHERS THEN
+          ctx_tenant_id := NULL;
+        END;
+        IF ctx_tenant_id IS NULL THEN
+          RAISE EXCEPTION 'Tenant context not set. The application must explicitly pass tenant_id, or valid session context must exist.';
+        END IF;
+        NEW.tenant_id := ctx_tenant_id;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    CREATE OR REPLACE FUNCTION auto_set_tenant_and_outlet_context()
+    RETURNS TRIGGER AS $$
+    DECLARE
+      ctx_tenant_id INTEGER;
+      ctx_outlet_id INTEGER;
+    BEGIN
+      IF NEW.tenant_id IS NULL THEN
+        BEGIN
+          ctx_tenant_id := current_setting('app.current_tenant_id', true)::integer;
+        EXCEPTION WHEN OTHERS THEN
+          ctx_tenant_id := NULL;
+        END;
+        IF ctx_tenant_id IS NULL THEN
+          RAISE EXCEPTION 'Tenant context not set. The application must explicitly pass tenant_id, or valid session context must exist.';
+        END IF;
+        NEW.tenant_id := ctx_tenant_id;
+      END IF;
+
+      IF NEW.outlet_id IS NULL THEN
+        BEGIN
+          ctx_outlet_id := current_setting('app.current_outlet_id', true)::integer;
+        EXCEPTION WHEN OTHERS THEN
+          ctx_outlet_id := NULL;
+        END;
+        IF ctx_outlet_id IS NULL THEN
+          RAISE EXCEPTION 'Outlet context not set. The application must explicitly pass outlet_id, or valid session context must exist.';
+        END IF;
+        NEW.outlet_id := ctx_outlet_id;
+      END IF;
+
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  const tenantOnlyTables = [
+    'outlets', 'roles', 'permissions', 'role_permissions', 'subscriptions', 'support_sessions'
+  ];
+
+  const tenantAndOutletTables = [
+    'items', 'categories', 'orders', 'order_items', 'bills', 'bill_items', 'kots', 'kot_items', 
+    'tables', 'table_sessions', 'session_events', 'session_tables', 'customer_reviews', 
+    'gst_config', 'extra_charges', 'dining_zones', 'item_zone_prices', 'menu_schedules', 
+    'item_schedule_prices', 'receipt_layout', 'sections', 'item_section_mapping',
+    'section_kots', 'section_kot_items', 'item_addons'
+  ];
+
+  for (const tableName of tenantOnlyTables) {
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${tableName}') THEN
+            DROP TRIGGER IF EXISTS trg_auto_set_tenant ON ${tableName};
+            CREATE TRIGGER trg_auto_set_tenant
+            BEFORE INSERT ON ${tableName}
+            FOR EACH ROW
+            EXECUTE FUNCTION auto_set_tenant_context();
+          END IF;
+        END $$;
+      `);
+    } catch (e: any) {
+      console.warn('Failed to attach tenant trigger to table', tableName, e.message);
+    }
+  }
+
+  for (const tableName of tenantAndOutletTables) {
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${tableName}') THEN
+            DROP TRIGGER IF EXISTS trg_auto_set_tenant_outlet ON ${tableName};
+            CREATE TRIGGER trg_auto_set_tenant_outlet
+            BEFORE INSERT ON ${tableName}
+            FOR EACH ROW
+            EXECUTE FUNCTION auto_set_tenant_and_outlet_context();
+          END IF;
+        END $$;
+      `);
+    } catch (e: any) {
+      console.warn('Failed to attach tenant+outlet trigger to table', tableName, e.message);
+    }
+  }
+
+  console.log('Multi-tenant safety net migrations complete.');
 }
 
