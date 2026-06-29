@@ -21,11 +21,24 @@ export async function requireAdminRole(req: Request, res: Response, next: NextFu
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     
+    // Fetch fresh tenant context and role from the database
+    const userQuery = await pool.query(
+      'SELECT tenant_id, outlet_id, role FROM users WHERE id = $1', 
+      [decoded.id]
+    );
+    
+    if (userQuery.rows.length === 0) {
+      res.status(401).json({ message: 'Unauthorized: user not found.' });
+      return;
+    }
+    
+    const user = userQuery.rows[0];
+
     // Inject tenant context into request object
-    (req as any).tenantId = decoded.tenant_id;
-    (req as any).outletId = decoded.outlet_id;
+    (req as any).tenantId = user.tenant_id;
+    (req as any).outletId = user.outlet_id;
     (req as any).userId = decoded.id;
-    (req as any).userRole = decoded.role;
+    (req as any).userRole = user.role;
     
     next();
   } catch (err) {
