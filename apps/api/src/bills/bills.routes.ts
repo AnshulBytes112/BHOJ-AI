@@ -611,6 +611,14 @@ billsRouter.post('/', async (req, res) => {
       }
     }
 
+    if (typeof bill.extra_charges === 'string') {
+      try {
+        bill.extra_charges = JSON.parse(bill.extra_charges);
+      } catch (e) {
+        // ignore parse error if somehow not valid JSON
+      }
+    }
+
     res.status(201).json({
       bill,
       items: billItems.rows,
@@ -770,7 +778,18 @@ billsRouter.get('/', async (_req, res) => {
       `
     );
 
-    res.json(result.rows);
+    const bills = result.rows.map(bill => {
+      if (typeof bill.extra_charges === 'string') {
+        try {
+          bill.extra_charges = JSON.parse(bill.extra_charges);
+        } catch (e) {
+          // ignore parse error if somehow not valid JSON
+        }
+      }
+      return bill;
+    });
+
+    res.json(bills);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch bills.';
     res.status(400).json({ message });
@@ -796,8 +815,17 @@ billsRouter.get('/:id', async (req, res) => {
       [billId]
     );
 
+    const bill = billResult.rows[0];
+    if (typeof bill.extra_charges === 'string') {
+      try {
+        bill.extra_charges = JSON.parse(bill.extra_charges);
+      } catch (e) {
+        // ignore parse error if somehow not valid JSON
+      }
+    }
+
     res.json({
-      bill: billResult.rows[0],
+      bill: bill,
       items: itemResult.rows,
     });
   } catch (error) {
@@ -856,7 +884,7 @@ billsRouter.get('/:id/receipt', async (req, res) => {
       subtotal: bill.subtotal,
       gst_total: bill.gst_total,
       grand_total: bill.grand_total,
-      extra_charges: bill.extra_charges
+      extra_charges: typeof bill.extra_charges === 'string' ? JSON.parse(bill.extra_charges) : bill.extra_charges
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch receipt data.';
