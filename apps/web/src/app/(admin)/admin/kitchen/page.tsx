@@ -996,10 +996,10 @@ function KOTPageInner() {
                           No active orders for this section
                         </div>
                       ) : sectionKots.map(kot => (
-                        <div key={kot.section_kot_id} className="w-full">
+                        <div key={(kot as any).section_kot_id || (kot as any).kot_id} className="w-full">
                           <KotCard
                             kot={kot}
-                            selected={selectedKot?.section_kot_id === kot.section_kot_id}
+                            selected={selectedKot ? ((selectedKot as any).section_kot_id || (selectedKot as any).kot_id) === ((kot as any).section_kot_id || (kot as any).kot_id) : false}
                             onClick={() => setSelectedKot(kot)}
                           />
                         </div>

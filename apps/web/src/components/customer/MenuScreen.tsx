@@ -294,15 +294,15 @@ export default function MenuScreen({
 
       {/* Static view cart bar */}
       {cart.length > 0 && (
-<div className="absolute bottom-16 left-0 right-0 bg-emerald-800 text-white p-4 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.15)] z-40">          <div className="flex items-center gap-3">
-            <div className="bg-emerald-900 p-2 rounded-xl">
-              <ShoppingCart size={18} />
-            </div>
-            <div>
-              <p className="text-xs opacity-80">{totalCartQuantity} {totalCartQuantity === 1 ? 'item' : 'items'} added</p>
-              <p className="font-black text-sm">₹{subtotal}</p>
-            </div>
+        <div className="absolute bottom-16 left-0 right-0 bg-emerald-800 text-white p-4 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.15)] z-40">          <div className="flex items-center gap-3">
+          <div className="bg-emerald-900 p-2 rounded-xl">
+            <ShoppingCart size={18} />
           </div>
+          <div>
+            <p className="text-xs opacity-80">{totalCartQuantity} {totalCartQuantity === 1 ? 'item' : 'items'} added</p>
+            <p className="font-black text-sm">₹{subtotal}</p>
+          </div>
+        </div>
           <button
             onClick={onViewCart}
             className="bg-white text-emerald-950 font-black text-sm px-5 py-2.5 rounded-xl flex items-center gap-1 hover:bg-stone-50 active:scale-[0.97] transition-transform"

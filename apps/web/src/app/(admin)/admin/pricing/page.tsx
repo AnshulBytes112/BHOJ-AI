@@ -365,41 +365,37 @@ export default function AdminPricingPage() {
             <nav className="-mb-px flex space-x-6">
               <button
                 onClick={() => setActiveTab('zones')}
-                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${
-                  activeTab === 'zones'
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'zones'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 <Layers size={16} /> Dining Zones
               </button>
               <button
                 onClick={() => setActiveTab('zone-overrides')}
-                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${
-                  activeTab === 'zone-overrides'
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'zone-overrides'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 <Utensils size={16} /> Zone Prices & Tables
               </button>
               <button
                 onClick={() => setActiveTab('schedules')}
-                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${
-                  activeTab === 'schedules'
-                    ? 'border-emerald-600 text-emerald-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'schedules'
+                  ? 'border-emerald-600 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 <Calendar size={16} /> Time Schedules
               </button>
               <button
                 onClick={() => setActiveTab('schedule-overrides')}
-                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${
-                  activeTab === 'schedule-overrides'
-                    ? 'border-emerald-600 text-emerald-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`py-3 px-1 border-b-2 font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'schedule-overrides'
+                  ? 'border-emerald-600 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 <Clock size={16} /> Time-based Prices
               </button>
@@ -794,9 +790,8 @@ export default function AdminPricingPage() {
                 <span className="text-xs font-bold text-gray-700">Active Status</span>
                 <button
                   type="button"
-                  className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
-                    zoneForm.is_active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-200 text-gray-500'
-                  }`}
+                  className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${zoneForm.is_active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-gray-200 text-gray-500'
+                    }`}
                   onClick={() => setZoneForm({ ...zoneForm, is_active: !zoneForm.is_active })}
                 >
                   {zoneForm.is_active ? 'Active' : 'Inactive'}
@@ -873,9 +868,8 @@ export default function AdminPricingPage() {
                             : [...scheduleForm.days_of_week, idx];
                           setScheduleForm({ ...scheduleForm, days_of_week: list });
                         }}
-                        className={`w-8 h-8 rounded-full text-xs font-bold transition-all border ${
-                          active ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                        }`}
+                        className={`w-8 h-8 rounded-full text-xs font-bold transition-all border ${active ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                          }`}
                       >
                         {day}
                       </button>
@@ -887,9 +881,8 @@ export default function AdminPricingPage() {
                 <span className="text-xs font-bold text-gray-700">Active Status</span>
                 <button
                   type="button"
-                  className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
-                    scheduleForm.is_active ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-200 text-gray-500'
-                  }`}
+                  className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${scheduleForm.is_active ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-200 text-gray-500'
+                    }`}
                   onClick={() => setScheduleForm({ ...scheduleForm, is_active: !scheduleForm.is_active })}
                 >
                   {scheduleForm.is_active ? 'Active' : 'Inactive'}

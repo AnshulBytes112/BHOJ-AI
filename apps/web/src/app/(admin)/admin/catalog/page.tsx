@@ -24,6 +24,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Plus, Pencil, Power, PowerOff, Upload, X, ImageIcon, Trash2 } from 'lucide-react';
+import { ResponsiveTable } from '@/components/common/responsive-table';
+import { ResponsiveDialog } from '@/components/common/responsive-dialog';
+import { ResponsiveForm } from '@/components/common/responsive-form';
 import apiClient from '@/services/apiClient';
 
 type StockType = 'limited' | 'unlimited';
@@ -400,33 +403,91 @@ export default function AdminCatalogPage() {
     }
   }
 
+  const mobileCardRender = (item: Item) => (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center border-b pb-2">
+        <div className="flex items-center gap-2">
+          {item.image_url ? (
+            <img src={item.image_url} alt={item.name} className="h-10 w-10 rounded-md object-cover border" />
+          ) : (
+            <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
+              <ImageIcon size={16} className="text-muted-foreground" />
+            </div>
+          )}
+          <div>
+            <div className="font-semibold text-gray-800 text-sm">{item.name}</div>
+          </div>
+        </div>
+        <Badge variant={item.is_active ? 'default' : 'secondary'}>
+          {item.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Category</span>
+          <span className="font-medium">{item.category}</span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Type</span>
+          <Badge className={item.is_veg ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"} variant="outline">
+            {item.is_veg ? 'Veg' : 'Non-Veg'}
+          </Badge>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[9px] uppercase tracking-wider">Price</span>
+          <span className="font-bold text-blue-600">Rs {Number(item.selling_price).toFixed(2)}</span>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 border-t pt-2 mt-2">
+        <Button type="button" variant="outline" size="sm" className="gap-1 h-8" onClick={() => openEditModal(item)}>
+          <Pencil size={14} /> Edit
+        </Button>
+        {item.is_active ? (
+          <Button type="button" variant="outline" size="sm" className="gap-1 h-8" onClick={() => requestDeactivate(item)}>
+            <PowerOff size={14} /> Disable
+          </Button>
+        ) : (
+          <Button type="button" variant="outline" size="sm" className="gap-1 h-8" onClick={() => handleActivate(item)}>
+            <Power size={14} /> Enable
+          </Button>
+        )}
+        <Button type="button" variant="destructive" size="sm" className="gap-1 h-8" onClick={() => requestDelete(item)}>
+          <Trash2 size={14} /> Delete
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin']}>
       <DashboardLayout>
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Item Catalog</h1>
-              <p className="text-sm text-muted-foreground">Manage POS items, pricing, categories, and availability.</p>
-            </div>
-            <Button onClick={openCreateModal} className="gap-2 rounded-xl">
-              <Plus size={16} />
-              Add Item
-            </Button>
-            <Button variant="outline" onClick={() => setIsCategoryDialogOpen(true)} className="gap-2 rounded-xl ml-2">
-              <Plus size={16} />
-              Add Category
-            </Button>
-          </div>
 
-          {errorMessage && (
-            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl flex items-center justify-between">
-              <p className="text-sm font-medium">{errorMessage}</p>
-              <button onClick={() => setErrorMessage(null)}>
-                <X size={16} />
-              </button>
-            </div>
-          )}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Item Catalog</h1>
+            <p className="text-sm text-muted-foreground">Manage POS items, pricing, categories, and availability.</p>
+          </div>
+          <Button onClick={openCreateModal} className="gap-2 rounded-xl">
+            <Plus size={16} />
+            Add Item
+          </Button>
+          <Button variant="outline" onClick={() => setIsCategoryDialogOpen(true)} className="gap-2 rounded-xl ml-2">
+            <Plus size={16} />
+            Add Category
+          </Button>
+        </div>
+
+      {
+        errorMessage && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl flex items-center justify-between">
+            <p className="text-sm font-medium">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)}>
+              <X size={16} />
+            </button>
+          </div>
+        )
+      }
 
           <Card className="border bg-white shadow-sm">
             <CardContent className="pt-6">
@@ -502,403 +563,245 @@ export default function AdminCatalogPage() {
             </CardHeader>
             <CardContent>
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Image</TableHead>
-                    <TableHead>Serial No</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Stock Qty</TableHead>
-                    <TableHead>Stock Type</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-20 text-center text-muted-foreground">
-                        Loading catalog...
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredItems.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-20 text-center text-muted-foreground">
-                        No items found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          {item.image_url ? (
-                            <img
-                              src={item.image_url}
-                              alt={item.name}
-                              className="h-10 w-10 rounded-md object-cover border"
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
-                              <ImageIcon size={16} className="text-muted-foreground" />
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{item.serial_number}</TableCell>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell>{item.category}</TableCell>
-                        <TableCell>
-                          <Badge 
-                            className={item.is_veg 
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50" 
-                              : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-50"}
-                            variant="outline"
-                          >
-                            {item.is_veg ? 'Veg' : 'Non-Veg'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">Rs {Number(item.selling_price).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{item.stock_quantity}</TableCell>
-                        <TableCell className="capitalize">{item.stock_type}</TableCell>
-                        <TableCell>
-                          <Badge variant={item.is_active ? 'default' : 'secondary'}>
-                            {item.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                              onClick={() => openEditModal(item)}
-                            >
-                              <Pencil size={14} />
-                              Edit
-                            </Button>
-
-                            {item.is_active ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                onClick={() => requestDeactivate(item)}
-                              >
-                                <PowerOff size={14} />
-                                Deactivate
-                              </Button>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                onClick={() => handleActivate(item)}
-                              >
-                                <Power size={14} />
-                                Activate
-                              </Button>
-                            )}
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-1 text-destructive hover:bg-destructive/10 border-destructive/20"
-                              onClick={() => requestDelete(item)}
-                            >
-                              <Trash2 size={14} />
-                              Delete
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <ResponsiveTable
+                data={filteredItems}
+                loading={isLoading}
+                rowKey={(item) => item.id}
+                mobileCardRender={mobileCardRender}
+                columns={[
+                  {
+                    header: 'Image',
+                    accessor: (item) => item.image_url ? (
+                      <img src={item.image_url} alt={item.name} className="h-10 w-10 rounded-md object-cover border" />
+                    ) : (
+                      <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center">
+                        <ImageIcon size={16} className="text-muted-foreground" />
+                      </div>
+                    )
+                  },
+                  { header: 'Name', accessor: (item) => <span className="font-medium">{item.name}</span> },
+                  { header: 'Category', accessor: (item) => item.category },
+                  {
+                    header: 'Type',
+                    accessor: (item) => (
+                      <Badge 
+                        className={item.is_veg ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"}
+                        variant="outline"
+                      >
+                        {item.is_veg ? 'Veg' : 'Non-Veg'}
+                      </Badge>
+                    )
+                  },
+                  { header: 'Price', accessor: (item) => `Rs ${Number(item.selling_price).toFixed(2)}`, className: 'text-right' },
+                  {
+                    header: 'Status',
+                    accessor: (item) => (
+                      <Badge variant={item.is_active ? 'default' : 'secondary'}>
+                        {item.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    )
+                  },
+                  {
+                    header: 'Actions',
+                    accessor: (item) => (
+                      <div className="flex items-center justify-end gap-2">
+                        <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => openEditModal(item)}>
+                          <Pencil size={14} /> Edit
+                        </Button>
+                        {item.is_active ? (
+                          <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => requestDeactivate(item)}>
+                            <PowerOff size={14} /> Deactivate
+                          </Button>
+                        ) : (
+                          <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => handleActivate(item)}>
+                            <Power size={14} /> Activate
+                          </Button>
+                        )}
+                        <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => requestDelete(item)}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ),
+                    className: 'text-right'
+                  }
+                ]}
+              />
             </CardContent>
           </Card>
-        </div>
+        </div >
 
-        <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingItem ? 'Edit Item' : 'Add Item'}</DialogTitle>
-              <DialogDescription>
-                {editingItem
-                  ? 'Update item details and status.'
-                  : 'Create a new catalog item. Serial number and id are generated by the system.'}
-              </DialogDescription>
-            </DialogHeader>
+        <ResponsiveDialog
+          isOpen={isFormOpen}
+          onOpenChange={setIsFormOpen}
+          title={editingItem ? 'Edit Item' : 'Create New Item'}
+          description={editingItem ? 'Update the details of the catalog item.' : 'Add a new item to your POS catalog.'}
+          className="max-w-xl"
+        >
+          <ResponsiveForm 
+            className="space-y-4"
+            onSubmit={handleSubmit}
+            actions={
+              <>
+                <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Item'}
+                </Button>
+              </>
+            }
+          >
+            {/* Image Upload Area */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Item Image (Optional)</label>
+              <div 
+                className={`border-2 border-dashed rounded-xl p-4 transition-colors text-center ${isDragging ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted/50'}`}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleImageFile(file);
+                }}
+              >
+                {imagePreview ? (
+                  <div className="relative inline-block">
+                    <img src={imagePreview} alt="Preview" className="h-32 w-32 object-cover rounded-lg border shadow-sm" />
+                    <button type="button" onClick={removeImage} className="absolute -top-2 -right-2 bg-destructive text-white rounded-full p-1 shadow-sm hover:scale-110 transition-transform">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-4">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Upload className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Click to upload or drag and drop</p>
+                      <p className="text-xs text-muted-foreground mt-1">SVG, PNG, JPG or GIF (max 5MB)</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => fileInputRef.current?.click()} disabled={isUploadingImage}>
+                      {isUploadingImage ? 'Processing...' : 'Select File'}
+                    </Button>
+                  </div>
+                )}
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/webp" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleImageFile(file); }} />
+              </div>
+            </div>
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Item Name</label>
-                <Input
-                  value={form.name}
-                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="Ex: Paneer Tikka"
-                />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-1">
+                <label className="text-sm font-medium text-foreground">Name *</label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Masala Dosa" />
                 {formErrors.name && <p className="text-xs text-destructive">{formErrors.name}</p>}
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Selling Price</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={form.selling_price}
-                  onChange={(e) => setForm((prev) => ({ ...prev, selling_price: e.target.value }))}
-                  placeholder="0.00"
-                />
-                {formErrors.selling_price && <p className="text-xs text-destructive">{formErrors.selling_price}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Category</label>
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.category}
-                  onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
-                >
-                  <option value="">Select category</option>
-                  {categoryNames.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
+              <div className="col-span-1 space-y-1">
+                <label className="text-sm font-medium text-foreground">Category *</label>
+                <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  <option value="" disabled>Select category</option>
+                  {categoryNames.map((c) => (<option key={c} value={c}>{c}</option>))}
                 </select>
                 {formErrors.category && <p className="text-xs text-destructive">{formErrors.category}</p>}
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Food Type</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                    <input
-                      type="radio"
-                      name="is_veg"
-                      checked={form.is_veg === true}
-                      onChange={() => setForm((prev) => ({ ...prev, is_veg: true }))}
-                      className="h-4 w-4 border-gray-300 text-emerald-800 focus:ring-emerald-700"
-                    />
-                    Veg
+              <div className="col-span-1 space-y-1">
+                <label className="text-sm font-medium text-foreground">Selling Price *</label>
+                <Input type="number" step="0.01" min="0" value={form.selling_price} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} placeholder="0.00" />
+                {formErrors.selling_price && <p className="text-xs text-destructive">{formErrors.selling_price}</p>}
+              </div>
+
+              <div className="col-span-2 space-y-1">
+                <label className="text-sm font-medium text-foreground">Dietary Type *</label>
+                <div className="flex gap-4 mt-1">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="is_veg" checked={form.is_veg === true} onChange={() => setForm({ ...form, is_veg: true })} /> Veg
                   </label>
-                  <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                    <input
-                      type="radio"
-                      name="is_veg"
-                      checked={form.is_veg === false}
-                      onChange={() => setForm((prev) => ({ ...prev, is_veg: false }))}
-                      className="h-4 w-4 border-gray-300 text-rose-800 focus:ring-rose-700"
-                    />
-                    Non-Veg
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="is_veg" checked={form.is_veg === false} onChange={() => setForm({ ...form, is_veg: false })} /> Non-Veg
                   </label>
                 </div>
-                {formErrors.is_veg && <p className="text-xs text-destructive">{formErrors.is_veg}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Stock Quantity</label>
-                <Input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={form.stock_quantity}
-                  onChange={(e) => setForm((prev) => ({ ...prev, stock_quantity: e.target.value }))}
-                  placeholder="0"
-                />
-                {formErrors.stock_quantity && <p className="text-xs text-destructive">{formErrors.stock_quantity}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Stock Type</label>
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.stock_type}
-                  onChange={(e) => setForm((prev) => ({ ...prev, stock_type: e.target.value as StockType }))}
-                >
-                  <option value="limited">Limited</option>
-                  <option value="unlimited">Unlimited</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Item Image</label>
-                <div
-                  className={`relative rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
-                    isDragging
-                      ? 'border-primary bg-primary/5'
-                      : 'border-input hover:border-primary/50'
-                  }`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDragging(false);
-                    const file = e.dataTransfer.files[0];
-                    if (file) handleImageFile(file);
-                  }}
-                >
-                  {imagePreview ? (
-                    <div className="relative inline-block">
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        className="mx-auto h-32 w-32 rounded-lg object-cover border"
-                      />
-                      <button
-                        type="button"
-                        onClick={removeImage}
-                        className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-white shadow-md hover:bg-destructive/90 transition-colors"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      className="cursor-pointer py-4"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {isUploadingImage ? (
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                          <p className="text-sm text-muted-foreground">Processing image...</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center gap-2">
-                          <Upload size={24} className="text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">
-                            Click to upload or drag & drop
-                          </p>
-                          <p className="text-xs text-muted-foreground/70">
-                            PNG, JPG, WEBP up to 5MB
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageFile(file);
-                    }}
-                  />
-                </div>
+                {formErrors.is_veg && <p className="text-xs text-destructive mt-1">{formErrors.is_veg}</p>}
               </div>
 
               {editingItem && (
-                <div className="flex items-center justify-between rounded-md border border-input px-3 py-2">
-                  <span className="text-sm font-medium text-foreground">Status</span>
-                  <button
-                    type="button"
-                    className={`rounded-md px-3 py-1 text-xs font-medium ${
-                      form.is_active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                    }`}
-                    onClick={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
-                  >
-                    {form.is_active ? 'Active' : 'Inactive'}
-                  </button>
+                <div className="col-span-2 flex items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <label className="text-sm font-medium text-foreground">Active Status</label>
+                    <p className="text-xs text-muted-foreground">Toggle if this item is currently available.</p>
+                  </div>
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input type="checkbox" className="peer sr-only" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+                    <div className="h-6 w-11 rounded-full bg-muted peer-checked:bg-primary peer-checked:after:translate-x-full after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all"></div>
+                  </label>
                 </div>
               )}
+            </div>
+          </ResponsiveForm>
+        </ResponsiveDialog>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>
+        <ResponsiveDialog
+          isOpen={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title="Deactivate Item"
+          description={pendingDeactivateItem ? `Are you sure you want to deactivate "${pendingDeactivateItem.name}"? It will be hidden from new POS bills.` : ""}
+          footer={
+            <div className="flex gap-2 justify-end w-full">
+              <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+              <Button onClick={handleDeactivateConfirmed}>Deactivate</Button>
+            </div>
+          }
+        />
+
+        <ResponsiveDialog
+          isOpen={isDeleteOpen}
+          onOpenChange={setIsDeleteOpen}
+          title="Delete Item"
+          description={pendingDeleteItem ? `Are you sure you want to permanently delete "${pendingDeleteItem.name}"? This cannot be undone.` : ""}
+          footer={
+            <div className="flex gap-2 justify-end w-full">
+              <Button variant="outline" onClick={() => setIsDeleteOpen(false)} disabled={isDeleting}>Cancel</Button>
+              <Button variant="destructive" onClick={handleDeleteConfirmed} disabled={isDeleting}>
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          }
+        />
+
+        <ResponsiveDialog
+          isOpen={isCategoryDialogOpen}
+          onOpenChange={setIsCategoryDialogOpen}
+          title="Create New Category"
+          description="Categories are used to group catalog items (e.g., Starters, Main Course)."
+        >
+          <ResponsiveForm 
+            onSubmit={(e) => { e.preventDefault(); handleCreateCategory(); }}
+            actions={
+              <>
+                <Button type="button" variant="outline" onClick={() => setIsCategoryDialogOpen(false)} disabled={isCategorySaving}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : editingItem ? 'Update Item' : 'Create Item'}
+                <Button type="submit" disabled={isCategorySaving || !newCategoryName.trim()}>
+                  {isCategorySaving ? 'Creating...' : 'Create Category'}
                 </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Deactivate Item</DialogTitle>
-              <DialogDescription>
-                {pendingDeactivateItem
-                  ? `Are you sure you want to deactivate ${pendingDeactivateItem.name}?`
-                  : 'Are you sure you want to deactivate this item?'}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="button" variant="destructive" onClick={handleDeactivateConfirmed}>
-                Confirm Deactivate
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle className="text-destructive">Delete Item Permanently</DialogTitle>
-              <DialogDescription>
-                {pendingDeleteItem
-                  ? `Are you sure you want to delete "${pendingDeleteItem.name}"? This action cannot be undone.`
-                  : 'Are you sure you want to delete this item? This action cannot be undone.'}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsDeleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button 
-                type="button" 
-                variant="destructive" 
-                onClick={handleDeleteConfirmed}
-                disabled={isDeleting}
-              >
-                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Create Category</DialogTitle>
-              <DialogDescription>Add a new category for item assignment.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Category Name</label>
-              <Input
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="Ex: Beverages"
-              />
+              </>
+            }
+          >
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Category Name *</label>
+                <Input
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="e.g. Beverages"
+                  autoFocus
+                />
+              </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="button" disabled={isCategorySaving} onClick={handleCreateCategory}>
-                {isCategorySaving ? 'Creating...' : 'Create Category'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </DashboardLayout>
-    </RoleGuard>
+          </ResponsiveForm>
+        </ResponsiveDialog>
+      </DashboardLayout >
+    </RoleGuard >
   );
-}
+    }

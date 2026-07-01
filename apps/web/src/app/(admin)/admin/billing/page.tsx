@@ -18,6 +18,7 @@ import {
 import apiClient from '@/services/apiClient';
 import { ReceiptData, ReceiptPrint } from '@/components/admin/receipt-print';
 import { Printer } from 'lucide-react';
+import { ResponsiveTable } from '@/components/common/responsive-table';
 
 type CatalogItem = {
   id: number;
@@ -409,64 +410,64 @@ export default function BillingPage() {
                 <CardTitle>Current Bill</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item Name</TableHead>
-                      <TableHead className="w-[180px]">Qty</TableHead>
-                      <TableHead className="text-right">Unit Price</TableHead>
-                      <TableHead className="text-right">GST%</TableHead>
-                      <TableHead className="text-right">GST Amt</TableHead>
-                      <TableHead className="text-right">Line Total</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {billPreview.lines.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="h-20 text-center text-muted-foreground">
-                          Bill is empty.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      billPreview.lines.map((line) => (
-                        <TableRow key={line.item_id}>
-                          <TableCell>
-                            <p className="font-medium">{line.item_name}</p>
-                            <p className="text-xs text-muted-foreground">{line.category}</p>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button type="button" size="sm" variant="outline" onClick={() => decrementLine(line.item_id)}>
-                                -
-                              </Button>
-                              <Input
-                                value={line.quantity}
-                                onChange={(e) => updateLineQuantity(line.item_id, Number(e.target.value))}
-                                type="number"
-                                min="1"
-                                step="1"
-                                className="h-8 w-16 text-center"
-                              />
-                              <Button type="button" size="sm" variant="outline" onClick={() => incrementLine(line.item_id)}>
-                                +
-                              </Button>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">{money(line.unit_price)}</TableCell>
-                          <TableCell className="text-right">{line.gst_rate.toFixed(2)}%</TableCell>
-                          <TableCell className="text-right">{money(line.gst_amount)}</TableCell>
-                          <TableCell className="text-right">{money(line.line_total)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button type="button" size="sm" variant="ghost" onClick={() => removeLine(line.item_id)}>
-                              Remove
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                <ResponsiveTable
+                  data={billPreview.lines}
+                  loading={false}
+                  rowKey={(row) => row.item_id}
+                  columns={[
+                    {
+                      header: 'Item Name',
+                      accessor: (line) => (
+                        <>
+                          <p className="font-medium">{line.item_name}</p>
+                          <p className="text-xs text-muted-foreground">{line.category}</p>
+                        </>
+                      )
+                    },
+                    {
+                      header: 'Qty',
+                      accessor: (line) => (
+                        <div className="flex items-center gap-2">
+                          <Button type="button" size="sm" variant="outline" onClick={() => decrementLine(line.item_id)}>-</Button>
+                          <Input
+                            value={line.quantity}
+                            onChange={(e) => updateLineQuantity(line.item_id, Number(e.target.value))}
+                            type="number" min="1" step="1"
+                            className="h-8 w-16 text-center"
+                          />
+                          <Button type="button" size="sm" variant="outline" onClick={() => incrementLine(line.item_id)}>+</Button>
+                        </div>
+                      )
+                    },
+                    {
+                      header: 'Unit Price',
+                      accessor: (line) => money(line.unit_price),
+                      className: 'text-right'
+                    },
+                    {
+                      header: 'GST%',
+                      accessor: (line) => `${line.gst_rate.toFixed(2)}%`,
+                      className: 'text-right'
+                    },
+                    {
+                      header: 'GST Amt',
+                      accessor: (line) => money(line.gst_amount),
+                      className: 'text-right'
+                    },
+                    {
+                      header: 'Line Total',
+                      accessor: (line) => money(line.line_total),
+                      className: 'text-right'
+                    },
+                    {
+                      header: 'Action',
+                      accessor: (line) => (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => removeLine(line.item_id)}>Remove</Button>
+                      ),
+                      className: 'text-right'
+                    }
+                  ]}
+                />
 
                 <div className="space-y-2 rounded-xl border bg-muted/20 p-4">
                   <div className="flex justify-between text-sm">

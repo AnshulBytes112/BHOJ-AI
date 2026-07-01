@@ -86,7 +86,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Metrics Grid */}
-          <ResponsiveGrid columns={{ mobile: 1, tablet: 2, desktop: 4 }} className="mb-8">
+          <ResponsiveGrid columns={{ mobile: 2, tablet: 2, desktop: 4 }} className="mb-8">
             {/* Total Sales */}
             <Card className="border-none shadow-sm bg-white rounded-2xl overflow-hidden group hover:shadow-md transition-all">
             <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">

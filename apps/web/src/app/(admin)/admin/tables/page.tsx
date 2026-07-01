@@ -6,6 +6,8 @@ import { RoleGuard } from '@/components/auth/role-guard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { ResponsiveTable } from '@/components/common/responsive-table';
+import { ResponsiveForm } from '@/components/common/responsive-form';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, RefreshCw, TableIcon } from 'lucide-react';
 import apiClient from '@/services/apiClient';
@@ -129,20 +131,25 @@ export default function TablesPage() {
           {/* Add Table Form */}
           <div className="bg-white border rounded-xl p-5 shadow-sm">
             <h2 className="text-base font-semibold mb-4">Add New Table</h2>
-            <form onSubmit={handleAddTable} className="flex gap-3 items-end">
-              <div className="space-y-1">
+            <ResponsiveForm 
+              onSubmit={handleAddTable} 
+              className="md:flex-row md:items-end gap-3"
+              actions={
+                <Button type="submit" disabled={isAdding || !newTableNumber.trim()} className="bg-primary text-white hover:bg-primary/90 gap-2">
+                  <Plus className="w-4 h-4" /> Add Table
+                </Button>
+              }
+            >
+              <div className="space-y-1 w-full md:w-auto">
                 <label className="text-xs font-medium text-muted-foreground uppercase">Table Number</label>
                 <Input
                   placeholder="e.g. 11 or VIP-1"
                   value={newTableNumber}
                   onChange={e => setNewTableNumber(e.target.value)}
-                  className="w-48"
+                  className="w-full md:w-48"
                 />
               </div>
-              <Button type="submit" disabled={isAdding || !newTableNumber.trim()} className="bg-primary text-white hover:bg-primary/90 gap-2">
-                <Plus className="w-4 h-4" /> Add Table
-              </Button>
-            </form>
+            </ResponsiveForm>
           </div>
 
           {/* Tables List */}
@@ -154,44 +161,44 @@ export default function TablesPage() {
                 Occupied: {tables.filter(t => t.status === 'occupied').length}
               </span>
             </div>
-            <Table>
-              <TableHeader className="bg-slate-50">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="font-semibold text-slate-600">Table Number</TableHead>
-                  <TableHead className="font-semibold text-slate-600">Table ID</TableHead>
-                  <TableHead className="font-semibold text-slate-600">Status</TableHead>
-                  <TableHead className="font-semibold text-slate-600 text-center">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={4} className="h-32 text-center text-muted-foreground">Loading tables...</TableCell></TableRow>
-                ) : tables.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
-                      No tables yet. Click <strong>Seed Tables 1–10</strong> to get started.
-                    </TableCell>
-                  </TableRow>
-                ) : tables.map(t => (
-                  <TableRow key={t.table_id} className="hover:bg-slate-50">
-                    <TableCell className="font-semibold">Table {t.table_number}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono">{t.table_id}</TableCell>
-                    <TableCell>{statusBadge(t.status)}</TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        variant="ghost" size="icon"
-                        className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                        disabled={t.status === 'occupied'}
-                        onClick={() => handleDelete(t.table_id, t.table_number)}
-                        title={t.status === 'occupied' ? 'Cannot delete occupied table' : 'Delete table'}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="p-4">
+              <ResponsiveTable
+                data={tables}
+                loading={isLoading}
+                rowKey={(row) => row.table_id}
+                columns={[
+                  {
+                    header: 'Table Number',
+                    accessor: (row: TableRow) => <span className="font-semibold">Table {row.table_number}</span>,
+                  },
+                  {
+                    header: 'Table ID',
+                    accessor: (row: TableRow) => <span className="text-xs text-muted-foreground font-mono">{row.table_id}</span>,
+                  },
+                  {
+                    header: 'Status',
+                    accessor: (row: TableRow) => statusBadge(row.status),
+                  },
+                  {
+                    header: 'Actions',
+                    accessor: (row: TableRow) => (
+                      <div className="flex justify-center">
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                          disabled={row.status === 'occupied'}
+                          onClick={() => handleDelete(row.table_id, row.table_number)}
+                          title={row.status === 'occupied' ? 'Cannot delete occupied table' : 'Delete table'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ),
+                    className: 'text-center',
+                  }
+                ]}
+              />
+            </div>
           </div>
         </div>
       </DashboardLayout>

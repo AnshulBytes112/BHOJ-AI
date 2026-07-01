@@ -6,6 +6,7 @@ import { RoleGuard } from '@/components/auth/role-guard';
 import { PageContainer } from '@/components/common/page-container';
 import { ResponsiveGrid } from '@/components/common/responsive-grid';
 import { MobileDrawer } from '@/components/common/mobile-drawer';
+import { ResponsiveDialog } from '@/components/common/responsive-dialog';
 import { cn, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -1935,79 +1936,54 @@ export default function POSTerminal() {
               </div>
             </div>
           </div>
-          <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Add New Category</DialogTitle>
-                <DialogDescription>
-                  Enter a name for the new category.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Category Name</label>
-                  <Input
-                    placeholder="e.g. Beverages, Main Course"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
+          <ResponsiveDialog
+            isOpen={isCategoryDialogOpen}
+            onOpenChange={setIsCategoryDialogOpen}
+            title="Add New Category"
+            description="Enter a name for the new category."
+            footer={
+              <>
                 <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>Cancel</Button>
                 <Button onClick={handleCreateCategory} disabled={isCategorySaving}>
                   {isCategorySaving ? 'Saving...' : 'Create Category'}
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </>
+            }
+          >
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Category Name</label>
+                <Input
+                  placeholder="e.g. Beverages, Main Course"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                />
+              </div>
+            </div>
+          </ResponsiveDialog>
 
-          <Dialog open={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen}>
-            <DialogContent className="sm:max-w-[420px]">
-              <DialogHeader>
-                <DialogTitle>Reopen Session?</DialogTitle>
-                <DialogDescription>
-                  This will unlock the billed session so you can add new orders.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsReopenDialogOpen(false)}>Cancel</Button>
+          <ResponsiveDialog isOpen={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen} title="Reopen Session?" description={`This will unlock the billed session so you can add new orders.
+                `} footer={<><Button variant="outline" onClick={() => setIsReopenDialogOpen(false)}>Cancel</Button>
                 <Button onClick={() => { setIsReopenDialogOpen(false); handleReopenSession(); }}>
                   Reopen
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </>}></ResponsiveDialog>
 
-          <Dialog open={isFreeTableDialogOpen} onOpenChange={setIsFreeTableDialogOpen}>
-            <DialogContent className="sm:max-w-[420px]">
-              <DialogHeader>
-                <DialogTitle>Free Table?</DialogTitle>
-                <DialogDescription>
-                  {dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free'
+          <ResponsiveDialog isOpen={isFreeTableDialogOpen} onOpenChange={setIsFreeTableDialogOpen} title="Free Table?" description={`{dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free'
                     ? "All bills are paid and all kitchen items are served. Freeing the table will make it available for new guests."
                     : "This will attempt to free the table. Note: All bills must be paid and all kitchen items must be served."}
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsFreeTableDialogOpen(false)}>Cancel</Button>
+                `} footer={<><Button variant="outline" onClick={() => setIsFreeTableDialogOpen(false)}>Cancel</Button>
                 <Button onClick={() => { setIsFreeTableDialogOpen(false); handleFreeTable(); }}>
                   Free Table
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </>}></ResponsiveDialog>
 
-          <Dialog open={isAddTableDialogOpen} onOpenChange={setIsAddTableDialogOpen}>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Add New Table</DialogTitle>
-                <DialogDescription>
-                  Quickly add a table to the floor plan.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
+          <ResponsiveDialog isOpen={isAddTableDialogOpen} onOpenChange={setIsAddTableDialogOpen} title="Add New Table" description={`Quickly add a table to the floor plan.
+                `} footer={<><Button variant="outline" onClick={() => setIsAddTableDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddTable} disabled={isAddingTable}>
+                  {isAddingTable ? 'Adding...' : 'Add Table'}
+                </Button>
+              </>}><div className="grid gap-4 py-4"><div className="space-y-2">
                   <label className="text-sm font-medium">Table Number</label>
                   <Input
                     placeholder="e.g. 11"
@@ -2023,15 +1999,7 @@ export default function POSTerminal() {
                     onChange={(e) => setNewTableCapacity(e.target.value)}
                   />
                 </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddTableDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddTable} disabled={isAddingTable}>
-                  {isAddingTable ? 'Adding...' : 'Add Table'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </div></ResponsiveDialog>
 
           <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
             <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
@@ -2459,15 +2427,21 @@ export default function POSTerminal() {
 
       </DashboardLayout>
 
-      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Bill Preview & Confirmation</DialogTitle>
-            <DialogDescription>
-              Review the unbilled items for this table before generating the final bill.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
+      <ResponsiveDialog isOpen={isPreviewOpen} onOpenChange={setIsPreviewOpen} title="Bill Preview & Confirmation" description={`Review the unbilled items for this table before generating the final bill.
+            `} footer={<div className="flex gap-2 sm:gap-0 justify-end w-full"><Button variant="outline" onClick={() => setIsPreviewOpen(false)} disabled={isGeneratingBill}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={async () => {
+                await generateBillAndPrint();
+                setIsPreviewOpen(false);
+              }}
+              disabled={isGeneratingBill}
+            >
+              {isGeneratingBill ? 'Processing...' : 'Confirm & Generate Bill'}
+            </Button>
+          </div>}><div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
             <div className="space-y-2 border-b pb-4">
               <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
               <div className="text-xs text-gray-500">Consolidating {totals.billableUnbilledItemsCount} billable items + current cart</div>
@@ -2517,23 +2491,7 @@ export default function POSTerminal() {
               </div>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsPreviewOpen(false)} disabled={isGeneratingBill}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={async () => {
-                await generateBillAndPrint();
-                setIsPreviewOpen(false);
-              }}
-              disabled={isGeneratingBill}
-            >
-              {isGeneratingBill ? 'Processing...' : 'Confirm & Generate Bill'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialog>
 
       {/* Customize/Configure Item Dialog */}
       <Dialog open={configuringItem !== null} onOpenChange={(open) => { if (!open) setConfiguringItem(null); }}>

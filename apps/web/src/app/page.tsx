@@ -1,13 +1,13 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  LayoutDashboard, 
-  Receipt, 
-  Table as TableIcon, 
-  Package, 
-  BarChart3, 
-  Users, 
+import {
+  LayoutDashboard,
+  Receipt,
+  Table as TableIcon,
+  Package,
+  BarChart3,
+  Users,
   ArrowRight,
   TrendingUp,
   ShoppingCart,
@@ -57,6 +57,13 @@ export default function Index() {
       icon: TrendingUp,
       color: 'bg-orange-500/10 text-orange-500',
     },
+    {
+      title: 'POS & Billing',
+      description: 'Quick service point of sale with GST compliance.',
+      icon: Receipt,
+      href: '/pos',
+      color: 'bg-orange-500/10 text-orange-500',
+    }
   ];
 
   return (
@@ -73,7 +80,7 @@ export default function Index() {
                 BhojAI
               </span>
             </div>
-            
+
             {/* Desktop Navigation Links */}
             <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-300">
               <Link href="#features" className="hover:text-white transition-colors">Features</Link>
@@ -99,25 +106,25 @@ export default function Index() {
       {/* Hero Section */}
       <header className="relative pt-24 pb-32 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 grid lg:grid-cols-2 gap-12 items-center">
-          
+
           <div className="text-left">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 text-orange-500 text-sm font-medium mb-6 border border-orange-500/20">
               <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
               AI-Powered Restaurant OS
             </div>
-            
+
             <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-tight">
               One Platform.<br />
               Every Restaurant.<br />
               <span className="text-orange-500">Limitless Possibilities.</span>
             </h1>
-            
+
             <p className="text-xl text-gray-400 mb-10 max-w-lg leading-relaxed">
-              BhojAI is the all-in-one operating system for restaurants. 
-              Manage orders, menus, staff, analytics and more — 
+              BhojAI is the all-in-one operating system for restaurants.
+              Manage orders, menus, staff, analytics and more —
               all from a single platform.
             </p>
-            
+
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/register">
                 <Button size="lg" className="h-14 px-8 text-lg gap-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl w-full sm:w-auto">
@@ -134,7 +141,7 @@ export default function Index() {
           <div className="relative w-full h-[500px] lg:h-[600px] flex items-center justify-center">
             {/* Background Glow */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[80%] bg-orange-500/20 blur-[120px] rounded-full pointer-events-none" />
-            
+
             {/* UI Mockup Container */}
             <div className="relative w-full max-w-md aspect-[4/3] bg-[#1a1a1a] rounded-2xl border border-gray-800 shadow-2xl overflow-hidden flex flex-col transform lg:rotate-2 hover:rotate-0 transition-transform duration-500">
               {/* Mockup Header */}
@@ -149,7 +156,7 @@ export default function Index() {
                   <div className="w-2.5 h-2.5 rounded-full bg-gray-700"></div>
                 </div>
               </div>
-              
+
               {/* Mockup Body */}
               <div className="flex-1 p-6 flex flex-col gap-6 bg-[#161616]">
                 <div className="grid grid-cols-3 gap-4">
@@ -166,7 +173,7 @@ export default function Index() {
                     <div className="text-xl font-bold">24</div>
                   </div>
                 </div>
-                
+
                 <div className="flex-1 rounded-xl bg-gray-800/30 border border-gray-800 flex items-end p-4 relative overflow-hidden">
                   <div className="absolute top-4 left-4 text-sm font-medium text-gray-400">Revenue Overview</div>
                   {/* Mock Chart Line */}
@@ -176,9 +183,9 @@ export default function Index() {
                 </div>
               </div>
             </div>
-            
+
             {/* Floating Element 1 */}
-            <div className="absolute -bottom-6 -left-6 bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 shadow-xl flex items-center gap-4 animate-bounce" style={{animationDuration: '3s'}}>
+            <div className="absolute -bottom-6 -left-6 bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 shadow-xl flex items-center gap-4 animate-bounce" style={{ animationDuration: '3s' }}>
               <div className="w-12 h-12 rounded-lg bg-green-500/10 flex items-center justify-center">
                 <CheckCircle2 className="w-6 h-6 text-green-500" />
               </div>
@@ -190,7 +197,7 @@ export default function Index() {
           </div>
 
         </div>
-        
+
       </header>
 
       {/* Logos Section */}
@@ -198,35 +205,35 @@ export default function Index() {
         <div className="max-w-7xl mx-auto px-4 text-center">
           <p className="text-sm text-gray-500 font-medium mb-6 uppercase tracking-wider">Trusted by modern restaurant brands</p>
           <div className="flex flex-wrap justify-center gap-12 md:gap-24 opacity-50 grayscale hover:grayscale-0 transition-all">
-             <div className="flex items-center gap-2"><ChefHat/> <span className="font-bold">Spice Garden</span></div>
-             <div className="flex items-center gap-2"><TableIcon/> <span className="font-bold">Food Court</span></div>
-             <div className="flex items-center gap-2"><LayoutDashboard/> <span className="font-bold">Urban Bites</span></div>
-             <div className="flex items-center gap-2"><ShoppingCart/> <span className="font-bold">Tandoor House</span></div>
+            <div className="flex items-center gap-2"><ChefHat /> <span className="font-bold">Spice Garden</span></div>
+            <div className="flex items-center gap-2"><TableIcon /> <span className="font-bold">Food Court</span></div>
+            <div className="flex items-center gap-2"><LayoutDashboard /> <span className="font-bold">Urban Bites</span></div>
+            <div className="flex items-center gap-2"><ShoppingCart /> <span className="font-bold">Tandoor House</span></div>
           </div>
         </div>
       </div>
 
       {/* Feature Grid */}
-      <section className="py-32 bg-[#0c0c0c] text-white border-t border-white/5" id="features">
+      <section className="py-32 bg-white text-gray-900" id="features">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-20">
             <h2 className="text-4xl font-bold tracking-tight mb-4">Everything you need to run your restaurant</h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+            <p className="text-xl text-gray-500 max-w-2xl mx-auto">
               A comprehensive suite of tools designed to streamline your operations, increase efficiency, and boost your bottom line.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, i) => (
-              <Card key={i} className="border border-white/5 shadow-sm hover:shadow-md transition-all duration-300 hover:border-orange-500/30 group bg-[#141414] text-white">
+              <Card key={i} className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 hover:border-orange-200 group bg-gray-50/50">
                 <CardHeader>
                   <div className={`w-12 h-12 rounded-xl ${feature.color} flex items-center justify-center mb-4`}>
                     <feature.icon className="w-6 h-6" />
                   </div>
-                  <CardTitle className="text-xl text-white">{feature.title}</CardTitle>
+                  <CardTitle className="text-xl text-gray-900">{feature.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <CardDescription className="text-base text-gray-400">{feature.description}</CardDescription>
+                  <CardDescription className="text-base text-gray-600">{feature.description}</CardDescription>
                 </CardContent>
               </Card>
             ))}
@@ -240,9 +247,9 @@ export default function Index() {
           <h2 className="text-3xl md:text-5xl font-bold mb-6">Built for scale. Designed for simplicity.</h2>
           <p className="text-xl text-gray-400 mb-10">Start your journey with BhojAI today.</p>
           <Link href="/register">
-             <Button size="lg" className="h-14 px-10 text-lg bg-orange-500 hover:bg-orange-600 text-white rounded-xl">
-               Create Your Account <ArrowRight className="w-5 h-5 ml-2" />
-             </Button>
+            <Button size="lg" className="h-14 px-10 text-lg bg-orange-500 hover:bg-orange-600 text-white rounded-xl">
+              Create Your Account <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
           </Link>
         </div>
       </section>
@@ -262,7 +269,7 @@ export default function Index() {
                 The intelligent operating system for restaurants of tomorrow.
               </p>
             </div>
-            
+
             <div>
               <h3 className="font-semibold text-white mb-4">Product</h3>
               <ul className="space-y-3 text-gray-500">
@@ -289,7 +296,7 @@ export default function Index() {
               </ul>
             </div>
           </div>
-          
+
           <div className="pt-8 border-t border-gray-800 text-gray-500 flex flex-col md:flex-row justify-between items-center gap-4">
             <p>© 2026 BhojAI Restaurant OS. All rights reserved.</p>
             <div className="flex gap-4">
