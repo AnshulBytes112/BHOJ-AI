@@ -73,12 +73,12 @@ function parsePositiveInt(value: unknown, fieldName: string): number {
   return num;
 }
 
-function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Array<{ itemId: number; quantity: number }>; tableId?: string; orderIds?: string[]; payNow?: boolean } {
+function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Array<{ itemId: number; quantity: number }>; tableId?: string; orderIds?: string[]; payNow?: boolean; orderType?: string } {
   if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
     throw new Error('Request body must be a valid object.');
   }
 
-  const body = rawBody as { cashier_id?: unknown; items?: unknown; table_id?: unknown; order_ids?: unknown; pay_now?: unknown };
+  const body = rawBody as { cashier_id?: unknown; items?: unknown; table_id?: unknown; order_ids?: unknown; pay_now?: unknown; order_type?: unknown };
   const cashierId = body.cashier_id === undefined ? 1 : parsePositiveInt(body.cashier_id, 'cashier_id');
 
   const itemsInput = Array.isArray(body.items) ? body.items : [];
@@ -107,6 +107,7 @@ function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Arra
     orderIds: Array.isArray(body.order_ids) ? body.order_ids : undefined,
     // pay_now=true means the bill is being paid at creation time (combined bill+payment)
     payNow: body.pay_now === true,
+    orderType: typeof body.order_type === 'string' ? body.order_type : undefined,
   };
 }
 
@@ -193,7 +194,7 @@ billsRouter.post('/', async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const { cashierId, lines, tableId, orderIds, payNow } = parseCreateBillBody(req.body);
+    const { cashierId, lines, tableId, orderIds, payNow, orderType } = parseCreateBillBody(req.body);
 
     await client.query('BEGIN');
 
@@ -389,9 +390,10 @@ billsRouter.post('/', async (req, res) => {
       });
     }
 
-    // ── RESOLVE ORDER TYPE from the session/orders for apply_on charge filtering ──
-    let resolvedOrderType = 'Dine In';
-    if (actualOrderIds.length > 0) {
+    // ── RESOLVE ORDER TYPE for apply_on charge filtering ──
+    // Body override takes priority, then DB lookup, then default
+    let resolvedOrderType = orderType || 'Dine In';
+    if (!orderType && actualOrderIds.length > 0) {
       const otResult = await client.query(
         `SELECT order_type FROM orders WHERE order_id = ANY($1::uuid[]) AND order_type IS NOT NULL LIMIT 1`,
         [actualOrderIds]

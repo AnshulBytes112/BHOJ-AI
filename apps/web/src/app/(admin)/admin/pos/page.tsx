@@ -1017,6 +1017,7 @@ export default function POSTerminal() {
         cashier_id: 1,
         table_id: selectedTable,
         order_ids: orderIds,
+        order_type: orderType,
       });
 
       const billData = response.data;
@@ -1197,39 +1198,75 @@ export default function POSTerminal() {
 
                         <div className="mt-2">
                           {item.isAvailable && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                let initialSpiceLevel: string | null = null;
-                                const defaultExtras: string[] = [];
-                                if (item.customizable_options) {
-                                  const spiceGroup = item.customizable_options.find(
-                                    (g: any) => g.name.toLowerCase().includes('spice')
-                                  );
-                                  if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
-                                    const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
-                                    initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
-                                  }
+                            (() => {
+                              const hasValidCustomOptions = item.customizable_options?.some((g: any) => g.choices && g.choices.length > 0);
+                              const hasCustomizations = hasValidCustomOptions || (item.addons && item.addons.length > 0);
 
-                                  item.customizable_options.forEach(group => {
-                                    const isSpice = group.name.toLowerCase().includes('spice');
-                                    if (isSpice) {
-                                      if (initialSpiceLevel) {
-                                        defaultExtras.push(initialSpiceLevel);
-                                      }
-                                    } else if (group.required && group.choices && group.choices.length > 0) {
-                                      defaultExtras.push(group.choices[0].name);
-                                    }
-                                  });
+                              if (!hasCustomizations && inCartQty > 0) {
+                                const cartItem = cart.find(c => c.id === item.id);
+                                if (cartItem) {
+                                  return (
+                                    <div className="flex items-center justify-between bg-white rounded border border-blue-500 overflow-hidden shadow-sm h-8">
+                                      <button
+                                        className="w-10 h-full flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
+                                        onClick={(e) => { e.stopPropagation(); updateQuantity(cartItem.cartKey, -1); }}
+                                      >
+                                        <Minus size={14} />
+                                      </button>
+                                      <span className="flex-1 text-center text-sm font-bold text-blue-600">
+                                        {inCartQty}
+                                      </span>
+                                      <button
+                                        className="w-10 h-full flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
+                                        onClick={(e) => { e.stopPropagation(); updateQuantity(cartItem.cartKey, 1); }}
+                                      >
+                                        <Plus size={14} />
+                                      </button>
+                                    </div>
+                                  );
                                 }
-                                setItemSpiceLevel(initialSpiceLevel);
-                                setItemSelectedExtras(defaultExtras);
-                                setConfiguringItem(item);
-                              }}
-                              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
-                            >
-                              Add to Cart
-                            </button>
+                              }
+
+                              return (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!hasCustomizations) {
+                                      addToCart(item, null, []);
+                                      return;
+                                    }
+                                    let initialSpiceLevel: string | null = null;
+                                    const defaultExtras: string[] = [];
+                                    if (item.customizable_options) {
+                                      const spiceGroup = item.customizable_options.find(
+                                        (g: any) => g.name.toLowerCase().includes('spice')
+                                      );
+                                      if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+                                        const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
+                                        initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
+                                      }
+
+                                      item.customizable_options.forEach(group => {
+                                        const isSpice = group.name.toLowerCase().includes('spice');
+                                        if (isSpice) {
+                                          if (initialSpiceLevel) {
+                                            defaultExtras.push(initialSpiceLevel);
+                                          }
+                                        } else if (group.required && group.choices && group.choices.length > 0) {
+                                          defaultExtras.push(group.choices[0].name);
+                                        }
+                                      });
+                                    }
+                                    setItemSpiceLevel(initialSpiceLevel);
+                                    setItemSelectedExtras(defaultExtras);
+                                    setConfiguringItem(item);
+                                  }}
+                                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                                >
+                                  {hasCustomizations && inCartQty > 0 ? 'Add Another' : 'Add to Cart'}
+                                </button>
+                              );
+                            })()
                           )}
                         </div>
                       </CardContent>
@@ -1334,22 +1371,29 @@ export default function POSTerminal() {
                         <div className="mt-2">
                           {item.isAvailable && (
                             (() => {
-                              const hasCustomizations = (item.customizable_options && item.customizable_options.length > 0) || (item.addons && item.addons.length > 0);
+                              const hasValidCustomOptions = item.customizable_options?.some((g: any) => g.choices && g.choices.length > 0);
+                              const hasCustomizations = hasValidCustomOptions || (item.addons && item.addons.length > 0);
 
                               if (!hasCustomizations && inCartQty > 0) {
                                 const cartItem = cart.find(c => c.id === item.id);
                                 if (cartItem) {
                                   return (
-                                    <div className="flex items-center justify-between bg-blue-50 text-blue-600 rounded overflow-hidden border border-blue-200">
+                                    <div className="flex items-center justify-between bg-white rounded border border-blue-500 overflow-hidden shadow-sm h-8">
                                       <button
-                                        className="px-4 py-1 hover:bg-blue-100 font-bold text-lg"
+                                        className="w-10 h-full flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
                                         onClick={(e) => { e.stopPropagation(); updateQuantity(cartItem.cartKey, -1); }}
-                                      >-</button>
-                                      <span className="text-sm font-semibold">{inCartQty}</span>
+                                      >
+                                        <Minus size={14} />
+                                      </button>
+                                      <span className="flex-1 text-center text-sm font-bold text-blue-600 bg-blue-50/30 h-full flex items-center justify-center">
+                                        {inCartQty}
+                                      </span>
                                       <button
-                                        className="px-4 py-1 hover:bg-blue-100 font-bold text-lg"
+                                        className="w-10 h-full flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors"
                                         onClick={(e) => { e.stopPropagation(); updateQuantity(cartItem.cartKey, 1); }}
-                                      >+</button>
+                                      >
+                                        <Plus size={14} />
+                                      </button>
                                     </div>
                                   );
                                 }
