@@ -215,7 +215,7 @@ export default function MenuScreen({
       </div>
 
       {/* Menu List */}
-      <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 pb-40 space-y-6">
         {filteredMenuItems.length === 0 ? (
           <div className="text-center py-12 text-stone-400">
             <HelpCircle size={48} className="mx-auto mb-2 opacity-50" />
@@ -294,8 +294,7 @@ export default function MenuScreen({
 
       {/* Static view cart bar */}
       {cart.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 bg-emerald-800 text-white p-4 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.15)] z-50">
-          <div className="flex items-center gap-3">
+<div className="absolute bottom-16 left-0 right-0 bg-emerald-800 text-white p-4 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.15)] z-40">          <div className="flex items-center gap-3">
             <div className="bg-emerald-900 p-2 rounded-xl">
               <ShoppingCart size={18} />
             </div>

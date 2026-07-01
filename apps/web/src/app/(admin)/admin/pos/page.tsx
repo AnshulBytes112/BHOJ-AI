@@ -8,14 +8,14 @@ import { ResponsiveGrid } from '@/components/common/responsive-grid';
 import { MobileDrawer } from '@/components/common/mobile-drawer';
 import { cn, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Search, 
-  ShoppingCart, 
-  Trash2, 
-  Plus, 
-  Minus, 
-  Printer, 
-  Share2, 
+import {
+  Search,
+  ShoppingCart,
+  Trash2,
+  Plus,
+  Minus,
+  Printer,
+  Share2,
   CheckCircle2,
   Percent,
   Pencil,
@@ -78,11 +78,11 @@ type MenuItem = {
   customizable_options?: CustomizableOptionGroup[];
 };
 
-type CartItem = MenuItem & { 
-  quantity: number; 
-  extras?: string[]; 
-  spiceLevel?: string | null; 
-  cartKey: string; 
+type CartItem = MenuItem & {
+  quantity: number;
+  extras?: string[];
+  spiceLevel?: string | null;
+  cartKey: string;
 };
 
 type AddonForm = {
@@ -393,7 +393,7 @@ export default function POSTerminal() {
       // Step 1: Fetch fresh table data to check current status
       const tableResp = await apiClient.get(`/tables/${tableId}`);
       const table = tableResp.data;
-      
+
       console.log(`[POS] Table ${tableId} status: ${table.status}, occupied_since: ${table.occupied_since}`);
 
       setTableBilling({
@@ -458,17 +458,17 @@ export default function POSTerminal() {
   // NEW: Refetch items when selectedTable changes to get correct zone prices
   useEffect(() => {
     if (isLoading) return;
-    
+
     async function fetchZonePrices() {
       try {
         console.log('[POS] Fetching items for table:', selectedTable);
         const tableQuery = selectedTable ? `?tableId=${selectedTable}` : '';
         const itemsResp = await apiClient.get(`/items${tableQuery}`);
-        
+
         console.log('[POS] Items response:', itemsResp.data.slice(0, 2));
-        
+
         const categoryIdByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
-        
+
         const allItems: MenuItem[] = (itemsResp.data ?? []).map((item: any) => ({
           id: String(item.id),
           categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
@@ -480,13 +480,13 @@ export default function POSTerminal() {
           addons: item.addons || [],
           customizable_options: item.customizable_options || [],
         }));
-        
+
         setItems(allItems);
       } catch (error) {
         console.error('Failed to fetch zone prices', error);
       }
     }
-    
+
     fetchZonePrices();
   }, [selectedTable, isLoading, categories]);
 
@@ -640,7 +640,7 @@ export default function POSTerminal() {
     if (!newTableNumber.trim()) return;
     setIsAddingTable(true);
     try {
-      await apiClient.post('/tables', { 
+      await apiClient.post('/tables', {
         table_number: newTableNumber.trim(),
         capacity: Number(newTableCapacity)
       });
@@ -657,7 +657,7 @@ export default function POSTerminal() {
   useEffect(() => {
     console.log('Filtering items - Active Category:', activeCategory, 'Search Query:', searchQuery, 'Edit Mode:', isEditMode);
     console.log('Total items available:', items.length);
-    
+
     let result = items;
     if (!isEditMode) {
       result = result.filter(item => item.isAvailable);
@@ -668,13 +668,13 @@ export default function POSTerminal() {
       console.log('Items after category filter:', result.length);
     }
     if (searchQuery) {
-      result = result.filter(item => 
+      result = result.filter(item =>
         item.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       console.log('Items after search filter:', result.length);
     }
     if (vegFilter !== 'all') {
-      result = result.filter(item => 
+      result = result.filter(item =>
         vegFilter === 'veg' ? item.isVegetarian : !item.isVegetarian
       );
       console.log('Items after veg filter:', result.length);
@@ -746,11 +746,11 @@ export default function POSTerminal() {
     );
     const billableUnbilledItems = Array.isArray(unbilledItems)
       ? unbilledItems.filter((item: any) => (
-          isBillableRecord(item) &&
-          !nonBillableOrderIds.has(String(item.order_id ?? item.orderId ?? ''))
-        ))
+        isBillableRecord(item) &&
+        !nonBillableOrderIds.has(String(item.order_id ?? item.orderId ?? ''))
+      ))
       : [];
-    
+
     // Add items from unbilled order items
     if (billableUnbilledItems.length > 0) {
       billableUnbilledItems.forEach((oi: any) => {
@@ -789,7 +789,7 @@ export default function POSTerminal() {
     });
 
     const subtotal = allItemsToBill.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    
+
     let discountAmount = 0;
     if (discountType === 'Percentage (%)') {
       discountAmount = (subtotal * discountValue) / 100;
@@ -798,24 +798,24 @@ export default function POSTerminal() {
     }
 
     const subtotalAfterDiscount = subtotal - discountAmount;
-    
+
     // Calculate GST per item based on category or item-specific GST
     const gstBreakdown: { [rate: number]: number } = {};
     let totalGst = 0;
-    
+
     allItemsToBill.forEach(item => {
       const itemSubtotal = item.price * item.quantity;
       const itemDiscount = (discountType === 'Percentage (%)') ? (itemSubtotal * discountValue) / 100 : (discountValue * itemSubtotal / subtotal);
       const itemSubtotalAfterDiscount = itemSubtotal - itemDiscount;
-      
+
       // Use item-specific GST if available, otherwise use category GST
       const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
       const itemGst = (itemSubtotalAfterDiscount * itemGstRate) / 100;
-      
+
       gstBreakdown[itemGstRate] = (gstBreakdown[itemGstRate] || 0) + itemGst;
       totalGst += itemGst;
     });
-    
+
     let extraChargesTotal = 0;
     const appliedExtraCharges = extraCharges.map((charge) => {
       const val = Number(charge.value);
@@ -837,12 +837,12 @@ export default function POSTerminal() {
     const cgstSGST = totalGst / 2;
     const total = subtotalAfterDiscount + totalGst + extraChargesTotal;
 
-    return { 
+    return {
       subtotal,
       allItemsToBill,
       billableUnbilledItemsCount: billableUnbilledItems.length,
-      discountAmount, 
-      totalGst, 
+      discountAmount,
+      totalGst,
       cgstSGST,
       total,
       gstBreakdown,
@@ -875,7 +875,7 @@ export default function POSTerminal() {
       setOrderId(newOrderId);
       setIsOrderPlaced(true);
       // Send to kitchen
-      try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) {}
+      try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) { }
       setCart([]);
       fetchTableOrders(selectedTable); // Refresh existing orders for the table
       alert(`Order placed successfully! Order ID: ${newOrderId.slice(0, 8).toUpperCase()}`);
@@ -929,7 +929,7 @@ export default function POSTerminal() {
       alert('Bill already generated for this table.');
       return;
     }
-    
+
     setIsGeneratingBill(true);
     try {
       // Ensure current cart items are saved as an order before billing
@@ -947,18 +947,18 @@ export default function POSTerminal() {
         });
         const newOrderId = orderResult.data.order_id;
         orderIds.push(newOrderId);
-        try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) {}
+        try { await apiClient.post(`/orders/${newOrderId}/send-to-kitchen`); } catch (e) { }
         setCart([]);
         await fetchTableOrders(selectedTable);
       }
 
       // Generate real bill on server (unbilled items only)
       const response = await apiClient.post('/bills', {
-        cashier_id: 1, 
+        cashier_id: 1,
         table_id: selectedTable,
         order_ids: orderIds,
       });
-      
+
       const billData = response.data;
       const layout = receiptLayout || {
         header_text: 'RestroManager Hotel',
@@ -1047,7 +1047,7 @@ export default function POSTerminal() {
             {/* Categories Bar */}
             <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 whitespace-nowrap">
-                <Button 
+                <Button
                   variant={activeCategory === 'all' ? 'default' : 'outline'}
                   className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === 'all' && "bg-blue-500 text-white")}
                   onClick={() => setActiveCategory('all')}
@@ -1055,7 +1055,7 @@ export default function POSTerminal() {
                   All
                 </Button>
                 {categories.map(cat => (
-                  <Button 
+                  <Button
                     key={cat.id}
                     variant={activeCategory === cat.id ? 'default' : 'outline'}
                     className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === cat.id && "bg-blue-500 text-white")}
@@ -1065,7 +1065,7 @@ export default function POSTerminal() {
                   </Button>
                 ))}
               </div>
-              
+
               {/* Veg/Non-Veg Filter */}
               <div className="flex gap-2 shrink-0 border-t md:border-t-0 pt-2 md:pt-0">
                 <Button
@@ -1097,13 +1097,6 @@ export default function POSTerminal() {
               </div>
             </div>
 
-            {isEditMode && (
-              <div className="mx-3 sm:mx-4 md:mx-6 mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg flex items-center gap-2 flex-shrink-0 animate-pulse">
-                <Pencil size={16} className="text-rose-500 shrink-0" />
-                <p className="text-sm font-medium">Edit Mode Active: Click any item to modify its details and configure its addons.</p>
-              </div>
-            )}
-
             {/* Items Grid */}
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-3 sm:p-4 md:p-6">
               <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
@@ -1112,38 +1105,22 @@ export default function POSTerminal() {
                   const inCartQty = cart.filter(cartItem => cartItem.id === item.id).reduce((sum, i) => sum + i.quantity, 0);
                   const isInCart = inCartQty > 0;
                   return (
-                    <Card 
+                    <Card
                       key={item.id}
-                      onClick={() => {
-                        if (isEditMode) {
-                          openEditModal(item);
-                        }
-                      }}
                       className={cn(
                         "bg-white border shadow-sm hover:shadow-lg transition-all group relative",
-                        isEditMode ? "border-rose-300 ring-1 ring-rose-200 cursor-pointer hover:border-rose-400 hover:ring-rose-300" : "",
-                        !isEditMode && isInCart ? "ring-2 ring-blue-500" : ""
+                        isInCart ? "ring-2 ring-blue-500" : ""
                       )}
                     >
-                      {inCartQty > 0 && !isEditMode && (
+                      {inCartQty > 0 && (
                         <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
                           {inCartQty}
                         </div>
                       )}
-                      
-                      {isAdmin && !isEditMode && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
-                          className="absolute top-2 left-2 bg-white/90 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-white text-gray-700"
-                          title="Edit Item"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      )}
                       <div className="aspect-square relative bg-gray-100 overflow-hidden">
-                        <img 
-                          src={item.image || `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`} 
-                          alt={item.name} 
+                        <img
+                          src={item.image || `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`}
+                          alt={item.name}
                           className="object-cover w-full h-full group-hover:scale-105 transition-transform"
                         />
                       </div>
@@ -1157,54 +1134,42 @@ export default function POSTerminal() {
                         </h3>
                         <p className="text-blue-600 font-bold text-sm">Rs {item.price}</p>
                         <p className="text-xs text-gray-500">GST: {itemGstRate}%</p>
-                        
+
                         <div className="mt-2">
-                          {isEditMode ? (
+                          {item.isAvailable && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openEditModal(item);
-                              }}
-                              className="w-full bg-rose-600 hover:bg-rose-700 text-white text-xs py-1.5 rounded flex items-center justify-center gap-1 font-semibold"
-                            >
-                              <Pencil size={12} /> Edit Item & Addons
-                            </button>
-                          ) : (
-                            item.isAvailable && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  let initialSpiceLevel: string | null = null;
-                                  const defaultExtras: string[] = [];
-                                  if (item.customizable_options) {
-                                    const spiceGroup = item.customizable_options.find(
-                                      (g: any) => g.name.toLowerCase().includes('spice')
-                                    );
-                                    if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
-                                      const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
-                                      initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
-                                    }
-
-                                    item.customizable_options.forEach(group => {
-                                      const isSpice = group.name.toLowerCase().includes('spice');
-                                      if (isSpice) {
-                                        if (initialSpiceLevel) {
-                                          defaultExtras.push(initialSpiceLevel);
-                                        }
-                                      } else if (group.required && group.choices && group.choices.length > 0) {
-                                        defaultExtras.push(group.choices[0].name);
-                                      }
-                                    });
+                                let initialSpiceLevel: string | null = null;
+                                const defaultExtras: string[] = [];
+                                if (item.customizable_options) {
+                                  const spiceGroup = item.customizable_options.find(
+                                    (g: any) => g.name.toLowerCase().includes('spice')
+                                  );
+                                  if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+                                    const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
+                                    initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
                                   }
-                                  setItemSpiceLevel(initialSpiceLevel);
-                                  setItemSelectedExtras(defaultExtras);
-                                  setConfiguringItem(item);
-                                }}
-                                className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
-                              >
-                                Add to Cart
-                              </button>
-                            )
+
+                                  item.customizable_options.forEach(group => {
+                                    const isSpice = group.name.toLowerCase().includes('spice');
+                                    if (isSpice) {
+                                      if (initialSpiceLevel) {
+                                        defaultExtras.push(initialSpiceLevel);
+                                      }
+                                    } else if (group.required && group.choices && group.choices.length > 0) {
+                                      defaultExtras.push(group.choices[0].name);
+                                    }
+                                  });
+                                }
+                                setItemSpiceLevel(initialSpiceLevel);
+                                setItemSelectedExtras(defaultExtras);
+                                setConfiguringItem(item);
+                              }}
+                              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                            >
+                              Add to Cart
+                            </button>
                           )}
                         </div>
                       </CardContent>
@@ -1221,7 +1186,7 @@ export default function POSTerminal() {
             {/* Categories Bar */}
             <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0">
               <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mb-1 whitespace-nowrap">
-                <Button 
+                <Button
                   variant={activeCategory === 'all' ? 'default' : 'outline'}
                   className={cn("rounded-lg px-4 h-8 text-xs shrink-0 whitespace-nowrap", activeCategory === 'all' && "bg-blue-500 text-white")}
                   onClick={() => setActiveCategory('all')}
@@ -1229,7 +1194,7 @@ export default function POSTerminal() {
                   All Items
                 </Button>
                 {categories.map((cat) => (
-                  <Button 
+                  <Button
                     key={cat.id}
                     variant={activeCategory === cat.id ? 'default' : 'outline'}
                     className={cn("rounded-lg px-4 h-8 text-xs transition-all shrink-0 whitespace-nowrap", activeCategory === cat.id && "bg-blue-500 text-white shadow-md")}
@@ -1247,26 +1212,6 @@ export default function POSTerminal() {
                 <p className="text-xs md:text-sm text-gray-500">Add or Manage items and categories.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {isAdmin && (
-                  <>
-                    <Button size="sm" onClick={openCreateModal} className="gap-1.5 text-xs h-9">
-                      <Plus size={14} /> Add Item
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="gap-1.5 text-xs h-9">
-                      <Plus size={14} /> Add Category
-                    </Button>
-                    <Button 
-                      onClick={() => setIsEditMode(!isEditMode)}
-                      variant={isEditMode ? "default" : "outline"}
-                      className={cn(
-                        "gap-1.5 text-xs h-9 transition-all",
-                        isEditMode ? "bg-red-600 hover:bg-red-700 text-white shadow-md" : "border-red-200 text-red-600 hover:bg-red-50"
-                      )}
-                    >
-                      <Pencil size={12} /> {isEditMode ? "Exit Edit Menu" : "Edit Menu"}
-                    </Button>
-                  </>
-                )}
                 <div className="text-xs text-gray-500 ml-2">{filteredItems.length} items</div>
               </div>
             </div>
@@ -1280,13 +1225,7 @@ export default function POSTerminal() {
               </div>
             )}
 
-            {isEditMode && (
-              <div className="mx-3 sm:mx-4 md:mx-6 mt-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg flex items-center gap-2 flex-shrink-0 animate-pulse">
-                <Pencil size={16} className="text-rose-500 shrink-0" />
-                <p className="text-sm font-medium">Edit Mode Active: Click any item to modify its details and configure its addons.</p>
-              </div>
-            )}
-
+            {/* Items Grid */}
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-3 sm:p-4 md:p-6">
               <ResponsiveGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
                 {filteredItems.map(item => {
@@ -1298,31 +1237,15 @@ export default function POSTerminal() {
                   return (
                     <Card
                       key={item.id}
-                      onClick={() => {
-                        if (isEditMode) {
-                          openEditModal(item);
-                        }
-                      }}
                       className={cn(
                         "bg-white border shadow-sm hover:shadow-lg transition-all group relative",
-                        isEditMode ? "border-rose-300 ring-1 ring-rose-200 cursor-pointer hover:border-rose-400 hover:ring-rose-300" : "",
-                        !isEditMode && isInCart ? "ring-2 ring-blue-500" : ""
+                        isInCart ? "ring-2 ring-blue-500" : ""
                       )}
                     >
-                      {inCartQty > 0 && !isEditMode && (
+                      {inCartQty > 0 && (
                         <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
                           {inCartQty}
                         </div>
-                      )}
-                      
-                      {isAdmin && !isEditMode && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
-                          className="absolute top-2 left-2 bg-white/90 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-white text-gray-700"
-                          title="Edit Item"
-                        >
-                          <Pencil size={14} />
-                        </button>
                       )}
 
                       <div className="aspect-square relative bg-gray-100 overflow-hidden">
@@ -1349,52 +1272,40 @@ export default function POSTerminal() {
                         <p className="text-xs text-gray-500">Stock: {item.stockType === 'limited' ? item.stockQuantity : 'Unlimited'}</p>
 
                         <div className="mt-2">
-                          {isEditMode ? (
+                          {item.isAvailable && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openEditModal(item);
-                              }}
-                              className="w-full bg-rose-600 hover:bg-rose-700 text-white text-xs py-1.5 rounded flex items-center justify-center gap-1 font-semibold"
-                            >
-                              <Pencil size={12} /> Edit Item & Addons
-                            </button>
-                          ) : (
-                            item.isAvailable && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  let initialSpiceLevel: string | null = null;
-                                  const defaultExtras: string[] = [];
-                                  if (item.customizable_options) {
-                                    const spiceGroup = item.customizable_options.find(
-                                      (g: any) => g.name.toLowerCase().includes('spice')
-                                    );
-                                    if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
-                                      const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
-                                      initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
-                                    }
-
-                                    item.customizable_options.forEach(group => {
-                                      const isSpice = group.name.toLowerCase().includes('spice');
-                                      if (isSpice) {
-                                        if (initialSpiceLevel) {
-                                          defaultExtras.push(initialSpiceLevel);
-                                        }
-                                      } else if (group.required && group.choices && group.choices.length > 0) {
-                                        defaultExtras.push(group.choices[0].name);
-                                      }
-                                    });
+                                let initialSpiceLevel: string | null = null;
+                                const defaultExtras: string[] = [];
+                                if (item.customizable_options) {
+                                  const spiceGroup = item.customizable_options.find(
+                                    (g: any) => g.name.toLowerCase().includes('spice')
+                                  );
+                                  if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+                                    const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
+                                    initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
                                   }
-                                  setItemSpiceLevel(initialSpiceLevel);
-                                  setItemSelectedExtras(defaultExtras);
-                                  setConfiguringItem(item);
-                                }}
-                                className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
-                              >
-                                Add to Cart
-                              </button>
-                            )
+
+                                  item.customizable_options.forEach(group => {
+                                    const isSpice = group.name.toLowerCase().includes('spice');
+                                    if (isSpice) {
+                                      if (initialSpiceLevel) {
+                                        defaultExtras.push(initialSpiceLevel);
+                                      }
+                                    } else if (group.required && group.choices && group.choices.length > 0) {
+                                      defaultExtras.push(group.choices[0].name);
+                                    }
+                                  });
+                                }
+                                setItemSpiceLevel(initialSpiceLevel);
+                                setItemSelectedExtras(defaultExtras);
+                                setConfiguringItem(item);
+                              }}
+                              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                            >
+                              Add to Cart
+                            </button>
                           )}
                         </div>
                       </CardContent>
@@ -1414,7 +1325,7 @@ export default function POSTerminal() {
                 <div className="flex justify-between items-center">
                   <CardTitle className="text-lg">Current Bill</CardTitle>
                   <Button variant="outline" size="sm" onClick={() => setActiveWorkflow('categories')} className="gap-2">
-                    <Plus size={14} /> Add Item
+                    <Plus size={14} /> Add to Order
                   </Button>
                 </div>
               </CardHeader>
@@ -1426,7 +1337,7 @@ export default function POSTerminal() {
                   <div className="col-span-2 text-right">Rate</div>
                   <div className="col-span-2 text-right">Amount</div>
                 </div>
-                
+
                 {/* Items List */}
                 <div className="space-y-2">
                   {cart.map(item => {
@@ -1488,8 +1399,8 @@ export default function POSTerminal() {
                     <div key={cat.id} className="space-y-2">
                       <label className="text-sm font-medium text-gray-700">{cat.name}</label>
                       <div className="flex items-center gap-2">
-                        <Input 
-                          type="number" 
+                        <Input
+                          type="number"
                           value={gstRates[cat.id] || cat.defaultGst}
                           disabled
                           className="h-9 text-sm bg-gray-100"
@@ -1517,7 +1428,7 @@ export default function POSTerminal() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Discount Type</label>
-                    <select 
+                    <select
                       className="w-full h-10 px-3 rounded-lg border bg-white"
                       value={discountType}
                       onChange={(e) => setDiscountType(e.target.value)}
@@ -1528,9 +1439,9 @@ export default function POSTerminal() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Value</label>
-                    <Input 
-                      type="number" 
-                      value={discountValue} 
+                    <Input
+                      type="number"
+                      value={discountValue}
                       onChange={(e) => setDiscountValue(Number(e.target.value))}
                       className="h-10"
                     />
@@ -1538,8 +1449,8 @@ export default function POSTerminal() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">GSTIN</label>
-                  <Input 
-                    value={gstin} 
+                  <Input
+                    value={gstin}
                     onChange={(e) => setGstin(e.target.value)}
                     className="h-10"
                   />
@@ -1650,7 +1561,7 @@ export default function POSTerminal() {
           {/* Table Management Section - Based on Workflow Diagram */}
           <div className="border-b bg-white p-3">
             <div className="flex items-center justify-between mb-2">
-              <button 
+              <button
                 onClick={() => setIsTableSelectionExpanded(!isTableSelectionExpanded)}
                 className="text-sm font-bold flex items-center gap-2 text-gray-800 hover:text-blue-600 transition-colors"
               >
@@ -1658,23 +1569,23 @@ export default function POSTerminal() {
                 Table Selection
                 {isTableSelectionExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="h-6 w-6 text-blue-500 hover:bg-blue-50"
                 onClick={() => setIsAddTableDialogOpen(true)}
               >
                 <Plus size={14} />
               </Button>
             </div>
-            
+
             {isTableSelectionExpanded && (
               <>
                 <div className="grid grid-cols-4 gap-1.5 max-h-24 overflow-y-auto pr-1 scrollbar-thin">
                   {dbTables.map((t) => {
                     let tableColorClass = "bg-white text-gray-600 border-gray-200 hover:border-blue-300";
                     let dotColorClass = "bg-emerald-500";
-                    
+
                     if (selectedTable === t.table_id) {
                       tableColorClass = "bg-blue-500 text-white border-blue-600 shadow-sm scale-95";
                       dotColorClass = "bg-white";
@@ -1717,7 +1628,7 @@ export default function POSTerminal() {
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   <div>
                     <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Order Type</label>
-                    <select 
+                    <select
                       className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
                       value={orderType}
                       onChange={(e) => setOrderType(e.target.value)}
@@ -1729,7 +1640,7 @@ export default function POSTerminal() {
                   </div>
                   <div>
                     <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Waiter</label>
-                    <select 
+                    <select
                       className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
                       value={selectedWaiter}
                       onChange={(e) => setSelectedWaiter(e.target.value)}
@@ -1756,7 +1667,7 @@ export default function POSTerminal() {
                 </Badge>
               )}
             </div>
-            
+
             {/* Running Orders for Occupied Table */}
             {existingOrders.length > 0 && (
               <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 max-h-40 overflow-y-auto shrink-0">
@@ -1811,14 +1722,14 @@ export default function POSTerminal() {
                       </div>
                       <div className="flex items-center justify-between gap-3 border-t pt-2 border-gray-200/60">
                         <div className="flex items-center gap-1 bg-white border rounded p-0.5">
-                          <button 
+                          <button
                             onClick={() => updateQuantity(item.cartKey, -1)}
                             className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
                           >
                             <Minus size={12} />
                           </button>
                           <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
-                          <button 
+                          <button
                             onClick={() => updateQuantity(item.cartKey, 1)}
                             className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
                           >
@@ -1827,7 +1738,7 @@ export default function POSTerminal() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-gray-900">Rs {itemSubtotal.toFixed(2)}</span>
-                          <button 
+                          <button
                             onClick={() => removeFromCart(item.cartKey)}
                             className="text-red-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"
                           >
@@ -1866,7 +1777,7 @@ export default function POSTerminal() {
                   <span className="font-medium">Rs {charge.amount.toFixed(2)}</span>
                 </div>
               ))}
-              
+
               <div className="pt-1.5 border-t">
                 <div className="flex justify-between font-bold">
                   <span className="text-sm">Total</span>
@@ -1875,15 +1786,15 @@ export default function POSTerminal() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1.5">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-center gap-1.5 h-7 text-[10px]"
                   onClick={() => setShowWipDialog(true)}
                 >
                   <CheckCircle2 size={11} /> View Details
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-center gap-1.5 h-7 text-[10px]"
                   onClick={() => setShowWipDialog(true)}
                 >
@@ -1905,14 +1816,14 @@ export default function POSTerminal() {
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              <Button 
+              <Button
                 onClick={handlePlaceOrder}
                 disabled={cart.length === 0 || isPlacingOrder || !selectedTable || Boolean(tableBilling?.isBillPaid)}
                 className="w-full h-10 bg-blue-500 hover:bg-blue-600 text-white font-semibold text-xs"
               >
                 {isPlacingOrder ? 'Placing...' : 'Place Order'}
               </Button>
-              <Button 
+              <Button
                 onClick={() => setIsPreviewOpen(true)}
                 disabled={totals.allItemsToBill.length === 0 || isGeneratingBill || !selectedTable || Boolean(tableBilling?.isBillPaid)}
                 className="w-full h-10 bg-green-500 hover:bg-green-600 text-white font-semibold text-xs"
@@ -1933,7 +1844,7 @@ export default function POSTerminal() {
                 disabled={!selectedTable}
                 className={cn(
                   "w-full h-10 text-xs transition-colors",
-                  dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free' 
+                  dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free'
                     ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold border-none shadow-sm"
                     : ""
                 )}
@@ -1989,7 +1900,7 @@ export default function POSTerminal() {
               </div>
             </CardContent>
           </Card>
-          <Button 
+          <Button
             onClick={() => setActiveWorkflow('payment')}
             className="w-full h-10"
           >
@@ -2014,39 +1925,16 @@ export default function POSTerminal() {
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative w-full sm:w-auto flex-1 sm:flex-initial">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <Input 
-                    placeholder="Search items..." 
+                  <Input
+                    placeholder="Search items..."
                     className="pl-9 h-10 w-full sm:w-60 bg-gray-50/50 text-sm"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <div className="flex gap-2 w-full sm:w-auto">
-                  {isAdmin && (
-                    <>
-                      <Button size="sm" onClick={openCreateModal} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
-                        <Plus size={14} /> Add Item
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none">
-                        <Plus size={14} /> Add Category
-                      </Button>
-                      <Button 
-                        onClick={() => setIsEditMode(!isEditMode)}
-                        variant={isEditMode ? "default" : "outline"}
-                        className={cn(
-                          "h-10 text-xs font-semibold gap-1 flex-1 sm:flex-none transition-all",
-                          isEditMode ? "bg-red-600 hover:bg-red-700 text-white shadow-md" : "border-red-200 text-red-600 hover:bg-red-50"
-                        )}
-                      >
-                        <Pencil size={14} /> {isEditMode ? "Exit Edit Menu" : "Edit Menu"}
-                      </Button>
-                    </>
-                  )}
-                </div>
               </div>
             </div>
           </div>
-
           <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
@@ -2155,7 +2043,7 @@ export default function POSTerminal() {
               </DialogHeader>
 
               <form onSubmit={handleItemSubmit} className="space-y-4 py-4">
-                <div 
+                <div
                   className={cn(
                     "relative aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-colors overflow-hidden group",
                     isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/20 hover:border-primary/50",
@@ -2267,17 +2155,17 @@ export default function POSTerminal() {
                 <div className="space-y-3 border-t pt-4">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-bold text-gray-800">Item Addons (Extras)</label>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => setForm(f => ({ ...f, addons: [...f.addons, { name: '', price: '' }] }))}
                       className="h-8 text-xs gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
                     >
                       <Plus size={12} /> Add Addon
                     </Button>
                   </div>
-                  
+
                   {form.addons.length === 0 ? (
                     <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg border border-dashed">
                       No addons configured for this item.
@@ -2286,32 +2174,32 @@ export default function POSTerminal() {
                     <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                       {form.addons.map((addon, index) => (
                         <div key={index} className="flex gap-2 items-center">
-                          <Input 
-                            value={addon.name} 
+                          <Input
+                            value={addon.name}
                             onChange={(e) => {
                               const newAddons = [...form.addons];
                               newAddons[index].name = e.target.value;
                               setForm(f => ({ ...f, addons: newAddons }));
                             }}
-                            placeholder="Addon name (e.g. Extra Cheese)" 
-                            className="flex-grow text-xs h-9" 
+                            placeholder="Addon name (e.g. Extra Cheese)"
+                            className="flex-grow text-xs h-9"
                           />
-                          <Input 
+                          <Input
                             type="number"
                             step="0.01"
-                            value={addon.price} 
+                            value={addon.price}
                             onChange={(e) => {
                               const newAddons = [...form.addons];
                               newAddons[index].price = e.target.value;
                               setForm(f => ({ ...f, addons: newAddons }));
                             }}
-                            placeholder="Price (Rs)" 
-                            className="w-24 text-xs h-9" 
+                            placeholder="Price (Rs)"
+                            className="w-24 text-xs h-9"
                           />
-                          <Button 
-                            type="button" 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
                             onClick={() => {
                               const newAddons = [...form.addons];
                               newAddons.splice(index, 1);
@@ -2334,23 +2222,23 @@ export default function POSTerminal() {
                       <h4 className="text-sm font-semibold text-gray-700">Custom Options / Features</h4>
                       <p className="text-[11px] text-gray-500">Define custom options like Spice Level, Sugar level, or Add-ons.</p>
                     </div>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => setForm(f => ({ 
-                        ...f, 
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setForm(f => ({
+                        ...f,
                         customizable_options: [
-                          ...f.customizable_options, 
+                          ...f.customizable_options,
                           { name: '', type: 'single', required: false, choices: [{ name: '', price: '0' }] }
-                        ] 
+                        ]
                       }))}
                       className="h-8 text-xs gap-1 border-purple-200 text-purple-600 hover:bg-purple-50"
                     >
                       <Plus size={12} /> Add Option Group
                     </Button>
                   </div>
-                  
+
                   {form.customizable_options.length === 0 ? (
                     <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg border border-dashed">
                       No custom option groups configured.
@@ -2359,7 +2247,7 @@ export default function POSTerminal() {
                     <div className="space-y-4 max-h-[260px] overflow-y-auto pr-1">
                       {form.customizable_options.map((group, gIndex) => (
                         <div key={gIndex} className="p-3 bg-purple-50/40 rounded-xl border border-purple-100 space-y-3 relative">
-                          <Button 
+                          <Button
                             type="button"
                             variant="ghost"
                             size="icon"
@@ -2376,7 +2264,7 @@ export default function POSTerminal() {
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                             <div>
                               <label className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block mb-1">Group Name</label>
-                              <Input 
+                              <Input
                                 value={group.name}
                                 onChange={(e) => {
                                   const newGroups = [...form.customizable_options];
@@ -2404,7 +2292,7 @@ export default function POSTerminal() {
                             </div>
                             <div className="flex items-center pt-5">
                               <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer select-none">
-                                <input 
+                                <input
                                   type="checkbox"
                                   checked={group.required}
                                   onChange={(e) => {
@@ -2423,7 +2311,7 @@ export default function POSTerminal() {
                           <div className="space-y-2 pl-4 border-l-2 border-purple-200">
                             <div className="flex justify-between items-center">
                               <span className="text-[11px] font-semibold text-purple-700">Choices / Values</span>
-                              <Button 
+                              <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
@@ -2440,7 +2328,7 @@ export default function POSTerminal() {
 
                             {group.choices.map((choice, cIndex) => (
                               <div key={cIndex} className="flex gap-2 items-center">
-                                <Input 
+                                <Input
                                   value={choice.name}
                                   onChange={(e) => {
                                     const newGroups = [...form.customizable_options];
@@ -2450,7 +2338,7 @@ export default function POSTerminal() {
                                   placeholder="Choice (e.g. Mild / Extra Sugar)"
                                   className="flex-grow text-xs h-7 bg-white"
                                 />
-                                <Input 
+                                <Input
                                   type="number"
                                   step="0.01"
                                   value={choice.price}
@@ -2463,7 +2351,7 @@ export default function POSTerminal() {
                                   className="w-24 text-xs h-7 bg-white"
                                 />
                                 {group.choices.length > 1 && (
-                                  <Button 
+                                  <Button
                                     type="button"
                                     variant="ghost"
                                     size="icon"
@@ -2508,8 +2396,8 @@ export default function POSTerminal() {
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="sm:justify-center border-t pt-4">
-                <Button 
-                  onClick={() => setShowWipDialog(false)} 
+                <Button
+                  onClick={() => setShowWipDialog(false)}
                   className="bg-blue-600 text-white hover:bg-blue-700 font-semibold px-8"
                 >
                   Understood
@@ -2518,7 +2406,7 @@ export default function POSTerminal() {
             </DialogContent>
           </Dialog>
 
-                    {/* Content Section */}
+          {/* Content Section */}
           <div className="flex-1 flex min-h-0 relative">
             {activeWorkflow !== 'receipt' ? (
               <>
@@ -2526,7 +2414,7 @@ export default function POSTerminal() {
                 <div className="flex-1 bg-gray-50 overflow-hidden">
                   {renderWorkflowContent()}
                 </div>
-                
+
                 {/* Right Sidebar - Visible on Desktop only */}
                 <div className="hidden lg:block w-80 bg-white border-l overflow-y-auto flex-shrink-0 scrollbar-thin">
                   {renderSidebar()}
@@ -2584,7 +2472,7 @@ export default function POSTerminal() {
               <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
               <div className="text-xs text-gray-500">Consolidating {totals.billableUnbilledItemsCount} billable items + current cart</div>
             </div>
-            
+
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-bold border-b pb-1">
                 <span className="flex-[2]">Item</span>
@@ -2633,8 +2521,8 @@ export default function POSTerminal() {
             <Button variant="outline" onClick={() => setIsPreviewOpen(false)} disabled={isGeneratingBill}>
               Cancel
             </Button>
-            <Button 
-              className="bg-green-600 hover:bg-green-700 text-white" 
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
               onClick={async () => {
                 await generateBillAndPrint();
                 setIsPreviewOpen(false);
@@ -2804,18 +2692,18 @@ export default function POSTerminal() {
               Add to Order (Rs {
                 configuringItem
                   ? (
-                      configuringItem.price +
-                      itemSelectedExtras.reduce((sum, extraName) => {
-                        const addon = (configuringItem.addons || []).find(a => a.name === extraName);
-                        if (addon) return sum + Number(addon.price);
+                    configuringItem.price +
+                    itemSelectedExtras.reduce((sum, extraName) => {
+                      const addon = (configuringItem.addons || []).find(a => a.name === extraName);
+                      if (addon) return sum + Number(addon.price);
 
-                        for (const group of configuringItem.customizable_options || []) {
-                          const choice = (group.choices || []).find(c => c.name === extraName);
-                          if (choice) return sum + Number(choice.price);
-                        }
-                        return sum;
-                      }, 0)
-                    )
+                      for (const group of configuringItem.customizable_options || []) {
+                        const choice = (group.choices || []).find(c => c.name === extraName);
+                        if (choice) return sum + Number(choice.price);
+                      }
+                      return sum;
+                    }, 0)
+                  )
                   : 0
               })
             </Button>
@@ -2826,7 +2714,7 @@ export default function POSTerminal() {
       {isReceiptOpen && receiptData && (
         <div className="fixed inset-0 z-[100] bg-white overflow-auto no-print-background">
           <div className="no-print sticky top-0 z-10 flex flex-col gap-3 border-b bg-white/95 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between md:px-6">
-            <Button 
+            <Button
               variant="outline"
               className="w-full justify-center gap-2 sm:w-auto"
               onClick={closeReceiptView}

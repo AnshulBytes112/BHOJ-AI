@@ -436,10 +436,17 @@ export default function OrdersPage() {
                       selected.status === 'in_progress' || 
                       selected.status === 'ready' || 
                       selected.status === 'completed' || 
-                      selected.status === 'billed' || 
                       selected.status === 'cancelled'
                     } 
-                    onClick={() => sendToKitchen(selected)}
+                    onClick={() => {
+                      if (selected.status === 'billed') {
+                        if (safeItems(selected.items).length === 0) { setActionMsg('No items in this order.'); return; }
+                        setBillOrder(selected); setBillOpen(true);
+                        setTimeout(() => window.print(), 500);
+                      } else {
+                        sendToKitchen(selected);
+                      }
+                    }}
                   >
                     <Printer className="w-4 h-4 mr-2" />
                     {isSending ? 'Sending...' : 
@@ -447,11 +454,12 @@ export default function OrdersPage() {
                      selected.status === 'in_progress' ? 'Preparing in Kitchen' :
                      selected.status === 'ready' ? 'Food Ready' :
                      selected.status === 'completed' ? 'KOT Printed' : 
-                     selected.status === 'billed' ? 'Order Billed' : 'Print KOT'}
+                     selected.status === 'billed' ? 'Print Bill' : 'Print KOT'}
                   </Button>
                   <Button className="flex-1 bg-primary hover:bg-primary/90 text-white h-11"
-                    disabled={selected.status === 'billed'} onClick={() => openBill(selected)}>
-                    <CreditCard className="w-4 h-4 mr-2" /> Generate Bill
+                    onClick={() => openBill(selected)}>
+                    <CreditCard className="w-4 h-4 mr-2" /> 
+                    {selected.status === 'billed' ? 'View Bill' : 'Generate Bill'}
                   </Button>
                 </div>
               )}

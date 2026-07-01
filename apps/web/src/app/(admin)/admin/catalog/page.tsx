@@ -626,7 +626,7 @@ export default function AdminCatalogPage() {
         </div>
 
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingItem ? 'Edit Item' : 'Add Item'}</DialogTitle>
               <DialogDescription>
@@ -828,7 +828,7 @@ export default function AdminCatalogPage() {
         </Dialog>
 
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Deactivate Item</DialogTitle>
               <DialogDescription>
@@ -849,7 +849,7 @@ export default function AdminCatalogPage() {
         </Dialog>
 
         <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle className="text-destructive">Delete Item Permanently</DialogTitle>
               <DialogDescription>
@@ -875,7 +875,7 @@ export default function AdminCatalogPage() {
         </Dialog>
 
         <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Create Category</DialogTitle>
               <DialogDescription>Add a new category for item assignment.</DialogDescription>
