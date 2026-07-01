@@ -15,8 +15,7 @@ export const kotsRouter = Router();
  * This ensures kitchen workflow correctness.
  */
 const ITEM_STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending:              ['acknowledged', 'cancelled'],
-  acknowledged:         ['preparing', 'cancelled'],
+  pending:              ['preparing', 'cancelled'],
   preparing:            ['ready', 'recook_requested', 'cancelled'],
   ready:                ['served', 'delivered', 'recook_requested'],
   served:               [],  // Terminal state
@@ -27,7 +26,7 @@ const ITEM_STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TERMINAL_KOT_STATUSES = ['completed', 'served'];
-const ACTIVE_KOT_ITEM_STATUSES = ['pending', 'acknowledged', 'preparing', 'ready', 'packed', 'recook_requested'];
+const ACTIVE_KOT_ITEM_STATUSES = ['pending', 'preparing', 'ready', 'packed', 'recook_requested'];
 
 /**
  * Validates if a status transition is allowed.
@@ -42,7 +41,6 @@ function isValidItemStatusTransition(currentStatus: string, newStatus: string): 
  */
 function getTimestampColumnForStatus(status: string): string | null {
   const timestampMap: Record<string, string> = {
-    acknowledged:      'acknowledged_at',
     preparing:         'preparing_at',
     ready:             'ready_at',
     served:            'served_at',
@@ -69,13 +67,13 @@ function deriveKotStatusFromItems(itemStatuses: string[]): string {
   const allReady = itemStatuses.every(s => ['ready', 'served', 'delivered', 'cancelled'].includes(s));
   if (allReady) return 'ready';
   
-  const someActive = itemStatuses.some(s => ['preparing', 'acknowledged'].includes(s));
-  if (someActive) return 'acknowledged';
+  const someActive = itemStatuses.some(s => ['preparing'].includes(s));
+  if (someActive) return 'preparing';
   
   const allPending = itemStatuses.every(s => s === 'pending');
   if (allPending) return 'pending';
   
-  return 'acknowledged'; // Mixed states = in progress
+  return 'preparing'; // Mixed states = in progress
 }
 
 function deriveParentKotStatusFromSections(sectionStatuses: string[]): string {
@@ -92,8 +90,8 @@ function deriveParentKotStatusFromSections(sectionStatuses: string[]): string {
     return 'ready';
   }
 
-  if (sectionStatuses.some(s => s === 'acknowledged' || s === 'ready' || s === 'completed')) {
-    return 'acknowledged';
+  if (sectionStatuses.some(s => s === 'preparing' || s === 'ready' || s === 'completed')) {
+    return 'preparing';
   }
 
   return 'pending';
@@ -113,7 +111,7 @@ function deriveOrderStatusFromParentKots(kotStatuses: string[]): string {
     return 'ready';
   }
 
-  if (kotStatuses.some(s => s === 'acknowledged' || s === 'ready' || s === 'completed')) {
+  if (kotStatuses.some(s => s === 'preparing' || s === 'ready' || s === 'completed')) {
     return 'preparing';
   }
 

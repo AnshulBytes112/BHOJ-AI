@@ -68,7 +68,7 @@ interface SectionKOT {
   section_id: string;
   section_name: string;
   section_kot_number: string;
-  status: 'pending' | 'acknowledged' | 'ready' | 'completed' | 'served';
+  status: 'pending' | 'preparing' | 'ready' | 'completed' | 'served' | 'cancelled';
   generated_at: string;
   table_number: string;
   kot_number: string;
@@ -79,6 +79,22 @@ interface SectionKOT {
   payment_option?: string;
   notes?: string;
   items: KOTItem[];
+}
+
+interface UnifiedKOT {
+  isUnified: true;
+  parent_kot_id: string;
+  kot_number: string;
+  order_id: string;
+  table_number: string;
+  order_phase: number;
+  order_type?: string;
+  payment_option?: string;
+  notes?: string;
+  is_bill_paid: boolean;
+  generated_at: string;
+  status: string;
+  items: (KOTItem & { section_name: string; section_id: string; section_kot_id: string })[];
 }
 
 // ─────────────────────────────────────────────
@@ -139,8 +155,7 @@ const ITEM_STATUS_CONFIG: Record<string, { label: string; color: string; bg: str
 };
 
 const ITEM_STATUS_TRANSITIONS: Record<string, string[]> = {
-  pending: ['acknowledged', 'cancelled'],
-  acknowledged: ['preparing', 'cancelled'],
+  pending: ['preparing', 'cancelled'],
   preparing: ['ready', 'recook_requested', 'cancelled'],
   ready: ['served', 'delivered', 'recook_requested'],
   recook_requested: ['preparing'],
@@ -151,9 +166,9 @@ const ITEM_STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TERMINAL_KOT_STATUSES = ['completed', 'served'];
-const ACTIVE_KOT_ITEM_STATUSES = ['recook_requested', 'ready', 'preparing', 'acknowledged', 'pending', 'packed'];
+const ACTIVE_KOT_ITEM_STATUSES = ['recook_requested', 'ready', 'preparing', 'pending', 'packed'];
 
-function isTerminalKot(kot: SectionKOT) {
+function isTerminalKot(kot: SectionKOT | UnifiedKOT) {
   return TERMINAL_KOT_STATUSES.includes(kot.status)
     || kot.items.every(item => !ACTIVE_KOT_ITEM_STATUSES.includes(item.status));
 }
@@ -185,7 +200,7 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
   
   // ⭐ KITCHEN UX: Show action counters
   const statusCounts: Record<string, number> = {};
-  const actionableStatuses = ['recook_requested', 'ready', 'preparing', 'acknowledged', 'pending'];
+  const actionableStatuses = ['recook_requested', 'ready', 'preparing', 'pending'];
   const terminalStatuses = ['served', 'delivered', 'cancelled'];
   
   kot.items.forEach(item => {
@@ -197,7 +212,7 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
   
   // Card border based on highest priority actionable item
   const sortedItems = [...kot.items].sort((a, b) => {
-    const statusPriority = { recook_requested: 0, ready: 1, preparing: 2, acknowledged: 3, pending: 4, served: 5, delivered: 5, cancelled: 5 };
+    const statusPriority = { recook_requested: 0, ready: 1, preparing: 2, pending: 3, served: 4, delivered: 4, cancelled: 4 };
     return (statusPriority[a.status as keyof typeof statusPriority] ?? 99) - (statusPriority[b.status as keyof typeof statusPriority] ?? 99);
   });
   const highestPriorityItem = sortedItems.find(i => actionableStatuses.includes(i.status));
@@ -310,9 +325,134 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
                 </div>
               );
             })}
-          {actionableCount > 3 && (
-            <div className="text-[8px] text-gray-400 italic px-1">+{actionableCount - 3} more items...</div>
-          )}
+            {actionableCount > 3 && (
+              <div className="text-[8px] text-gray-400 italic px-1">+{actionableCount - 3} more items...</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+// ─────────────────────────────────────────────
+//  Unified KOT Card
+// ─────────────────────────────────────────────
+function UnifiedKotCard({ kot, selected, onClick }: { kot: UnifiedKOT; selected: boolean; onClick: () => void }) {
+  const statusCounts: Record<string, number> = {};
+  const actionableStatuses = ['recook_requested', 'ready', 'preparing', 'pending'];
+  const terminalStatuses = ['served', 'delivered', 'cancelled'];
+  
+  kot.items.forEach(item => {
+    statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
+  });
+  
+  const actionableCount = kot.items.filter(i => actionableStatuses.includes(i.status)).length;
+  const terminalCount = kot.items.filter(i => terminalStatuses.includes(i.status)).length;
+  
+  const sortedItems = [...kot.items].sort((a, b) => {
+    const statusPriority = { recook_requested: 0, ready: 1, preparing: 2, pending: 3, served: 4, delivered: 4, cancelled: 4 };
+    return (statusPriority[a.status as keyof typeof statusPriority] ?? 99) - (statusPriority[b.status as keyof typeof statusPriority] ?? 99);
+  });
+  const highestPriorityItem = sortedItems.find(i => actionableStatuses.includes(i.status));
+  
+  const cardBorderColor = highestPriorityItem
+    ? highestPriorityItem.status === 'recook_requested' ? 'border-red-400'
+      : highestPriorityItem.status === 'ready' ? 'border-amber-400'
+      : highestPriorityItem.status === 'preparing' ? 'border-orange-400'
+      : 'border-blue-400'
+    : 'border-gray-200';
+
+  // Group items by section for the preview
+  const sections = Array.from(new Set(kot.items.map(i => i.section_name)));
+
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        'rounded-xl border-2 bg-white cursor-pointer transition-all hover:shadow-md h-full flex flex-col',
+        selected ? 'ring-2 ring-indigo-400 shadow-md scale-[1.02]' : 'hover:border-gray-300',
+        cardBorderColor
+      )}
+    >
+      <div className="flex items-center justify-between px-3 pt-2 pb-1 border-b border-gray-50 bg-gray-50/30 rounded-t-xl">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-bold tracking-tight text-indigo-700">{kot.kot_number}</span>
+          <span className="text-[8px] text-gray-400 font-mono">ID: {kot.order_id?.slice(0, 8) || 'N/A'}</span>
+        </div>
+        <span className="text-[10px] text-gray-400 font-mono">{fmtTime(kot.generated_at)}</span>
+      </div>
+      <div className="px-3 py-2 flex-1 flex flex-col justify-between">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-bold text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">T-{kot.table_number}</span>
+            <span className={cn(
+              "text-[8px] font-extrabold px-1 py-0.5 rounded-sm uppercase tracking-wider",
+              kot.order_type === 'Take Away' ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+            )}>
+              {kot.order_type === 'Take Away' ? 'TO GO' : 'DINE'}
+            </span>
+          </div>
+          <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-current bg-white', statusPill(kot.status))}>
+            {statusLabel(kot.status)}
+          </span>
+        </div>
+
+        {kot.is_bill_paid && (
+          <div className="mt-1.5 flex items-center gap-1 text-[9px] font-bold text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+            <CreditCard size={8} /> Customer Has Paid
+          </div>
+        )}
+
+        {kot.notes && (
+          <div className="mt-1.5 text-[8px] leading-tight font-bold text-yellow-900 bg-yellow-50 border border-yellow-250 rounded px-1.5 py-1 flex items-start gap-1">
+            <span className="shrink-0">⚠️</span>
+            <span className="line-clamp-2 italic">{kot.notes}</span>
+          </div>
+        )}
+
+        <div className="mt-2 grid grid-cols-5 gap-0.5 text-center text-[9px] font-bold">
+          {statusCounts.recook_requested ? (
+            <div className="px-0.5 py-0.5 rounded bg-red-100 text-red-700"><div>🔄</div><div>{statusCounts.recook_requested}</div></div>
+          ) : null}
+          {statusCounts.ready ? (
+            <div className="px-0.5 py-0.5 rounded bg-amber-100 text-amber-700"><div>✓</div><div>{statusCounts.ready}</div></div>
+          ) : null}
+          {statusCounts.preparing ? (
+            <div className="px-0.5 py-0.5 rounded bg-orange-100 text-orange-700"><div>🔥</div><div>{statusCounts.preparing}</div></div>
+          ) : null}
+          {statusCounts.pending ? (
+            <div className="px-0.5 py-0.5 rounded bg-blue-100 text-blue-700"><div>📋</div><div>{statusCounts.pending}</div></div>
+          ) : null}
+          {terminalCount ? (
+            <div className="px-0.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[8px]"><div>✅</div><div>{terminalCount}</div></div>
+          ) : null}
+        </div>
+
+        <div className="mt-1.5 space-y-1 text-[9px]">
+          {sections.map(secName => {
+            const secItems = sortedItems.filter(i => i.section_name === secName && actionableStatuses.includes(i.status));
+            if (secItems.length === 0) return null;
+            return (
+              <div key={secName} className="border border-gray-100 rounded bg-white overflow-hidden">
+                <div className="bg-gray-50 px-1 py-0.5 text-[8px] font-bold text-gray-500 uppercase">{secName}</div>
+                <div className="space-y-0.5 p-0.5">
+                  {secItems.slice(0, 2).map((item, i) => {
+                    const cfg = ITEM_STATUS_CONFIG[item.status] || ITEM_STATUS_CONFIG.pending;
+                    return (
+                      <div key={i} className="flex items-center gap-1 px-1 py-0.5">
+                        <span className={`font-bold px-1 rounded text-[8px] ${cfg.bg} ${cfg.color}`}>{cfg.label.charAt(0)}</span>
+                        <span className="truncate flex-1 text-gray-700">{item.item_name}</span>
+                        <span className="text-gray-500">x{item.quantity}</span>
+                      </div>
+                    );
+                  })}
+                  {secItems.length > 2 && (
+                    <div className="text-[8px] text-gray-400 italic px-1">+{secItems.length - 2} more...</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -325,9 +465,10 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
 function KOTPageInner() {
   const [sections, setSections] = useState<KitchenSection[]>([]);
   const [activeTab, setActiveTab] = useState('all');
+  const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
   const [kotsBySection, setKotsBySection] = useState<Record<string, SectionKOT[]>>({});
   const [allKots, setAllKots] = useState<SectionKOT[]>([]);
-  const [selectedKot, setSelectedKot] = useState<SectionKOT | null>(null);
+  const [selectedKot, setSelectedKot] = useState<SectionKOT | UnifiedKOT | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyItems, setBusyItems] = useState<Set<string>>(new Set());
   const [printKotOpen, setPrintKotOpen] = useState(false);
@@ -407,15 +548,19 @@ function KOTPageInner() {
   // Sync selectedKot with background polling updates
   useEffect(() => {
     if (selectedKot) {
-      const latestData = allKots.find(k => k.section_kot_id === selectedKot.section_kot_id);
-      if (latestData) {
-        // Only update if something actually changed to avoid unnecessary re-renders
-        if (latestData.status !== selectedKot.status || latestData.items.length !== selectedKot.items.length) {
-          setSelectedKot(latestData);
-        }
+      if ((selectedKot as UnifiedKOT).isUnified) {
+        // Recompute unified KOT if necessary, though it's easier to just close if it becomes terminal
+        // The unifiedKots useMemo handles the actual list updates.
+        // For drawer sync, we rely on the main array.
       } else {
-        // If it was completed/removed by another terminal, close the panel
-        setSelectedKot(null);
+        const latestData = allKots.find(k => k.section_kot_id === (selectedKot as SectionKOT).section_kot_id);
+        if (latestData) {
+          if (latestData.status !== selectedKot.status || latestData.items.length !== selectedKot.items.length) {
+            setSelectedKot(latestData);
+          }
+        } else {
+          setSelectedKot(null);
+        }
       }
     }
   }, [allKots]);
@@ -446,21 +591,21 @@ function KOTPageInner() {
         setSelectedKot(updatedKot);
       }
 
-      // Update KOTs lists
-      setKotsBySection(prev => {
-        const copy = { ...prev };
-        const sid = selectedKot.section_id;
-        if (copy[sid]) {
-          copy[sid] = isTerminalKot(updatedKot)
-            ? copy[sid].filter(k => k.section_kot_id !== selectedKot.section_kot_id)
-            : copy[sid].map(k => k.section_kot_id === selectedKot.section_kot_id ? updatedKot : k);
+      // Update KOTs lists optimistically
+      setAllKots(prev => {
+        const copy = [...prev];
+        const itemIdx = copy.findIndex(k => k.items.some(i => i.section_kot_item_id === itemId));
+        if (itemIdx >= 0) {
+          const kCopy = { ...copy[itemIdx], items: [...copy[itemIdx].items] };
+          const iIdx = kCopy.items.findIndex(i => i.section_kot_item_id === itemId);
+          if (iIdx >= 0) {
+            kCopy.items[iIdx] = { ...kCopy.items[iIdx], status: nextStatus as any };
+          }
+          if (response.data?.derivedSectionKotStatus) kCopy.status = response.data.derivedSectionKotStatus;
+          copy[itemIdx] = kCopy;
         }
         return copy;
       });
-      setAllKots(prev => isTerminalKot(updatedKot)
-        ? prev.filter(k => k.section_kot_id !== selectedKot.section_kot_id)
-        : prev.map(k => k.section_kot_id === selectedKot.section_kot_id ? updatedKot : k)
-      );
 
       fetchSections(true);
     } catch (e: any) {
@@ -480,30 +625,32 @@ function KOTPageInner() {
   const displayedSections = sections;
 
   const [localSearch, setLocalSearch] = useState('');
-  const [showStatusFilter, setShowStatusFilter] = useState<'all' | 'pending' | 'acknowledged'>('all');
+  const [showStatusFilter, setShowStatusFilter] = useState<'all' | 'pending' | 'preparing'>('all');
 
   // Apply date/time filters and hide terminal KOTs.
-  const filteredAllKots = allKots.filter(kot => {
-    if (isTerminalKot(kot)) return false;
+  const filteredAllKots = React.useMemo(() => {
+    return allKots.filter(kot => {
+      if (isTerminalKot(kot)) return false;
 
-    // Status Filter
-    if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
+      // Status Filter
+      if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
 
-    // Search Filter (Table or KOT #)
-    if (localSearch) {
-      const search = localSearch.toLowerCase();
-      const matches =
-        kot.table_number.toLowerCase().includes(search) ||
-        kot.section_kot_number.toLowerCase().includes(search);
-      if (!matches) return false;
-    }
+      // Search Filter (Table or KOT #)
+      if (localSearch) {
+        const search = localSearch.toLowerCase();
+        const matches =
+          kot.table_number.toLowerCase().includes(search) ||
+          kot.section_kot_number.toLowerCase().includes(search);
+        if (!matches) return false;
+      }
 
-    if (!filterDate && !filterTime) return true;
-    const kotDateObj = new Date(kot.generated_at);
-    if (filterDate && kotDateObj.toISOString().split('T')[0] !== filterDate) return false;
-    if (filterTime && kotDateObj.toTimeString().slice(0, 5) !== filterTime) return false;
-    return true;
-  });
+      if (!filterDate && !filterTime) return true;
+      const kotDateObj = new Date(kot.generated_at);
+      if (filterDate && kotDateObj.toISOString().split('T')[0] !== filterDate) return false;
+      if (filterTime && kotDateObj.toTimeString().slice(0, 5) !== filterTime) return false;
+      return true;
+    });
+  }, [allKots, showStatusFilter, localSearch, filterDate, filterTime]);
 
   const filteredKotsBySection: Record<string, SectionKOT[]> = {};
   for (const [key, kots] of Object.entries(kotsBySection)) {
@@ -530,11 +677,79 @@ function KOTPageInner() {
     });
   }
 
+  // ── Compute Unified KOTs ──
+  const unifiedKots = React.useMemo(() => {
+    const map = new Map<string, UnifiedKOT>();
+    
+    filteredAllKots.forEach(kot => {
+      if (!map.has(kot.parent_kot_id)) {
+        map.set(kot.parent_kot_id, {
+          isUnified: true,
+          parent_kot_id: kot.parent_kot_id,
+          kot_number: kot.kot_number || kot.section_kot_number, // fallback
+          order_id: kot.order_id,
+          table_number: kot.table_number,
+          order_phase: kot.order_phase,
+          order_type: kot.order_type,
+          payment_option: kot.payment_option,
+          notes: kot.notes,
+          is_bill_paid: kot.is_bill_paid,
+          generated_at: kot.generated_at,
+          status: 'pending', // Will derive below
+          items: []
+        });
+      }
+      
+      const uKot = map.get(kot.parent_kot_id)!;
+      // append notes if different
+      if (kot.notes && uKot.notes !== kot.notes) {
+        if (!uKot.notes) uKot.notes = kot.notes;
+        else if (!uKot.notes.includes(kot.notes)) uKot.notes += ' | ' + kot.notes;
+      }
+      
+      kot.items.forEach(it => {
+        uKot.items.push({
+          ...it,
+          section_name: kot.section_name,
+          section_id: kot.section_id,
+          section_kot_id: kot.section_kot_id
+        });
+      });
+    });
+    
+    const arr = Array.from(map.values());
+    arr.forEach(uKot => {
+      // derive unified status
+      const statuses = uKot.items.map(i => i.status);
+      if (statuses.every(s => ['served', 'delivered', 'cancelled'].includes(s))) uKot.status = 'completed';
+      else if (statuses.every(s => ['ready', 'served', 'delivered', 'cancelled'].includes(s))) uKot.status = 'ready';
+      else if (statuses.some(s => ['preparing'].includes(s))) uKot.status = 'preparing';
+      else uKot.status = 'pending';
+    });
+    
+    arr.sort((a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime());
+    return arr;
+  }, [filteredAllKots]);
+  
+  // Sync selected Unified KOT drawer
+  useEffect(() => {
+    if (selectedKot && (selectedKot as UnifiedKOT).isUnified) {
+      const latest = unifiedKots.find(k => k.parent_kot_id === selectedKot.parent_kot_id);
+      if (latest) {
+        if (JSON.stringify(latest) !== JSON.stringify(selectedKot)) {
+          setSelectedKot(latest);
+        }
+      } else {
+        setSelectedKot(null);
+      }
+    }
+  }, [unifiedKots, selectedKot]);
+
   // Counts include served KOTs so the "Served" stat card still shows correctly
   const counts = {
     total: allKots.length,
     pending: allKots.filter(k => k.status === 'pending').length,
-    acknowledged: allKots.filter(k => k.status === 'acknowledged').length,
+    preparing: allKots.filter(k => k.status === 'preparing').length,
     completed: allKots.filter(k => k.status === 'completed').length,
     served: allKots.filter(k => k.status === 'served').length,
   };
@@ -551,8 +766,24 @@ function KOTPageInner() {
             </h1>
             <p className="text-sm text-gray-400 mt-0.5">View and manage kitchen orders by sections</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative group w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* View Mode Toggle - Top on mobile, inline on desktop */}
+            <div className="flex w-full sm:w-auto bg-gray-100 p-1 rounded-lg border border-gray-200 order-first lg:order-none">
+              <button 
+                onClick={() => setViewMode('unified')} 
+                className={cn("flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-md transition-all", viewMode === 'unified' ? "bg-white shadow-sm text-indigo-700" : "text-gray-500 hover:text-gray-700")}
+              >
+                Order View
+              </button>
+              <button 
+                onClick={() => setViewMode('split')} 
+                className={cn("flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-md transition-all", viewMode === 'split' ? "bg-white shadow-sm text-indigo-700" : "text-gray-500 hover:text-gray-700")}
+              >
+                Kitchen View
+              </button>
+            </div>
+
+            <div className="relative group w-full sm:w-auto flex-1 sm:flex-none">
               <button
                 className="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors text-gray-600 shadow-sm h-11 sm:h-9"
               >
@@ -574,10 +805,10 @@ function KOTPageInner() {
                   New (Pending)
                 </button>
                 <button
-                  onClick={() => setShowStatusFilter('acknowledged')}
-                  className={cn("w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50", showStatusFilter === 'acknowledged' && "bg-orange-50 text-orange-600 font-bold")}
+                  onClick={() => setShowStatusFilter('preparing')}
+                  className={cn("w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50", showStatusFilter === 'preparing' && "bg-orange-50 text-orange-600 font-bold")}
                 >
-                  In Progress
+                  Preparing
                 </button>
               </div>
             </div>
@@ -614,44 +845,46 @@ function KOTPageInner() {
           </div>
         </div>
 
-        {/* ── Section Tabs ── */}
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl px-4 py-2 mb-5 shadow-sm overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('all')}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all',
-              activeTab === 'all'
-                ? 'bg-orange-50 text-orange-600 border border-orange-300'
-                : 'text-gray-500 hover:bg-gray-50'
-            )}
-          >
-            <LayoutGrid size={15} />
-            All KOT
-            <span className={cn('text-xs px-2 py-0.5 rounded-full font-bold', activeTab === 'all' ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500')}>
-              {counts.total}
-            </span>
-          </button>
+        {/* ── Section Tabs (Only in Split View) ── */}
+        {viewMode === 'split' && (
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl px-4 py-2 mb-5 shadow-sm overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all',
+                activeTab === 'all'
+                  ? 'bg-orange-50 text-orange-600 border border-orange-300'
+                  : 'text-gray-500 hover:bg-gray-50'
+              )}
+            >
+              <LayoutGrid size={15} />
+              All KOT
+              <span className={cn('text-xs px-2 py-0.5 rounded-full font-bold', activeTab === 'all' ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500')}>
+                {counts.total}
+              </span>
+            </button>
 
-          {sections.map(s => {
-            const pal = getSectionPalette(s.section_id);
-            const isActive = activeTab === s.section_id;
-            const cnt = (kotsBySection[s.section_id] || []).length;
-            return (
-              <button
-                key={s.section_id}
-                onClick={() => setActiveTab(s.section_id)}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all border',
-                  isActive ? `${pal.bg} ${pal.text} border-current` : 'text-gray-500 border-transparent hover:bg-gray-50'
-                )}
-              >
-                <SectionIcon name={s.section_name} size={15} className={isActive ? pal.text : 'text-gray-400'} />
-                <span>{s.section_name}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-600">{cnt}</span>
-              </button>
-            );
-          })}
-        </div>
+            {sections.map(s => {
+              const pal = getSectionPalette(s.section_id);
+              const isActive = activeTab === s.section_id;
+              const cnt = (kotsBySection[s.section_id] || []).length;
+              return (
+                <button
+                  key={s.section_id}
+                  onClick={() => setActiveTab(s.section_id)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all border',
+                    isActive ? `${pal.bg} ${pal.text} border-current` : 'text-gray-500 border-transparent hover:bg-gray-50'
+                  )}
+                >
+                  <SectionIcon name={s.section_name} size={15} className={isActive ? pal.text : 'text-gray-400'} />
+                  <span>{s.section_name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-600">{cnt}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── Status Counter Cards ── */}
         <ResponsiveGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }} className="mb-6">
@@ -663,11 +896,32 @@ function KOTPageInner() {
 
         {/* ── Main Content ── */}
         <div className="flex flex-col gap-6" style={{ minHeight: '400px' }}>
-          {/* Section Rows */}
+          {/* Main Rows/Grid */}
           <div className="flex-1 flex flex-col gap-8">
             {loading ? (
               <div className="flex-1 flex items-center justify-center text-gray-400">
                 <RefreshCw className="animate-spin mr-2" size={18} /> Loading KOTs…
+              </div>
+            ) : viewMode === 'unified' ? (
+              <div className="flex flex-col gap-4 animate-in fade-in duration-300">
+                {unifiedKots.length === 0 ? (
+                  <div className="col-span-full flex items-center justify-center py-12 border-2 border-dashed border-gray-200 rounded-2xl text-gray-400 text-sm flex-col">
+                    <ChefHat size={48} className="opacity-20 mb-3" />
+                    No active unified orders found.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-4 pb-4 px-2">
+                    {unifiedKots.map(kot => (
+                      <div key={kot.parent_kot_id} className="w-full">
+                        <UnifiedKotCard
+                          kot={kot}
+                          selected={selectedKot?.parent_kot_id === kot.parent_kot_id}
+                          onClick={() => setSelectedKot(kot)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : displayedSections.length === 0 ? (
               <div className="flex-1 flex items-center justify-center flex-col text-gray-400">
@@ -782,7 +1036,9 @@ function KOTPageInner() {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest ${statusPill(selectedKot.status)}`}>
                       {statusLabel(selectedKot.status)}
                     </span>
-                    <p className={cn('text-3xl font-black', getSectionPalette(selectedKot.section_id).text)}>
+                    <p className={cn('text-3xl font-black', 
+                      (selectedKot as UnifiedKOT).isUnified ? 'text-indigo-700' : getSectionPalette((selectedKot as SectionKOT).section_id).text
+                    )}>
                       T-{selectedKot.table_number}
                     </p>
                   </div>
@@ -819,7 +1075,14 @@ function KOTPageInner() {
                           <div className="flex justify-between items-start">
                             <div className="flex flex-col">
                               <span className="font-bold text-gray-800 text-sm">{item.item_name}</span>
-                              <span className="text-[9px] text-gray-300 font-mono">ID: {item.item_id}</span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {(selectedKot as UnifiedKOT).isUnified && (
+                                  <span className="text-[8px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded uppercase font-bold">
+                                    {(item as any).section_name}
+                                  </span>
+                                )}
+                                <span className="text-[9px] text-gray-300 font-mono">ID: {item.item_id}</span>
+                              </div>
                               {(item.spice_level || (item.extras && item.extras.length > 0)) && (
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {item.spice_level && (
@@ -887,10 +1150,12 @@ function KOTPageInner() {
 
                 {/* Metadata Section */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Section</p>
-                    <p className="text-xs font-bold text-gray-600">{selectedKot.section_name}</p>
-                  </div>
+                  {!(selectedKot as UnifiedKOT).isUnified && (
+                    <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Section</p>
+                      <p className="text-xs font-bold text-gray-600">{(selectedKot as SectionKOT).section_name}</p>
+                    </div>
+                  )}
                   <div className="p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Phase</p>
                     <p className="text-xs font-bold text-gray-600">Phase {selectedKot.order_phase || 1}</p>
@@ -923,7 +1188,7 @@ function KOTPageInner() {
                   <div className="grid grid-cols-2 gap-y-1">
                     <span>ORDER ID:</span><span className="text-right font-bold">{selectedKot.order_id?.slice(0, 8)}</span>
                     <span>TYPE:</span><span className="text-right font-bold">{(selectedKot.order_type || 'Dine In').toUpperCase()}</span>
-                    <span>KOT NO:</span><span className="text-right font-bold">#{selectedKot.section_kot_number}</span>
+                    <span>KOT NO:</span><span className="text-right font-bold">#{(selectedKot as UnifiedKOT).kot_number || (selectedKot as SectionKOT).section_kot_number}</span>
                     <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
                     <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>
                   </div>

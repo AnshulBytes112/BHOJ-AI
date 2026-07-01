@@ -560,7 +560,7 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
              WHEN COUNT(k.kot_id) = 0 THEN NULL
              WHEN BOOL_AND(k.status = 'completed') THEN 'completed'
              WHEN BOOL_OR(k.status = 'ready') THEN 'ready'
-             WHEN BOOL_OR(k.status = 'acknowledged') THEN 'preparing'
+             WHEN BOOL_OR(k.status = 'preparing') THEN 'preparing'
              WHEN BOOL_OR(k.status = 'pending') THEN 'sent_to_kitchen'
              ELSE MAX(k.status::text)
            END AS display_status
@@ -608,7 +608,7 @@ tablesRouter.get('/:tableId/orders', async (req, res) => {
                WHEN COUNT(k.kot_id) = 0 THEN NULL
                WHEN BOOL_AND(k.status = 'completed') THEN 'completed'
                WHEN BOOL_OR(k.status = 'ready') THEN 'ready'
-               WHEN BOOL_OR(k.status = 'acknowledged') THEN 'preparing'
+               WHEN BOOL_OR(k.status = 'preparing') THEN 'preparing'
                WHEN BOOL_OR(k.status = 'pending') THEN 'sent_to_kitchen'
                ELSE MAX(k.status::text)
              END AS display_status

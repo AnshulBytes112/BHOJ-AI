@@ -749,23 +749,32 @@ export async function initializeDatabase(): Promise<void> {
   await pool.query(`
     ALTER TABLE kot_items
       ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
   `);
 
   // 5. Add per-item status tracking to section_kot_items (section-level items).
   await pool.query(`
     ALTER TABLE section_kot_items
       ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
   `);
 
   // Ensure correct check constraint on kot_items status
   try {
+    // Add 'preparing' to kot_status ENUM if it doesn't exist
+    await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'preparing'`);
+
+    // Migrate any existing 'acknowledged' statuses to 'preparing' to avoid constraint violations
+    await pool.query(`UPDATE kot_items SET status = 'preparing' WHERE status = 'acknowledged'`);
+    await pool.query(`UPDATE section_kot_items SET status = 'preparing' WHERE status = 'acknowledged'`);
+    await pool.query(`UPDATE kots SET status = 'preparing' WHERE status = 'acknowledged'`);
+    await pool.query(`UPDATE section_kots SET status = 'preparing' WHERE status = 'acknowledged'`);
+
     await pool.query(`ALTER TABLE kot_items DROP CONSTRAINT IF EXISTS kot_items_status_check;`);
     await pool.query(`
       ALTER TABLE kot_items
         ADD CONSTRAINT kot_items_status_check
-        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
     `);
   } catch (e: any) {
     console.warn('Failed to rebuild kot_items_status_check constraint:', e.message);
@@ -777,7 +786,7 @@ export async function initializeDatabase(): Promise<void> {
     await pool.query(`
       ALTER TABLE section_kot_items
         ADD CONSTRAINT section_kot_items_status_check
-        CHECK (status IN ('pending','acknowledged','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
+        CHECK (status IN ('pending','preparing','ready','served','cancelled','packed','delivered','recook_requested'));
     `);
     } catch (e: any) {
       if (!e.message.includes('already exists')) {
