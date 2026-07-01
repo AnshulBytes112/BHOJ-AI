@@ -339,12 +339,7 @@ export default function POSTerminal() {
       const tables = tablesResp.data ?? [];
       setDbTables(tables);
       setExtraCharges((chargesResp.data || []).filter((c: any) => c.is_active));
-      // Auto-select first free table
-      const firstFree = tables.find(t => t.status === 'free');
-      if (firstFree) {
-        setSelectedTable(firstFree.table_id);
-        setSelectedTableLabel(`Table ${firstFree.table_number}`);
-      }
+      // Removed auto-select free table behavior based on user feedback
 
       setCategories(cats);
       setItems(allItems);
@@ -388,12 +383,24 @@ export default function POSTerminal() {
     loadData();
   }, [loadData]);
 
+  const activeFetchTableId = useRef<string | null>(null);
+
   const fetchTableOrders = useCallback(async (tableId: string, silent = false) => {
+    activeFetchTableId.current = tableId;
     if (!silent) setIsLoadingOrders(true);
     try {
-      // Step 1: Fetch fresh table data to check current status
-      const tableResp = await apiClient.get(`/tables/${tableId}`);
-      const table = tableResp.data;
+      // Step 1: Fetch all data concurrently to prevent UI lag
+      const [tableResp, ordersResp, unbilledResp] = await Promise.allSettled([
+        apiClient.get(`/tables/${tableId}`),
+        apiClient.get(`/tables/${tableId}/orders`),
+        apiClient.get(`/tables/${tableId}/unbilled-items`)
+      ]);
+
+      // If user switched tables while fetching, discard these results
+      if (activeFetchTableId.current !== tableId) return;
+
+      const table = tableResp.status === 'fulfilled' ? tableResp.value.data : null;
+      if (!table) throw new Error('Failed to fetch table status');
 
       console.log(`[POS] Table ${tableId} status: ${table.status}, occupied_since: ${table.occupied_since}`);
 
@@ -405,38 +412,35 @@ export default function POSTerminal() {
         sessionStatus: table.session_status ?? null,
       });
 
-      // Update local dbTables with fresh status
       setDbTables(prev => prev.map(t => t.table_id === tableId ? { ...t, status: table.status } : t));
 
       // Step 2: If table is free, clear all orders and exit
-      // Check if table status is anything other than 'free'.
-      if (!table || table.status === 'free') {
-        console.log(`[POS] Table ${tableId} is free - clearing orders`);
+      if (table.status === 'free') {
         setExistingOrders([]);
         setUnbilledItems([]);
         setTableBilling(null);
         return;
       }
 
-      // Step 3: For occupied tables, fetch their orders
-      console.log(`[POS] Table ${tableId} is occupied - fetching running orders`);
-      const response = await apiClient.get(`/tables/${tableId}/orders`);
-      // NEW: API returns { orders, active_session_id, order_count } structure
-      const fetchedOrders = Array.isArray(response.data) ? response.data : (response.data.orders || []);
-      console.log(`[POS] Fetched ${fetchedOrders.length} running orders for table ${tableId}`);
+      // Step 3: For occupied tables, process fetched orders
+      const fetchedOrdersData = ordersResp.status === 'fulfilled' ? ordersResp.value.data : null;
+      const fetchedOrders = fetchedOrdersData ? (Array.isArray(fetchedOrdersData) ? fetchedOrdersData : (fetchedOrdersData.orders || [])) : [];
       setExistingOrders(fetchedOrders);
 
-      const unbilledResp = await apiClient.get(`/tables/${tableId}/unbilled-items`);
-      const pendingItems = Array.isArray(unbilledResp.data)
-        ? unbilledResp.data
-        : (unbilledResp.data.items || []);
+      const fetchedUnbilledData = unbilledResp.status === 'fulfilled' ? unbilledResp.value.data : null;
+      const pendingItems = fetchedUnbilledData ? (Array.isArray(fetchedUnbilledData) ? fetchedUnbilledData : (fetchedUnbilledData.items || [])) : [];
       setUnbilledItems(pendingItems);
+      
     } catch (error) {
       console.error('Failed to fetch table orders:', error);
-      setExistingOrders([]);
-      setUnbilledItems([]);
+      if (activeFetchTableId.current === tableId) {
+        setExistingOrders([]);
+        setUnbilledItems([]);
+      }
     } finally {
-      if (!silent) setIsLoadingOrders(false);
+      if (!silent && activeFetchTableId.current === tableId) {
+        setIsLoadingOrders(false);
+      }
     }
   }, []);
 
@@ -800,9 +804,24 @@ export default function POSTerminal() {
 
     const subtotalAfterDiscount = subtotal - discountAmount;
 
-    // Calculate GST per item based on category or item-specific GST
-    const gstBreakdown: { [rate: number]: number } = {};
-    let totalGst = 0;
+    // IF there are no items, totals should be zero.
+    if (allItemsToBill.length === 0) {
+      return {
+        subtotal: 0,
+        allItemsToBill: [],
+        billableUnbilledItemsCount: 0,
+        discountAmount: 0,
+        totalGst: 0,
+        cgstSGST: 0,
+        total: 0,
+        gstBreakdown: {},
+        appliedExtraCharges: []
+      };
+    }
+
+    // Calculate initial GST per item based on category or item-specific GST
+    const baseGstBreakdown: { [rate: number]: number } = {};
+    let baseGstTotal = 0;
 
     allItemsToBill.forEach(item => {
       const itemSubtotal = item.price * item.quantity;
@@ -813,12 +832,27 @@ export default function POSTerminal() {
       const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
       const itemGst = (itemSubtotalAfterDiscount * itemGstRate) / 100;
 
-      gstBreakdown[itemGstRate] = (gstBreakdown[itemGstRate] || 0) + itemGst;
-      totalGst += itemGst;
+      baseGstBreakdown[itemGstRate] = (baseGstBreakdown[itemGstRate] || 0) + itemGst;
+      baseGstTotal += itemGst;
     });
 
-    let extraChargesTotal = 0;
-    const appliedExtraCharges = extraCharges.map((charge) => {
+    let taxableChargesTotal = 0;
+    let nonTaxableChargesTotal = 0;
+    
+    // Filter extra charges based on orderType
+    const orderTypeLower = orderType.toLowerCase();
+    const isParcel   = orderTypeLower.includes('take away') || orderTypeLower.includes('parcel');
+    const isDineIn   = orderTypeLower.includes('dine');
+    const isDelivery = orderTypeLower.includes('delivery');
+
+    const appliedExtraCharges = extraCharges.filter(charge => {
+      if (charge.apply_on === 'always') return true;
+      if (charge.apply_on === 'parcel' && isParcel) return true;
+      if (charge.apply_on === 'takeaway' && isParcel) return true;
+      if (charge.apply_on === 'dine_in' && isDineIn) return true;
+      if (charge.apply_on === 'delivery' && isDelivery) return true;
+      return false;
+    }).map((charge) => {
       const val = Number(charge.value);
       let amt = 0;
       if (charge.charge_type === 'percentage') {
@@ -826,7 +860,13 @@ export default function POSTerminal() {
       } else {
         amt = val;
       }
-      extraChargesTotal += amt;
+      
+      if (charge.is_taxable) {
+        taxableChargesTotal += amt;
+      } else {
+        nonTaxableChargesTotal += amt;
+      }
+      
       return {
         name: charge.name,
         charge_type: charge.charge_type,
@@ -835,21 +875,35 @@ export default function POSTerminal() {
       };
     });
 
-    const cgstSGST = totalGst / 2;
-    const total = subtotalAfterDiscount + totalGst + extraChargesTotal;
+    // GST is calculated on (item subtotal + taxable extra charges)
+    const gstBase = subtotalAfterDiscount + taxableChargesTotal;
+    const gstMultiplier = subtotalAfterDiscount > 0 ? gstBase / subtotalAfterDiscount : 1;
+    
+    let adjustedGstTotal = 0;
+    const adjustedGstBreakdown: { [rate: number]: number } = {};
+    
+    // Scale up the GST breakdown proportionally
+    Object.keys(baseGstBreakdown).forEach(rate => {
+      const numericRate = Number(rate);
+      adjustedGstBreakdown[numericRate] = baseGstBreakdown[numericRate] * gstMultiplier;
+      adjustedGstTotal += adjustedGstBreakdown[numericRate];
+    });
+
+    const cgstSGST = adjustedGstTotal / 2;
+    const total = gstBase + adjustedGstTotal + nonTaxableChargesTotal;
 
     return {
       subtotal,
       allItemsToBill,
       billableUnbilledItemsCount: billableUnbilledItems.length,
       discountAmount,
-      totalGst,
+      totalGst: adjustedGstTotal,
       cgstSGST,
       total,
-      gstBreakdown,
+      gstBreakdown: adjustedGstBreakdown,
       appliedExtraCharges
     };
-  }, [cart, existingOrders, unbilledItems, discountType, discountValue, gstRates, extraCharges]);
+  }, [cart, existingOrders, unbilledItems, discountType, discountValue, gstRates, extraCharges, orderType]);
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     if (!selectedTable) {
@@ -1915,7 +1969,7 @@ export default function POSTerminal() {
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin', 'staff']}>
       <DashboardLayout disablePadding>
-        <PageContainer className="p-0 m-0 max-w-none sm:px-0 sm:py-0 lg:px-0 lg:py-0 flex flex-col h-[calc(100vh-56px)] w-full min-w-0 min-h-0 overflow-hidden">
+        <PageContainer className="p-0 m-0 max-w-none sm:px-0 sm:py-0 lg:px-0 lg:py-0 flex-1 flex flex-col h-full w-full min-w-0 min-h-0 overflow-hidden bg-gray-50">
           {/* Header Section */}
           <div className="bg-white border-b px-4 py-3 md:px-6 flex-shrink-0">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

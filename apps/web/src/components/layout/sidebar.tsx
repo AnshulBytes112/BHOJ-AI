@@ -34,7 +34,7 @@ const MENU_ITEMS: MenuItem[] = [
   { icon: Store, label: 'Catalogue', href: '/admin/catalog' },
   { icon: FileText, label: 'Bills', href: '/admin/bills' },
   { icon: FileText, label: 'Invoice', href: '/admin/invoices' },
-  { icon: Settings, label: 'GST Config', href: '/admin/settings/gst' },
+  { icon: Settings, label: 'Tax & Charges', href: '/admin/settings/gst' },
   { icon: FileText, label: 'Receipt Layout', href: '/admin/settings/receipt-layout' },
   { icon: Users, label: 'User', href: '/admin/users' },
 ];
