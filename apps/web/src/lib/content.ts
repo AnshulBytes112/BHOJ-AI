@@ -82,7 +82,7 @@ export const UI_CONTENT = {
         satisfaction: {
           label: 'Customer Satisfaction',
           footer: 'from last week',
-          reviewsSource: 'Based on 124 recent reviews (Zomato & Google)'
+          reviewsSource: 'Based on customer feedback'
         }
       },
       charts: {
