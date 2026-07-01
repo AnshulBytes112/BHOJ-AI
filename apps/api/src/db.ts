@@ -1175,6 +1175,9 @@ export async function initializeDatabase(): Promise<void> {
         ALTER COLUMN restaurant_id 
         SET DEFAULT coalesce(nullif(current_setting('app.current_restaurant_id', true), ''), '1')::integer;
     `);
+
+    // Add a small delay to prevent overwhelming Neon proxy with DDL statements (prevents ECONNRESET)
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
 
   // 3. Add security definer helper to resolve restaurant_id from table_id AFTER columns exist

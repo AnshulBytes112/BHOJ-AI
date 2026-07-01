@@ -18,7 +18,7 @@ import apiClient from '@/services/apiClient';
 import { cn } from '@/lib/utils';
 
 type OrderItem = { order_item_id?: string; item_id: string; item_name: string; quantity: number; price_at_billing: number; };
-type Order = { order_id: string; table_id: string; table_number?: string; order_phase: number; status: string; items: OrderItem[]; created_at?: string; order_type?: string; payment_option?: string; notes?: string; };
+type Order = { order_id: string; table_id: string; table_number?: string; order_phase: number; status: string; items: OrderItem[]; created_at?: string; order_type?: string; payment_option?: string; notes?: string; session_id?: string; grouped_orders?: Order[]; };
 
 // Safe helpers
 const safeItems = (items: any): OrderItem[] => Array.isArray(items) ? items : [];
@@ -65,9 +65,15 @@ export default function OrdersPage() {
       header: 'Payment',
       accessor: (row: Order) => {
         if (row.status === 'cancelled') return null;
-        return row.status === 'billed' || row.status === 'completed'
-          ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">✓ Paid</Badge>
-          : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">⏳ Unpaid</Badge>;
+        const activeOrders = row.grouped_orders ? row.grouped_orders.filter(o => o.status !== 'cancelled') : [row];
+        if (activeOrders.length === 0) return null;
+        
+        const allBilled = activeOrders.every(o => o.status === 'billed');
+        const someBilled = activeOrders.some(o => o.status === 'billed');
+        
+        if (allBilled) return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">✓ Paid</Badge>;
+        if (someBilled) return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">⏳ Partially Paid</Badge>;
+        return <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">⏳ Unpaid</Badge>;
       },
     },
     {
@@ -93,11 +99,15 @@ export default function OrdersPage() {
         <span className="font-bold text-primary uppercase text-sm">#{shortId(order.order_id)}</span>
         <div className="flex gap-2">
           {statusBadge(order.status)}
-          {order.status !== 'cancelled' && (
-            order.status === 'billed' || order.status === 'completed'
-              ? <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Paid</Badge>
-              : <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">Unpaid</Badge>
-          )}
+          {order.status !== 'cancelled' && (() => {
+            const activeOrders = order.grouped_orders ? order.grouped_orders.filter(o => o.status !== 'cancelled') : [order];
+            if (activeOrders.length === 0) return null;
+            const allBilled = activeOrders.every(o => o.status === 'billed');
+            const someBilled = activeOrders.some(o => o.status === 'billed');
+            if (allBilled) return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Paid</Badge>;
+            if (someBilled) return <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">Partially Paid</Badge>;
+            return <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-xs">Unpaid</Badge>;
+          })()}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
@@ -182,7 +192,7 @@ export default function OrdersPage() {
       
       const allKots = kotsRes.data || [];
       
-      const data = (r.data ?? []).map(o => {
+      const processedData = (r.data ?? []).map(o => {
         let currentStatus = o.status;
         
         // Find all KOTs for this order
@@ -203,6 +213,40 @@ export default function OrdersPage() {
           items: safeItems(o.items) 
         };
       });
+
+      // Group by session_id
+      const groupedOrdersMap = new Map<string, Order>();
+      
+      const getSessionStatus = (orders: Order[]) => {
+          if (orders.some(o => o.status === 'open')) return 'open';
+          if (orders.some(o => o.status === 'sent_to_kitchen')) return 'sent_to_kitchen';
+          if (orders.some(o => o.status === 'in_progress')) return 'in_progress';
+          if (orders.some(o => o.status === 'ready')) return 'ready';
+          if (orders.some(o => o.status === 'completed')) return 'completed';
+          if (orders.some(o => o.status === 'billed')) return 'billed';
+          return 'cancelled';
+      };
+
+      processedData.forEach(o => {
+        const key = o.session_id || o.order_id;
+        if (!groupedOrdersMap.has(key)) {
+          groupedOrdersMap.set(key, { 
+            ...o, 
+            order_id: key, // Use session_id as the primary identifier for the group
+            grouped_orders: [o], 
+            items: [...o.items] 
+          });
+        } else {
+          const group = groupedOrdersMap.get(key)!;
+          group.grouped_orders!.push(o);
+          group.items.push(...o.items);
+          group.status = getSessionStatus(group.grouped_orders!);
+        }
+      });
+      
+      const data = Array.from(groupedOrdersMap.values());
+      // Re-sort by created_at DESC
+      data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       
       setOrders(data);
       // Update selected order if it exists, but don't auto-select/open if it is closed
@@ -227,14 +271,23 @@ export default function OrdersPage() {
   }
 
   async function sendToKitchen(o: Order) {
-    if (o.status !== 'open') { openKOT(o); return; }
+    const ordersToSend = o.grouped_orders ? o.grouped_orders.filter(child => child.status === 'open') : (o.status === 'open' ? [o] : []);
+    
+    if (ordersToSend.length === 0) { 
+      openKOT(o); 
+      return; 
+    }
+    
     setIsSending(true); setActionMsg(null);
     try {
-      await apiClient.post(`/orders/${o.order_id}/send-to-kitchen`);
+      await Promise.all(ordersToSend.map(child => apiClient.post(`/orders/${child.order_id}/send-to-kitchen`)));
       setActionMsg('Sent to kitchen!');
       await load();
-    } catch (e: any) { setActionMsg(e?.response?.data?.message || 'Failed.'); }
-    finally { setIsSending(false); }
+    } catch (e: any) { 
+      setActionMsg(e?.response?.data?.message || 'Failed to send some orders to kitchen.'); 
+    } finally { 
+      setIsSending(false); 
+    }
     openKOT(o);
   }
 

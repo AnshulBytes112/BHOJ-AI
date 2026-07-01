@@ -178,7 +178,7 @@ sessionsRouter.post('/reopen', async (req, res) => {
     await client.query('BEGIN');
 
     const sessionResult = await client.query(
-      `SELECT ts.session_id, ts.table_id, ts.status, ts.is_payment_locked
+      `SELECT ts.session_id, ts.table_id, ts.status, ts.is_payment_locked, ts.tenant_id, ts.outlet_id
        FROM table_sessions ts
        LEFT JOIN session_tables st ON ts.session_id = st.session_id
        WHERE (ts.table_id = $1 OR st.table_id = $1)
@@ -224,14 +224,16 @@ sessionsRouter.post('/reopen', async (req, res) => {
 
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-       ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+       ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         session.session_id,
         JSON.stringify({ previous_status: previousStatus, reason: reason ?? 'Reopened for new orders' }),
         performed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
         source_type ?? 'POS',
+        session.tenant_id,
+        session.outlet_id,
       ]
     );
 
@@ -303,7 +305,7 @@ sessionsRouter.post('/:sessionId/transfer', async (req, res) => {
 
     // 2. Lock the session row to prevent race conditions (EC-3 Concurrency lock)
     const sessionResult = await client.query(
-      `SELECT session_id, table_id, is_payment_locked, status, version FROM table_sessions WHERE session_id = $1 FOR UPDATE`,
+      `SELECT session_id, table_id, is_payment_locked, status, version, tenant_id, outlet_id FROM table_sessions WHERE session_id = $1 FOR UPDATE`,
       [sessionId]
     );
     if (sessionResult.rows.length === 0) {
@@ -378,8 +380,8 @@ sessionsRouter.post('/:sessionId/transfer', async (req, res) => {
       [sessionId, sourceTableId]
     );
     await client.query(
-      `INSERT INTO session_tables (session_id, table_id) VALUES ($1, $2)`,
-      [sessionId, target_table_id]
+      `INSERT INTO session_tables (session_id, table_id, tenant_id, outlet_id) VALUES ($1, $2, $3, $4)`,
+      [sessionId, target_table_id, session.tenant_id, session.outlet_id]
     );
 
     // 7. Update source and target table statuses
@@ -403,14 +405,16 @@ sessionsRouter.post('/:sessionId/transfer', async (req, res) => {
     // 8. Event log & audit
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'TABLE_TRANSFERRED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'TABLE_TRANSFERRED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         JSON.stringify({ source_table_id: sourceTableId, target_table_id }),
         performed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
-        session.source_type
+        session.source_type,
+        session.tenant_id,
+        session.outlet_id
       ]
     );
 
@@ -509,8 +513,8 @@ sessionsRouter.post('/:sessionId/merge', async (req, res) => {
 
     // Merge: insert target table to session_tables mapping
     await client.query(
-      `INSERT INTO session_tables (session_id, table_id) VALUES ($1, $2)`,
-      [sessionId, target_table_id]
+      `INSERT INTO session_tables (session_id, table_id, tenant_id, outlet_id) VALUES ($1, $2, $3, $4)`,
+      [sessionId, target_table_id, session.tenant_id, session.outlet_id]
     );
 
     // Update target table to occupied
@@ -522,14 +526,16 @@ sessionsRouter.post('/:sessionId/merge', async (req, res) => {
     // Event log
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'TABLE_MERGED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'TABLE_MERGED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         JSON.stringify({ merged_table_id: target_table_id, table_number: targetTable.table_number }),
         performed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
-        session.source_type
+        session.source_type,
+        session.tenant_id,
+        session.outlet_id
       ]
     );
 
@@ -690,14 +696,16 @@ sessionsRouter.post('/:sessionId/close', async (req, res) => {
     // Log SESSION_CLOSED event
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'SESSION_CLOSED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'SESSION_CLOSED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         JSON.stringify({ close_type: 'clean' }),
         closed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
-        session.source_type
+        session.source_type,
+        session.tenant_id,
+        session.outlet_id
       ]
     );
 
@@ -791,14 +799,16 @@ sessionsRouter.post('/:sessionId/force-close', async (req, res) => {
 
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'SESSION_FORCE_CLOSED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'SESSION_FORCE_CLOSED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         JSON.stringify({ close_type: 'forced', reason: close_reason }),
         closed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
-        session.source_type
+        session.source_type,
+        session.tenant_id,
+        session.outlet_id
       ]
     );
 
@@ -891,14 +901,16 @@ sessionsRouter.post('/:sessionId/abandon', async (req, res) => {
 
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'SESSION_ABANDONED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'SESSION_ABANDONED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         JSON.stringify({ close_type: 'abandoned', reason: close_reason }),
         closed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
-        session.source_type
+        session.source_type,
+        session.tenant_id,
+        session.outlet_id
       ]
     );
 
@@ -998,7 +1010,7 @@ sessionsRouter.patch('/:sessionId/reopen', async (req, res) => {
 
     // Lock the session row
     const sessionRes = await client.query(
-      `SELECT session_id, status, source_type, is_payment_locked FROM table_sessions WHERE session_id = $1 FOR UPDATE`,
+      `SELECT session_id, status, source_type, is_payment_locked, tenant_id, outlet_id FROM table_sessions WHERE session_id = $1 FOR UPDATE`,
       [sessionId]
     );
     if (sessionRes.rows.length === 0) {
@@ -1037,14 +1049,16 @@ sessionsRouter.patch('/:sessionId/reopen', async (req, res) => {
     // Event log
     await client.query(
       `INSERT INTO session_events (
-        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel
-      ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4, $5)`,
+        session_id, event_type, timestamp, metadata, performed_by, source_device, source_channel, tenant_id, outlet_id
+      ) VALUES ($1, 'SESSION_REOPENED', NOW(), $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         JSON.stringify({ previous_status: 'billed', reason }),
         performed_by ?? null,
         req.header('x-device') ?? 'POS_TERMINAL',
         session.source_type,
+        session.tenant_id,
+        session.outlet_id
       ]
     );
 
