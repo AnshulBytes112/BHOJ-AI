@@ -401,7 +401,7 @@ billsRouter.post('/', async (req, res) => {
       }
     }
     const orderTypeLower = resolvedOrderType.toLowerCase();
-    const isParcel = orderTypeLower.includes('parcel') || orderTypeLower.includes('takeaway');
+    const isParcel = orderTypeLower.includes('parcel') || orderTypeLower.includes('takeaway') || orderTypeLower.includes('take away');
     const isDineIn = orderTypeLower.includes('dine');
     const isDelivery = orderTypeLower.includes('delivery');
 

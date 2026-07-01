@@ -928,6 +928,7 @@ export default function POSTerminal() {
           extras: item.extras || [],
           spiceLevel: item.spiceLevel || null
         })),
+        orderType: orderType
       });
       const newOrderId = result.data.order_id;
       setOrderId(newOrderId);
@@ -1002,6 +1003,7 @@ export default function POSTerminal() {
             extras: item.extras || [],
             spiceLevel: item.spiceLevel || null
           })),
+          orderType: orderType
         });
         const newOrderId = orderResult.data.order_id;
         orderIds.push(newOrderId);
