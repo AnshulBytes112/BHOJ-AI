@@ -100,9 +100,9 @@ function parseCreateBillBody(rawBody: unknown): { cashierId: number; lines: Arra
     };
   });
 
-  return { 
-    cashierId, 
-    lines, 
+  return {
+    cashierId,
+    lines,
     tableId: typeof body.table_id === 'string' ? body.table_id : undefined,
     orderIds: Array.isArray(body.order_ids) ? body.order_ids : undefined,
     // pay_now=true means the bill is being paid at creation time (combined bill+payment)
@@ -202,7 +202,7 @@ billsRouter.post('/', async (req, res) => {
     for (const line of lines) {
       mergedLineMap.set(line.itemId, (mergedLineMap.get(line.itemId) ?? 0) + line.quantity);
     }
-    
+
     let tenantId = null;
     let outletId = null;
     if (tableId) {
@@ -262,7 +262,7 @@ billsRouter.post('/', async (req, res) => {
         [activeSessionId, actualOrderIds]
       );
     }
-    
+
     if (tableId && actualOrderIds.length === 0) {
       const uniqueItemIds = Array.from(mergedLineMap.keys());
       const itemRows = await client.query<CatalogItemRow>(
@@ -283,7 +283,7 @@ billsRouter.post('/', async (req, res) => {
 
       // No orders provided - create one for these items
       console.log(`[POST /bills] Creating new order for table ${tableId} with ${mergedLineMap.size} items`);
-      
+
       const orderPhaseResult = await client.query(
         `SELECT COALESCE(MAX(order_phase), 0) + 1 as next_phase FROM orders WHERE table_id = $1`,
         [tableId]
@@ -401,8 +401,8 @@ billsRouter.post('/', async (req, res) => {
       }
     }
     const orderTypeLower = resolvedOrderType.toLowerCase();
-    const isParcel   = orderTypeLower.includes('parcel') || orderTypeLower.includes('takeaway');
-    const isDineIn   = orderTypeLower.includes('dine');
+    const isParcel = orderTypeLower.includes('parcel') || orderTypeLower.includes('takeaway');
+    const isDineIn = orderTypeLower.includes('dine');
     const isDelivery = orderTypeLower.includes('delivery');
 
     // Fetch applicable extra charges filtered by apply_on rule
@@ -687,7 +687,7 @@ billsRouter.patch('/:id/payment', async (req, res) => {
         [payment_status === 'paid' ? billId : -1, sessionId ?? tableId]
       );
       const allPaid = parseInt(billsForTable.rows[0].total, 10) > 0 &&
-                      parseInt(billsForTable.rows[0].total, 10) === parseInt(billsForTable.rows[0].now_paid, 10);
+        parseInt(billsForTable.rows[0].total, 10) === parseInt(billsForTable.rows[0].now_paid, 10);
 
       await client.query(
         `UPDATE tables SET is_bill_paid = $1 WHERE table_id = $2`,

@@ -430,7 +430,7 @@ export default function POSTerminal() {
       const fetchedUnbilledData = unbilledResp.status === 'fulfilled' ? unbilledResp.value.data : null;
       const pendingItems = fetchedUnbilledData ? (Array.isArray(fetchedUnbilledData) ? fetchedUnbilledData : (fetchedUnbilledData.items || [])) : [];
       setUnbilledItems(pendingItems);
-      
+
     } catch (error) {
       console.error('Failed to fetch table orders:', error);
       if (activeFetchTableId.current === tableId) {
@@ -838,11 +838,11 @@ export default function POSTerminal() {
 
     let taxableChargesTotal = 0;
     let nonTaxableChargesTotal = 0;
-    
+
     // Filter extra charges based on orderType
     const orderTypeLower = orderType.toLowerCase();
-    const isParcel   = orderTypeLower.includes('take away') || orderTypeLower.includes('parcel');
-    const isDineIn   = orderTypeLower.includes('dine');
+    const isParcel = orderTypeLower.includes('take away') || orderTypeLower.includes('parcel');
+    const isDineIn = orderTypeLower.includes('dine');
     const isDelivery = orderTypeLower.includes('delivery');
 
     const appliedExtraCharges = extraCharges.filter(charge => {
@@ -860,15 +860,15 @@ export default function POSTerminal() {
       } else {
         amt = val;
       }
-      
+
       const isTaxable = charge.is_taxable === true || charge.is_taxable === 'true' || charge.is_taxable === 1;
-      
+
       if (isTaxable) {
         taxableChargesTotal += amt;
       } else {
         nonTaxableChargesTotal += amt;
       }
-      
+
       return {
         name: charge.name,
         charge_type: charge.charge_type,
@@ -881,10 +881,10 @@ export default function POSTerminal() {
     // GST is calculated on (item subtotal + taxable extra charges)
     const gstBase = subtotalAfterDiscount + taxableChargesTotal;
     const gstMultiplier = subtotalAfterDiscount > 0 ? gstBase / subtotalAfterDiscount : 1;
-    
+
     let adjustedGstTotal = 0;
     const adjustedGstBreakdown: { [rate: number]: number } = {};
-    
+
     // Scale up the GST breakdown proportionally
     Object.keys(baseGstBreakdown).forEach(rate => {
       const numericRate = Number(rate);
@@ -1331,39 +1331,68 @@ export default function POSTerminal() {
 
                         <div className="mt-2">
                           {item.isAvailable && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                let initialSpiceLevel: string | null = null;
-                                const defaultExtras: string[] = [];
-                                if (item.customizable_options) {
-                                  const spiceGroup = item.customizable_options.find(
-                                    (g: any) => g.name.toLowerCase().includes('spice')
-                                  );
-                                  if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
-                                    const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
-                                    initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
-                                  }
+                            (() => {
+                              const hasCustomizations = (item.customizable_options && item.customizable_options.length > 0) || (item.addons && item.addons.length > 0);
 
-                                  item.customizable_options.forEach(group => {
-                                    const isSpice = group.name.toLowerCase().includes('spice');
-                                    if (isSpice) {
-                                      if (initialSpiceLevel) {
-                                        defaultExtras.push(initialSpiceLevel);
-                                      }
-                                    } else if (group.required && group.choices && group.choices.length > 0) {
-                                      defaultExtras.push(group.choices[0].name);
-                                    }
-                                  });
+                              if (!hasCustomizations && inCartQty > 0) {
+                                const cartItem = cart.find(c => c.id === item.id);
+                                if (cartItem) {
+                                  return (
+                                    <div className="flex items-center justify-between bg-blue-50 text-blue-600 rounded overflow-hidden border border-blue-200">
+                                      <button
+                                        className="px-4 py-1 hover:bg-blue-100 font-bold text-lg"
+                                        onClick={(e) => { e.stopPropagation(); updateQuantity(cartItem.cartKey, -1); }}
+                                      >-</button>
+                                      <span className="text-sm font-semibold">{inCartQty}</span>
+                                      <button
+                                        className="px-4 py-1 hover:bg-blue-100 font-bold text-lg"
+                                        onClick={(e) => { e.stopPropagation(); updateQuantity(cartItem.cartKey, 1); }}
+                                      >+</button>
+                                    </div>
+                                  );
                                 }
-                                setItemSpiceLevel(initialSpiceLevel);
-                                setItemSelectedExtras(defaultExtras);
-                                setConfiguringItem(item);
-                              }}
-                              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
-                            >
-                              Add to Cart
-                            </button>
+                              }
+
+                              return (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!hasCustomizations) {
+                                      addToCart(item, null, []);
+                                      return;
+                                    }
+                                    let initialSpiceLevel: string | null = null;
+                                    const defaultExtras: string[] = [];
+                                    if (item.customizable_options) {
+                                      const spiceGroup = item.customizable_options.find(
+                                        (g: any) => g.name.toLowerCase().includes('spice')
+                                      );
+                                      if (spiceGroup && spiceGroup.choices && spiceGroup.choices.length > 0) {
+                                        const mediumChoice = spiceGroup.choices.find((c: any) => c.name.toLowerCase() === 'medium');
+                                        initialSpiceLevel = mediumChoice ? mediumChoice.name : spiceGroup.choices[0].name;
+                                      }
+
+                                      item.customizable_options.forEach(group => {
+                                        const isSpice = group.name.toLowerCase().includes('spice');
+                                        if (isSpice) {
+                                          if (initialSpiceLevel) {
+                                            defaultExtras.push(initialSpiceLevel);
+                                          }
+                                        } else if (group.required && group.choices && group.choices.length > 0) {
+                                          defaultExtras.push(group.choices[0].name);
+                                        }
+                                      });
+                                    }
+                                    setItemSpiceLevel(initialSpiceLevel);
+                                    setItemSelectedExtras(defaultExtras);
+                                    setConfiguringItem(item);
+                                  }}
+                                  className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                                >
+                                  {hasCustomizations && inCartQty > 0 ? 'Add Another' : 'Add to Cart'}
+                                </button>
+                              );
+                            })()
                           )}
                         </div>
                       </CardContent>
@@ -2021,42 +2050,42 @@ export default function POSTerminal() {
 
           <ResponsiveDialog isOpen={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen} title="Reopen Session?" description={`This will unlock the billed session so you can add new orders.
                 `} footer={<><Button variant="outline" onClick={() => setIsReopenDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => { setIsReopenDialogOpen(false); handleReopenSession(); }}>
-                  Reopen
-                </Button>
-              </>}></ResponsiveDialog>
+              <Button onClick={() => { setIsReopenDialogOpen(false); handleReopenSession(); }}>
+                Reopen
+              </Button>
+            </>}></ResponsiveDialog>
 
           <ResponsiveDialog isOpen={isFreeTableDialogOpen} onOpenChange={setIsFreeTableDialogOpen} title="Free Table?" description={`{dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free'
                     ? "All bills are paid and all kitchen items are served. Freeing the table will make it available for new guests."
                     : "This will attempt to free the table. Note: All bills must be paid and all kitchen items must be served."}
                 `} footer={<><Button variant="outline" onClick={() => setIsFreeTableDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => { setIsFreeTableDialogOpen(false); handleFreeTable(); }}>
-                  Free Table
-                </Button>
-              </>}></ResponsiveDialog>
+              <Button onClick={() => { setIsFreeTableDialogOpen(false); handleFreeTable(); }}>
+                Free Table
+              </Button>
+            </>}></ResponsiveDialog>
 
           <ResponsiveDialog isOpen={isAddTableDialogOpen} onOpenChange={setIsAddTableDialogOpen} title="Add New Table" description={`Quickly add a table to the floor plan.
                 `} footer={<><Button variant="outline" onClick={() => setIsAddTableDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddTable} disabled={isAddingTable}>
-                  {isAddingTable ? 'Adding...' : 'Add Table'}
-                </Button>
-              </>}><div className="grid gap-4 py-4"><div className="space-y-2">
-                  <label className="text-sm font-medium">Table Number</label>
-                  <Input
-                    placeholder="e.g. 11"
-                    value={newTableNumber}
-                    onChange={(e) => setNewTableNumber(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Capacity (Seats)</label>
-                  <Input
-                    type="number"
-                    value={newTableCapacity}
-                    onChange={(e) => setNewTableCapacity(e.target.value)}
-                  />
-                </div>
-              </div></ResponsiveDialog>
+              <Button onClick={handleAddTable} disabled={isAddingTable}>
+                {isAddingTable ? 'Adding...' : 'Add Table'}
+              </Button>
+            </>}><div className="grid gap-4 py-4"><div className="space-y-2">
+              <label className="text-sm font-medium">Table Number</label>
+              <Input
+                placeholder="e.g. 11"
+                value={newTableNumber}
+                onChange={(e) => setNewTableNumber(e.target.value)}
+              />
+            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Capacity (Seats)</label>
+                <Input
+                  type="number"
+                  value={newTableCapacity}
+                  onChange={(e) => setNewTableCapacity(e.target.value)}
+                />
+              </div>
+            </div></ResponsiveDialog>
 
           <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
             <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
@@ -2486,69 +2515,69 @@ export default function POSTerminal() {
 
       <ResponsiveDialog isOpen={isPreviewOpen} onOpenChange={setIsPreviewOpen} title="Bill Preview & Confirmation" description={`Review the unbilled items for this table before generating the final bill.
             `} footer={<div className="flex gap-2 sm:gap-0 justify-end w-full"><Button variant="outline" onClick={() => setIsPreviewOpen(false)} disabled={isGeneratingBill}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={async () => {
-                await generateBillAndPrint();
-                setIsPreviewOpen(false);
-              }}
-              disabled={isGeneratingBill}
-            >
-              {isGeneratingBill ? 'Processing...' : 'Confirm & Generate Bill'}
-            </Button>
-          </div>}><div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
-            <div className="space-y-2 border-b pb-4">
-              <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
-              <div className="text-xs text-gray-500">Consolidating {totals.billableUnbilledItemsCount} billable items + current cart</div>
-            </div>
+          Cancel
+        </Button>
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white"
+            onClick={async () => {
+              await generateBillAndPrint();
+              setIsPreviewOpen(false);
+            }}
+            disabled={isGeneratingBill}
+          >
+            {isGeneratingBill ? 'Processing...' : 'Confirm & Generate Bill'}
+          </Button>
+        </div>}><div className="max-h-[60vh] overflow-y-auto space-y-4 py-4">
+          <div className="space-y-2 border-b pb-4">
+            <h4 className="text-sm font-bold uppercase text-gray-500">Table: {selectedTableLabel}</h4>
+            <div className="text-xs text-gray-500">Consolidating {totals.billableUnbilledItemsCount} billable items + current cart</div>
+          </div>
 
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-bold border-b pb-1">
-                <span className="flex-[2]">Item</span>
-                <span className="flex-[0.5] text-center">Qty</span>
-                <span className="flex-1 text-right">Price</span>
-                <span className="flex-1 text-right">Total</span>
-              </div>
-              {totals.allItemsToBill.map((item, idx) => (
-                <div key={idx} className="flex justify-between text-sm py-1">
-                  <span className="flex-[2] truncate">{item.name}</span>
-                  <span className="flex-[0.5] text-center">{item.quantity}</span>
-                  <span className="flex-1 text-right">₹{item.price.toFixed(2)}</span>
-                  <span className="flex-1 text-right font-medium">₹{(item.price * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs font-bold border-b pb-1">
+              <span className="flex-[2]">Item</span>
+              <span className="flex-[0.5] text-center">Qty</span>
+              <span className="flex-1 text-right">Price</span>
+              <span className="flex-1 text-right">Total</span>
             </div>
+            {totals.allItemsToBill.map((item, idx) => (
+              <div key={idx} className="flex justify-between text-sm py-1">
+                <span className="flex-[2] truncate">{item.name}</span>
+                <span className="flex-[0.5] text-center">{item.quantity}</span>
+                <span className="flex-1 text-right">₹{item.price.toFixed(2)}</span>
+                <span className="flex-1 text-right font-medium">₹{(item.price * item.quantity).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
 
-            <div className="pt-4 border-t space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal</span>
-                <span>₹{totals.subtotal.toFixed(2)}</span>
+          <div className="pt-4 border-t space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Subtotal</span>
+              <span>₹{totals.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Total GST</span>
+              <span>₹{totals.totalGst.toFixed(2)}</span>
+            </div>
+            {totals.discountAmount > 0 && (
+              <div className="flex justify-between text-sm text-green-600 font-medium">
+                <span>Discount</span>
+                <span>-₹{totals.discountAmount.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total GST</span>
-                <span>₹{totals.totalGst.toFixed(2)}</span>
+            )}
+            {totals.appliedExtraCharges && totals.appliedExtraCharges.map((charge: any, idx: number) => (
+              <div key={idx} className="flex justify-between text-sm text-purple-700">
+                <span>{charge.name}</span>
+                <span>₹{charge.amount.toFixed(2)}</span>
               </div>
-              {totals.discountAmount > 0 && (
-                <div className="flex justify-between text-sm text-green-600 font-medium">
-                  <span>Discount</span>
-                  <span>-₹{totals.discountAmount.toFixed(2)}</span>
-                </div>
-              )}
-              {totals.appliedExtraCharges && totals.appliedExtraCharges.map((charge: any, idx: number) => (
-                <div key={idx} className="flex justify-between text-sm text-purple-700">
-                  <span>{charge.name}</span>
-                  <span>₹{charge.amount.toFixed(2)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between text-lg font-bold border-t pt-2 text-blue-600">
-                <span>Grand Total</span>
-                <span>₹{totals.total.toFixed(2)}</span>
-              </div>
+            ))}
+            <div className="flex justify-between text-lg font-bold border-t pt-2 text-blue-600">
+              <span>Grand Total</span>
+              <span>₹{totals.total.toFixed(2)}</span>
             </div>
           </div>
-          </ResponsiveDialog>
+        </div>
+      </ResponsiveDialog>
 
       {/* Customize/Configure Item Dialog */}
       <Dialog open={configuringItem !== null} onOpenChange={(open) => { if (!open) setConfiguringItem(null); }}>
