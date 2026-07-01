@@ -856,12 +856,14 @@ export default function POSTerminal() {
       const val = Number(charge.value);
       let amt = 0;
       if (charge.charge_type === 'percentage') {
-        amt = subtotalAfterDiscount * (val / 100);
+        amt = subtotal * (val / 100); // Backend uses subtotal, not subtotalAfterDiscount
       } else {
         amt = val;
       }
       
-      if (charge.is_taxable) {
+      const isTaxable = charge.is_taxable === true || charge.is_taxable === 'true' || charge.is_taxable === 1;
+      
+      if (isTaxable) {
         taxableChargesTotal += amt;
       } else {
         nonTaxableChargesTotal += amt;
@@ -872,6 +874,7 @@ export default function POSTerminal() {
         charge_type: charge.charge_type,
         value: val,
         amount: amt,
+        is_taxable: isTaxable
       };
     });
 
