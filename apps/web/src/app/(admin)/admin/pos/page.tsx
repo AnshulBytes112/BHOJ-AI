@@ -2101,10 +2101,7 @@ export default function POSTerminal() {
               </Button>
             </>}></ResponsiveDialog>
 
-          <ResponsiveDialog isOpen={isFreeTableDialogOpen} onOpenChange={setIsFreeTableDialogOpen} title="Free Table?" description={`{dbTables.find(t => t.table_id === selectedTable)?.status === 'ready_to_free'
-                    ? "All bills are paid and all kitchen items are served. Freeing the table will make it available for new guests."
-                    : "This will attempt to free the table. Note: All bills must be paid and all kitchen items must be served."}
-                `} footer={<><Button variant="outline" onClick={() => setIsFreeTableDialogOpen(false)}>Cancel</Button>
+          <ResponsiveDialog isOpen={isFreeTableDialogOpen} onOpenChange={setIsFreeTableDialogOpen} title="Free Table?" footer={<><Button variant="outline" onClick={() => setIsFreeTableDialogOpen(false)}>Cancel</Button>
               <Button onClick={() => { setIsFreeTableDialogOpen(false); handleFreeTable(); }}>
                 Free Table
               </Button>
